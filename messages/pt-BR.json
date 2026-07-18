@@ -561,6 +561,14 @@
       "pipelineName": "Nome do funil",
       "pipelineNamePlaceholder": "ex.: Vendas Corporativas",
       "defaultStagesDesc": "As etapas padrão (Novo Lead → Ganho) serão criadas automaticamente.",
+      "defaultPipelineName": "Funil de Vendas",
+      "defaultStages": {
+        "newLead": "Novo Lead",
+        "qualified": "Qualificado",
+        "proposalSent": "Proposta Enviada",
+        "negotiation": "Negociação",
+        "won": "Ganho"
+      },
       "cancel": "Cancelar",
       "creating": "Criando...",
       "createPipelineBtn": "Criar funil",

@@ -22,55 +22,6 @@ configuração foram localizadas para o **mercado brasileiro**.
 
 ---
 
-## ⚠️ Validação local — obrigatória (sem CI no GitHub)
-
-> ### **IMPORTANTE — leia antes de commitar ou fazer deploy**
->
-> Este repositório **não inclui** a pasta `.github/`. Não há GitHub
-> Actions, Dependabot nem templates de issue/PR rodando no remoto.
-> **A qualidade do código depende de você** executar os comandos abaixo
-> na sua máquina nos momentos certos.
->
-> 📖 **Guia completo (quando, por quê, fluxos por tipo de mudança):**
-> **[docs/comandos-desenvolvimento.md](./docs/comandos-desenvolvimento.md)**
-
-### Quando executar cada comando
-
-| Momento                               | Comando(s)                                   | Por quê                                                           |
-| ------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------- |
-| **Primeira vez / deps novas**         | `npm install`                                | Instala dependências do `package-lock.json`                       |
-| **Desenvolvimento diário**            | `npm run dev`                                | Servidor local com hot reload (`localhost:3000`)                  |
-| **Editou `messages/*.json` ou `t()`** | `npm run i18n:check`                         | Garante paridade EN ↔ PT (~1.600 chaves); evita `MISSING_MESSAGE` |
-| **Antes de todo commit**              | `typecheck` → `i18n:check` → `lint` → `test` | Substitui o CI que existia em `.github/workflows/ci.yml`          |
-| **Antes de push / deploy**            | Sequência completa ↓ + `build`               | O host (Hostinger, Vercel…) roda build — falhe local primeiro     |
-
-### Sequência completa — rode antes de `git push` na branch de deploy
-
-Copie e execute **na ordem**. Se qualquer passo falhar, **não faça deploy**.
-
-```bash
-npm run typecheck      # TypeScript — erros de tipo e imports
-npm run i18n:check     # Paridade messages/en.json ↔ pt-BR.json
-npm run lint           # ESLint — padrões e anti-patterns
-npm run test           # Vitest — libs críticas (webhook, crypto, flows…)
-npm run format:check   # Prettier — formatação consistente
-npm run build          # Build de produção — mesmo passo do servidor
-```
-
-| Comando      | O que valida se você pular                 |
-| ------------ | ------------------------------------------ |
-| `typecheck`  | Build quebra tarde; props/APIs erradas     |
-| `i18n:check` | Tela quebrada só em pt-BR ou en            |
-| `lint`       | Débito técnico; bugs que ESLint detectaria |
-| `test`       | Regressão em regras de negócio sem browser |
-| `build`      | Deploy falha no Hostinger/Vercel           |
-
-**Quer CI automático de novo?** Recrie `.github/workflows/` no **seu
-fork** — exemplo e detalhes em
-[docs/comandos-desenvolvimento.md](./docs/comandos-desenvolvimento.md#recriar-ci-no-seu-fork-opcional).
-
----
-
 ## Feito para o Brasil — interface em português (pt-BR)
 
 O **ZAP CRM BR** não é só um fork traduzido: a internacionalização
@@ -316,6 +267,55 @@ URL** (não existe `/pt-br/dashboard`). O locale é resolvido por cookie
   **next-intl** (pt-BR + en).
 - **Dados** — Supabase (Postgres + Auth + Storage + RLS).
 - **WhatsApp** — Meta Cloud API (WhatsApp Business oficial).
+
+---
+
+## ⚠️ Validação local — obrigatória (sem CI no GitHub)
+
+> ### **IMPORTANTE — leia antes de commitar ou fazer deploy**
+>
+> Este repositório **não inclui** a pasta `.github/`. Não há GitHub
+> Actions, Dependabot nem templates de issue/PR rodando no remoto.
+> **A qualidade do código depende de você** executar os comandos abaixo
+> na sua máquina nos momentos certos.
+>
+> 📖 **Guia completo (quando, por quê, fluxos por tipo de mudança):**
+> **[docs/comandos-desenvolvimento.md](./docs/comandos-desenvolvimento.md)**
+
+### Quando executar cada comando
+
+| Momento                               | Comando(s)                                   | Por quê                                                           |
+| ------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------- |
+| **Primeira vez / deps novas**         | `npm install`                                | Instala dependências do `package-lock.json`                       |
+| **Desenvolvimento diário**            | `npm run dev`                                | Servidor local com hot reload (`localhost:3000`)                  |
+| **Editou `messages/*.json` ou `t()`** | `npm run i18n:check`                         | Garante paridade EN ↔ PT (~1.600 chaves); evita `MISSING_MESSAGE` |
+| **Antes de todo commit**              | `typecheck` → `i18n:check` → `lint` → `test` | Substitui o CI que existia em `.github/workflows/ci.yml`          |
+| **Antes de push / deploy**            | Sequência completa ↓ + `build`               | O host (Hostinger, Vercel…) roda build — falhe local primeiro     |
+
+### Sequência completa — rode antes de `git push` na branch de deploy
+
+Copie e execute **na ordem**. Se qualquer passo falhar, **não faça deploy**.
+
+```bash
+npm run typecheck      # TypeScript — erros de tipo e imports
+npm run i18n:check     # Paridade messages/en.json ↔ pt-BR.json
+npm run lint           # ESLint — padrões e anti-patterns
+npm run test           # Vitest — libs críticas (webhook, crypto, flows…)
+npm run format:check   # Prettier — formatação consistente
+npm run build          # Build de produção — mesmo passo do servidor
+```
+
+| Comando      | O que valida se você pular                 |
+| ------------ | ------------------------------------------ |
+| `typecheck`  | Build quebra tarde; props/APIs erradas     |
+| `i18n:check` | Tela quebrada só em pt-BR ou en            |
+| `lint`       | Débito técnico; bugs que ESLint detectaria |
+| `test`       | Regressão em regras de negócio sem browser |
+| `build`      | Deploy falha no Hostinger/Vercel           |
+
+**Quer CI automático de novo?** Recrie `.github/workflows/` no **seu
+fork** — exemplo e detalhes em
+[docs/comandos-desenvolvimento.md](./docs/comandos-desenvolvimento.md#recriar-ci-no-seu-fork-opcional).
 
 ---
 

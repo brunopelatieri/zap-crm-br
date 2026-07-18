@@ -561,6 +561,14 @@
       "pipelineName": "Pipeline Name",
       "pipelineNamePlaceholder": "e.g., Enterprise Sales",
       "defaultStagesDesc": "Default stages (New Lead → Won) will be created automatically.",
+      "defaultPipelineName": "Sales Pipeline",
+      "defaultStages": {
+        "newLead": "New Lead",
+        "qualified": "Qualified",
+        "proposalSent": "Proposal Sent",
+        "negotiation": "Negotiation",
+        "won": "Won"
+      },
       "cancel": "Cancel",
       "creating": "Creating...",
       "createPipelineBtn": "Create Pipeline",

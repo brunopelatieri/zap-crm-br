@@ -30,20 +30,15 @@ import { useCan } from '@/hooks/use-can';
 import { useAuth } from '@/hooks/use-auth';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
+import {
+  DEFAULT_STAGE_DEFS,
+  isStockDefaultPipeline,
+} from '@/lib/pipelines/default-stages';
 
 // Pipeline creation is admin-class (settings-tier write under
 // the new RLS); deal creation is operational and only requires
 // agent+. The two CTAs gate on different `useCan` capabilities,
 // not on different copy.
-
-// Spec-defined seed — name and color per the product spec.
-const SPEC_DEFAULT_STAGES = [
-  { name: 'New Lead', color: '#3b82f6', position: 0 }, // blue
-  { name: 'Qualified', color: '#eab308', position: 1 }, // yellow
-  { name: 'Proposal Sent', color: '#f97316', position: 2 }, // orange
-  { name: 'Negotiation', color: '#8b5cf6', position: 3 }, // purple
-  { name: 'Won', color: '#22c55e', position: 4 }, // green
-];
 
 export default function PipelinesPage() {
   const t = useTranslations('Pipelines.page');
@@ -51,6 +46,18 @@ export default function PipelinesPage() {
   const canEditSettings = useCan('edit-settings');
   const canCreateDeals = useCan('send-messages');
   const { accountId } = useAuth();
+
+  /** Persist stage titles in the active locale (pt-BR / en). */
+  const buildDefaultStagesPayload = useCallback(
+    (pipelineId: string) =>
+      DEFAULT_STAGE_DEFS.map((s) => ({
+        pipeline_id: pipelineId,
+        name: t(`defaultStages.${s.key}`),
+        color: s.color,
+        position: s.position,
+      })),
+    [t]
+  );
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
@@ -126,7 +133,7 @@ export default function PipelinesPage() {
         .insert({
           user_id: user.id,
           account_id: accountId,
-          name: 'Sales Pipeline',
+          name: t('defaultPipelineName'),
         })
         .select()
         .single();
@@ -136,16 +143,12 @@ export default function PipelinesPage() {
         return null;
       }
 
-      const stagesPayload = SPEC_DEFAULT_STAGES.map((s) => ({
-        pipeline_id: pipeline.id,
-        name: s.name,
-        color: s.color,
-        position: s.position,
-      }));
-      await supabase.from('pipeline_stages').insert(stagesPayload);
+      await supabase
+        .from('pipeline_stages')
+        .insert(buildDefaultStagesPayload(pipeline.id));
 
       return pipeline as Pipeline;
-    }, [supabase, accountId]);
+    }, [supabase, accountId, t, buildDefaultStagesPayload]);
 
   // Initial load + seed-if-empty
   useEffect(() => {
@@ -176,15 +179,80 @@ export default function PipelinesPage() {
     };
   }, [loadPipelines, seedDefaultPipeline]);
 
+  /**
+   * If the selected funnel is still the untouched stock seed, rewrite
+   * pipeline + stage titles into the active locale so the board shows
+   * translated labels (e.g. "Sales Pipeline" → "Funil de Vendas").
+   */
+  const localizeStockPipelineTitles = useCallback(
+    async (
+      pipeline: Pipeline,
+      currentStages: PipelineStage[]
+    ): Promise<PipelineStage[]> => {
+      if (!isStockDefaultPipeline(pipeline.name, currentStages)) {
+        return currentStages;
+      }
+
+      const localizedName = t('defaultPipelineName');
+      const updates = DEFAULT_STAGE_DEFS.map((def) => {
+        const stage = currentStages.find((s) => s.position === def.position);
+        if (!stage) return null;
+        const name = t(`defaultStages.${def.key}`);
+        return name === stage.name
+          ? null
+          : { id: stage.id, name, color: stage.color, position: stage.position };
+      }).filter(Boolean) as Array<{
+        id: string;
+        name: string;
+        color: string;
+        position: number;
+      }>;
+
+      const needsPipelineRename = pipeline.name !== localizedName;
+      if (!needsPipelineRename && updates.length === 0) return currentStages;
+
+      if (needsPipelineRename) {
+        await supabase
+          .from('pipelines')
+          .update({ name: localizedName })
+          .eq('id', pipeline.id);
+        setPipelines((prev) =>
+          prev.map((p) =>
+            p.id === pipeline.id ? { ...p, name: localizedName } : p
+          )
+        );
+      }
+
+      if (updates.length > 0) {
+        await supabase.from('pipeline_stages').upsert(
+          updates.map((u) => ({
+            id: u.id,
+            pipeline_id: pipeline.id,
+            name: u.name,
+            color: u.color,
+            position: u.position,
+          })),
+          { onConflict: 'id' }
+        );
+        return currentStages.map((stage) => {
+          const next = updates.find((u) => u.id === stage.id);
+          return next ? { ...stage, name: next.name } : stage;
+        });
+      }
+
+      return currentStages;
+    },
+    [supabase, t]
+  );
+
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
   // state; the load completion uses async setters inside promise
   // callbacks (not synchronous in the effect body).
   useEffect(() => {
     if (!selectedPipelineId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync clear with selection
       setStages([]);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDeals([]);
       return;
     }
@@ -195,13 +263,26 @@ export default function PipelinesPage() {
         loadDeals(selectedPipelineId),
       ]);
       if (cancelled) return;
-      setStages(s);
+
+      const pipeline = pipelines.find((p) => p.id === selectedPipelineId);
+      const localizedStages = pipeline
+        ? await localizeStockPipelineTitles(pipeline, s)
+        : s;
+      if (cancelled) return;
+
+      setStages(localizedStages);
       setDeals(d);
     })();
     return () => {
       cancelled = true;
     };
-  }, [selectedPipelineId, loadStages, loadDeals]);
+  }, [
+    selectedPipelineId,
+    loadStages,
+    loadDeals,
+    pipelines,
+    localizeStockPipelineTitles,
+  ]);
 
   const refreshPipelines = useCallback(async () => {
     const list = await loadPipelines();
@@ -286,13 +367,9 @@ export default function PipelinesPage() {
       return;
     }
 
-    const stagesPayload = SPEC_DEFAULT_STAGES.map((s) => ({
-      pipeline_id: pipeline.id,
-      name: s.name,
-      color: s.color,
-      position: s.position,
-    }));
-    await supabase.from('pipeline_stages').insert(stagesPayload);
+    await supabase
+      .from('pipeline_stages')
+      .insert(buildDefaultStagesPayload(pipeline.id));
 
     setNewPipelineName('');
     setNewPipelineOpen(false);
