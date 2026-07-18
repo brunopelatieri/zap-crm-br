@@ -1,19 +1,23 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { useLocale, useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { useTransition } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
-import { setLocaleAction } from "@/lib/i18n/actions";
-import { SUPPORTED_LOCALES, LOCALE_LABELS, isAppLocale } from "@/lib/i18n/locales";
+import { setLocaleAction } from '@/lib/i18n/actions';
+import {
+  SUPPORTED_LOCALES,
+  LOCALE_LABELS,
+  isAppLocale,
+} from '@/lib/i18n/locales';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 
 /**
  * Language switcher — lives in Settings → Appearance next to the
@@ -24,7 +28,7 @@ import {
  * "changes live" feel as the theme picker.
  */
 export function LanguageSwitcher() {
-  const t = useTranslations("Settings.appearance");
+  const t = useTranslations('Settings.appearance');
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -35,15 +39,15 @@ export function LanguageSwitcher() {
     startTransition(async () => {
       await setLocaleAction(value);
       router.refresh();
-      toast.success(t("languageChanged", { language: LOCALE_LABELS[value] }));
+      toast.success(t('languageChanged', { language: LOCALE_LABELS[value] }));
     });
   }
 
   return (
     <Select value={locale} onValueChange={handleChange} disabled={isPending}>
       <SelectTrigger
-        aria-label={t("language")}
-        className="w-full max-w-xs bg-card"
+        aria-label={t('language')}
+        className="bg-card w-full max-w-xs"
       >
         <SelectValue />
       </SelectTrigger>

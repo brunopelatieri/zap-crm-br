@@ -1,15 +1,15 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import {
   checkRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
-} from '@/lib/rate-limit'
+} from '@/lib/rate-limit';
 import {
   sendMessageToConversation,
   validateSendMessageParams,
   SendMessageError,
-} from '@/lib/whatsapp/send-message'
+} from '@/lib/whatsapp/send-message';
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -22,25 +22,22 @@ import {
 // dashboard's internal `{ error }` shape.
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = await createClient();
 
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Per-user rate limit. Bucket key is scoped to this route so
     // `/broadcast` has an independent budget.
-    const limit = checkRateLimit(`send:${user.id}`, RATE_LIMITS.send)
+    const limit = checkRateLimit(`send:${user.id}`, RATE_LIMITS.send);
     if (!limit.success) {
-      return rateLimitResponse(limit)
+      return rateLimitResponse(limit);
     }
 
     // Resolve the caller's account_id. Every downstream lookup
@@ -51,16 +48,16 @@ export async function POST(request: Request) {
       .from('profiles')
       .select('account_id')
       .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
+      .maybeSingle();
+    const accountId = profile?.account_id as string | undefined;
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
+        { status: 403 }
+      );
     }
 
-    const body = await request.json()
+    const body = await request.json();
     const {
       // `conversation_id` targets an existing thread (inbox). `contact_id`
       // lets a caller initiate from a contact that may have no conversation
@@ -77,7 +74,7 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
-    } = body
+    } = body;
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
       return NextResponse.json(
@@ -86,7 +83,7 @@ export async function POST(request: Request) {
             'Either conversation_id or contact_id, plus message_type, are required',
         },
         { status: 400 }
-      )
+      );
     }
 
     // Validate the message shape up front — before the contact_id path
@@ -99,19 +96,22 @@ export async function POST(request: Request) {
         mediaUrl: media_url,
         templateName: template_name,
         interactivePayload: interactive_payload,
-      })
+      });
     } catch (err) {
       if (err instanceof SendMessageError) {
-        return NextResponse.json({ error: err.message }, { status: err.status })
+        return NextResponse.json(
+          { error: err.message },
+          { status: err.status }
+        );
       }
-      throw err
+      throw err;
     }
 
     // Resolve the target conversation. With `conversation_id` we load the
     // existing thread; with `contact_id` we find-or-create one for the
     // contact so a business-initiated template send (Contact detail view)
     // reuses the shared send core below.
-    let conversationId: string | null = null
+    let conversationId: string | null = null;
 
     if (conversationIdInput) {
       const { data, error: convError } = await supabase
@@ -119,15 +119,15 @@ export async function POST(request: Request) {
         .select('id')
         .eq('id', conversationIdInput)
         .eq('account_id', accountId)
-        .single()
+        .single();
 
       if (convError || !data) {
         return NextResponse.json(
           { error: 'Conversation not found' },
           { status: 404 }
-        )
+        );
       }
-      conversationId = data.id
+      conversationId = data.id;
     } else {
       // contact_id path: verify the contact is in this account first so a
       // caller can't open a conversation against someone else's contact.
@@ -136,13 +136,13 @@ export async function POST(request: Request) {
         .select('id')
         .eq('id', contact_id)
         .eq('account_id', accountId)
-        .maybeSingle()
+        .maybeSingle();
 
       if (contactErr || !contactRow) {
         return NextResponse.json(
           { error: 'Contact not found' },
           { status: 404 }
-        )
+        );
       }
 
       const resolved = await findOrCreateConversation(
@@ -150,21 +150,21 @@ export async function POST(request: Request) {
         accountId,
         user.id,
         contact_id
-      )
+      );
       if (!resolved) {
         return NextResponse.json(
           { error: 'Failed to open a conversation for this contact' },
           { status: 500 }
-        )
+        );
       }
-      conversationId = resolved
+      conversationId = resolved;
     }
 
     if (!conversationId) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
-      )
+      );
     }
 
     // Delegate to the shared send core (validates, sends to Meta with
@@ -184,32 +184,32 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
-      })
+      });
 
       return NextResponse.json({
         success: true,
         message_id: result.messageId,
         whatsapp_message_id: result.whatsappMessageId,
-      })
+      });
     } catch (err) {
       if (err instanceof SendMessageError) {
         return NextResponse.json(
           { error: err.message },
           { status: err.status }
-        )
+        );
       }
-      throw err
+      throw err;
     }
   } catch (error) {
-    console.error('Error in WhatsApp send POST:', error)
+    console.error('Error in WhatsApp send POST:', error);
     return NextResponse.json(
       { error: 'Failed to send message' },
       { status: 500 }
-    )
+    );
   }
 }
 
-type SendSupabase = Awaited<ReturnType<typeof createClient>>
+type SendSupabase = Awaited<ReturnType<typeof createClient>>;
 
 /**
  * Return the contact's conversation id in this account, creating one if
@@ -222,16 +222,16 @@ async function findOrCreateConversation(
   supabase: SendSupabase,
   accountId: string,
   userId: string,
-  contactId: string,
+  contactId: string
 ): Promise<string | null> {
   const { data: existing } = await supabase
     .from('conversations')
     .select('id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
-    .maybeSingle()
+    .maybeSingle();
 
-  if (existing) return existing.id
+  if (existing) return existing.id;
 
   const { data: created, error } = await supabase
     .from('conversations')
@@ -241,12 +241,15 @@ async function findOrCreateConversation(
       contact_id: contactId,
     })
     .select('id')
-    .single()
+    .single();
 
   if (error) {
-    console.error('Error creating conversation for contact send:', error.message)
-    return null
+    console.error(
+      'Error creating conversation for contact send:',
+      error.message
+    );
+    return null;
   }
 
-  return created.id
+  return created.id;
 }

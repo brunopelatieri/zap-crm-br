@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * Editor toolbar — flow name / description, status chip, dirty
@@ -22,7 +22,7 @@
  * /flows/[id]/runs) — those don't belong in the hook.
  */
 
-import { useRouter } from "next/navigation";
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   CircleDot,
@@ -33,14 +33,11 @@ import {
   Save,
   Trash2,
   Workflow,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import {
-  useFlowEditor,
-  type BuilderState,
-} from "./flow-editor-state";
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { useFlowEditor, type BuilderState } from './flow-editor-state';
 
 export function EditorHeader() {
   const router = useRouter();
@@ -63,14 +60,14 @@ export function EditorHeader() {
         {/* ---- left: back · icon · name · status · edited ---- */}
         <button
           type="button"
-          onClick={() => router.push("/flows")}
+          onClick={() => router.push('/flows')}
           title="Back to Flows"
           aria-label="Back to Flows"
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+        <span className="bg-primary-soft text-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
           <Workflow className="h-[18px] w-[18px]" />
         </span>
         <input
@@ -79,12 +76,12 @@ export function EditorHeader() {
           placeholder="Flow name"
           spellCheck={false}
           aria-label="Flow name"
-          className="min-w-[120px] max-w-[340px] rounded-lg border border-transparent bg-transparent px-2 py-1 text-lg font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-muted focus:border-primary focus:bg-transparent focus:shadow-[0_0_0_3px_var(--primary-soft)]"
+          className="text-foreground hover:bg-muted focus:border-primary max-w-[340px] min-w-[120px] rounded-lg border border-transparent bg-transparent px-2 py-1 text-lg leading-tight font-bold tracking-tight transition-colors outline-none focus:bg-transparent focus:shadow-[0_0_0_3px_var(--primary-soft)]"
         />
         <StatusChip status={state.status} />
         {dirty && (
           <span
-            className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-amber-300"
+            className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium tracking-wide text-amber-300 uppercase"
             title="Unsaved changes — hit Save to persist"
             aria-live="polite"
           >
@@ -102,7 +99,7 @@ export function EditorHeader() {
           >
             <History className="h-3.5 w-3.5" />
             Runs
-            <span className="ml-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <span className="bg-muted text-muted-foreground ml-0.5 rounded px-1.5 py-0.5 font-mono text-[11px]">
               {flow.execution_count}
             </span>
           </Button>
@@ -115,11 +112,11 @@ export function EditorHeader() {
             <Trash2 className="h-3.5 w-3.5" />
             Delete
           </Button>
-          {state.status === "active" ? (
+          {state.status === 'active' ? (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void setStatus("draft")}
+              onClick={() => void setStatus('draft')}
               disabled={activating}
             >
               {activating ? (
@@ -133,11 +130,11 @@ export function EditorHeader() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void setStatus("active")}
+              onClick={() => void setStatus('active')}
               disabled={activating || !canActivate}
               title={
                 !canActivate
-                  ? "Fix the issues below before activating"
+                  ? 'Fix the issues below before activating'
                   : undefined
               }
             >
@@ -168,34 +165,34 @@ export function EditorHeader() {
         }
         placeholder="Add a short description (internal — customers don't see this)"
         aria-label="Flow description"
-        className="w-full max-w-[78ch] rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] text-muted-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-muted/50 focus:border-primary focus:bg-transparent focus:text-foreground"
+        className="text-muted-foreground placeholder:text-muted-foreground/60 hover:bg-muted/50 focus:border-primary focus:text-foreground w-full max-w-[78ch] rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] transition-colors outline-none focus:bg-transparent"
       />
     </div>
   );
 }
 
-function StatusChip({ status }: { status: BuilderState["status"] }) {
+function StatusChip({ status }: { status: BuilderState['status'] }) {
   const cfg = {
     draft: {
       // Neutral, not amber — amber is reserved for the adjacent
       // "Edited" dirty signal, so the two don't read as the same alert.
-      cls: "border-border bg-muted text-muted-foreground",
-      label: "Draft",
+      cls: 'border-border bg-muted text-muted-foreground',
+      label: 'Draft',
     },
     active: {
-      cls: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
-      label: "Active",
+      cls: 'border-emerald-600/40 bg-emerald-500/10 text-emerald-300',
+      label: 'Active',
     },
     archived: {
-      cls: "border-border bg-muted/50 text-muted-foreground",
-      label: "Archived",
+      cls: 'border-border bg-muted/50 text-muted-foreground',
+      label: 'Archived',
     },
   }[status];
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-medium",
-        cfg.cls,
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-medium',
+        cfg.cls
       )}
     >
       <CircleDot className="h-3 w-3" />

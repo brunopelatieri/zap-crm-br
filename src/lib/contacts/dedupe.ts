@@ -1,5 +1,5 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { normalizePhone, phonesMatch } from "@/lib/whatsapp/phone-utils";
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils';
 
 /**
  * Contact de-duplication helpers, shared by the WhatsApp webhook, the
@@ -35,7 +35,7 @@ export interface ExistingContact {
 export async function findExistingContact(
   db: SupabaseClient,
   accountId: string,
-  phone: string,
+  phone: string
 ): Promise<ExistingContact | null> {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
@@ -43,10 +43,10 @@ export async function findExistingContact(
   const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
 
   const { data, error } = await db
-    .from("contacts")
-    .select("*")
-    .eq("account_id", accountId)
-    .like("phone", `%${suffix}`);
+    .from('contacts')
+    .select('*')
+    .eq('account_id', accountId)
+    .like('phone', `%${suffix}`);
 
   if (error || !data) return null;
 
@@ -60,7 +60,10 @@ export async function findExistingContact(
  * `phone` (vs only a fuzzy trunk-variant match). The form hard-blocks
  * exact matches but only warns on fuzzy ones.
  */
-export function isExactMatch(existing: ExistingContact, phone: string): boolean {
+export function isExactMatch(
+  existing: ExistingContact,
+  phone: string
+): boolean {
   return normalizeKey(existing.phone) === normalizeKey(phone);
 }
 
@@ -70,8 +73,8 @@ export function isExactMatch(existing: ExistingContact, phone: string): boolean 
  * format-equal insert that slipped past the in-app check.
  */
 export function isUniqueViolation(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  return (error as { code?: string }).code === "23505";
+  if (!error || typeof error !== 'object') return false;
+  return (error as { code?: string }).code === '23505';
 }
 
 /**
@@ -81,7 +84,7 @@ export function isUniqueViolation(error: unknown): boolean {
  * count removed as in-file duplicates.
  */
 export function dedupeByPhone<T extends { phone: string }>(
-  rows: T[],
+  rows: T[]
 ): { unique: T[]; duplicates: number } {
   const seen = new Set<string>();
   const unique: T[] = [];

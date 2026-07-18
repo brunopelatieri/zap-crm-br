@@ -1,7 +1,7 @@
-import type { NextConfig } from "next";
-import createNextIntlPlugin from "next-intl/plugin";
+import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
 
-const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
 /**
  * Cabeçalhos de segurança básicos aplicados a toda resposta.
@@ -23,23 +23,23 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
  */
 const SECURITY_HEADERS = [
   {
-    key: "Strict-Transport-Security",
-    value: "max-age=63072000; includeSubDomains; preload",
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload',
   },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   {
     // O microfone é permitido para same-origin (`self`) para que o
     // compositor da caixa de entrada possa gravar notas de voz via
     // MediaRecorder. Todo o resto permanece negado — uma dependência
     // comprometida não consegue capturar silenciosamente a câmera /
     // geolocalização / etc.
-    key: "Permissions-Policy",
-    value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
+    key: 'Permissions-Policy',
+    value: 'camera=(), microphone=(self), geolocation=(), payment=(), usb=()',
   },
   {
-    key: "Content-Security-Policy-Report-Only",
+    key: 'Content-Security-Policy-Report-Only',
     value: [
       "default-src 'self'",
       // O Next.js precisa de 'unsafe-inline' para seu script de
@@ -65,7 +65,7 @@ const SECURITY_HEADERS = [
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
-    ].join("; "),
+    ].join('; '),
   },
 ] as const;
 
@@ -112,16 +112,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/api/:path*",
-        headers: [{ key: "Cache-Control", value: "no-store" }],
+        source: '/api/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
       {
-        source: "/:path((?!_next/static|_next/image|api).*)",
+        source: '/:path((?!_next/static|_next/image|api).*)',
         headers: [
           {
-            key: "Cache-Control",
+            key: 'Cache-Control',
             value:
-              "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+              'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
           },
         ],
       },
@@ -129,7 +129,7 @@ const nextConfig: NextConfig = {
         // Cabeçalhos de segurança em toda resposta, incluindo assets
         // de /_next/static (o nosniff importa lá) e /api/* (HSTS +
         // referrer-policy não fazem mal).
-        source: "/:path*",
+        source: '/:path*',
         headers: [...SECURITY_HEADERS],
       },
     ];

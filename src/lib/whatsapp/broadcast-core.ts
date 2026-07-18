@@ -148,7 +148,9 @@ export async function createBroadcast(
   const resolved: { contactId: string; phone: string; params: string[] }[] = [];
   let rejected = 0;
   for (const r of recipients) {
-    const sanitized = sanitizePhoneForMeta(typeof r.to === 'string' ? r.to : '');
+    const sanitized = sanitizePhoneForMeta(
+      typeof r.to === 'string' ? r.to : ''
+    );
     if (!isValidE164(sanitized)) {
       rejected++;
       continue;
@@ -231,7 +233,11 @@ export async function createBroadcast(
   const byContact = new Map(deduped.map((r) => [r.contactId, r]));
   const planned: PlannedRecipient[] = recipientRows.map((row) => {
     const r = byContact.get(row.contact_id as string)!;
-    return { recipientRowId: row.id as string, phone: r.phone, params: r.params };
+    return {
+      recipientRowId: row.id as string,
+      phone: r.phone,
+      params: r.params,
+    };
   });
 
   return {
@@ -285,7 +291,8 @@ export async function deliverBroadcast(
         lastError = null;
         break;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
         lastError = message;
         // Only a "recipient not allowed" error is worth another variant.
         if (!isRecipientNotAllowedError(message)) break;

@@ -1,9 +1,9 @@
-"use server";
+'use server';
 
-import { cookies } from "next/headers";
-import { revalidatePath } from "next/cache";
+import { cookies } from 'next/headers';
+import { revalidatePath } from 'next/cache';
 
-import { LOCALE_COOKIE, isAppLocale, type AppLocale } from "@/lib/i18n/locales";
+import { LOCALE_COOKIE, isAppLocale, type AppLocale } from '@/lib/i18n/locales';
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
@@ -26,10 +26,10 @@ export async function setLocaleAction(locale: AppLocale): Promise<void> {
 
   const cookieStore = await cookies();
   cookieStore.set(LOCALE_COOKIE, locale, {
-    path: "/",
+    path: '/',
     maxAge: ONE_YEAR_SECONDS,
-    sameSite: "lax",
+    sameSite: 'lax',
   });
 
-  revalidatePath("/", "layout");
+  revalidatePath('/', 'layout');
 }

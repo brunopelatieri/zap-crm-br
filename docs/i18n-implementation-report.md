@@ -6,14 +6,14 @@ variável de ambiente para seleção dinâmica por dispositivo (inglês +
 português brasileiro), o que foi alterado no código, decisões de
 produto e resultados da revisão de qualidade.
 
-| | |
-|---|---|
-| **Status** | Implementado (v1) |
-| **Biblioteca** | [`next-intl`](https://next-intl.dev) `^4.13.1` |
-| **Locales** | `pt-BR` (padrão de runtime), `en` (fonte da verdade das chaves) |
-| **Roteamento** | Sem prefixo de URL (`/pt-br/...`) |
-| **Persistência** | Cookie `NEXT_LOCALE` (por dispositivo) |
-| **Última validação** | Paridade de chaves + `tsc --noEmit` OK |
+|                      |                                                                 |
+| -------------------- | --------------------------------------------------------------- |
+| **Status**           | Implementado (v1)                                               |
+| **Biblioteca**       | [`next-intl`](https://next-intl.dev) `^4.13.1`                  |
+| **Locales**          | `pt-BR` (padrão de runtime), `en` (fonte da verdade das chaves) |
+| **Roteamento**       | Sem prefixo de URL (`/pt-br/...`)                               |
+| **Persistência**     | Cookie `NEXT_LOCALE` (por dispositivo)                          |
+| **Última validação** | Paridade de chaves + `tsc --noEmit` OK                          |
 
 ---
 
@@ -35,7 +35,7 @@ e sem migration no Supabase.
 - Extração das principais lacunas de strings hardcoded (auth, join,
   notifications, agents, quick replies, interactive builder, labels
   de negócio em `src/lib/`).
-- Guardrails de manutenção (`npm run i18n:check` + CI).
+- Guardrails de manutenção (`npm run i18n:check` local).
 - Política explícita: respostas de `/api/**` permanecem em inglês.
 
 ### Fora do escopo (v1)
@@ -58,8 +58,8 @@ O projeto já usava `next-intl` via plugin em
 [`next.config.ts`](../next.config.ts):
 
 ```ts
-import createNextIntlPlugin from "next-intl/plugin";
-const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
+import createNextIntlPlugin from 'next-intl/plugin';
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 ```
 
 A configuração de request vive em [`src/i18n/request.ts`](../src/i18n/request.ts)
@@ -99,24 +99,24 @@ env apontava para um locale sem arquivo.
 
 [`src/lib/i18n/locales.ts`](../src/lib/i18n/locales.ts):
 
-| Export | Papel |
-|---|---|
-| `SUPPORTED_LOCALES` | `['pt-BR', 'en']` |
-| `AppLocale` | Tipo união derivado do array |
-| `DEFAULT_LOCALE` | `'pt-BR'` |
-| `LOCALE_COOKIE` | `'NEXT_LOCALE'` |
-| `LOCALE_LABELS` | Rótulos nativos no seletor |
-| `isAppLocale()` | Type guard |
+| Export              | Papel                        |
+| ------------------- | ---------------------------- |
+| `SUPPORTED_LOCALES` | `['pt-BR', 'en']`            |
+| `AppLocale`         | Tipo união derivado do array |
+| `DEFAULT_LOCALE`    | `'pt-BR'`                    |
+| `LOCALE_COOKIE`     | `'NEXT_LOCALE'`              |
+| `LOCALE_LABELS`     | Rótulos nativos no seletor   |
+| `isAppLocale()`     | Type guard                   |
 
 Nenhum outro módulo deve hardcodar a lista de idiomas.
 
 ### 2.4 Persistência e troca de idioma
 
-| Peça | Arquivo | Comportamento |
-|---|---|---|
-| Server Action | [`src/lib/i18n/actions.ts`](../src/lib/i18n/actions.ts) | `setLocaleAction(locale)` grava cookie (`path: '/'`, `maxAge` ≈ 1 ano, `sameSite: 'lax'`) e chama `revalidatePath('/', 'layout')` |
-| UI | [`src/components/settings/language-switcher.tsx`](../src/components/settings/language-switcher.tsx) | Select shadcn; chama a action dentro de `useTransition`, depois `router.refresh()` + toast |
-| Local de exibição | [`appearance-panel.tsx`](../src/components/settings/appearance-panel.tsx) | Seção **Language** em Settings → Appearance |
+| Peça              | Arquivo                                                                                             | Comportamento                                                                                                                     |
+| ----------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Server Action     | [`src/lib/i18n/actions.ts`](../src/lib/i18n/actions.ts)                                             | `setLocaleAction(locale)` grava cookie (`path: '/'`, `maxAge` ≈ 1 ano, `sameSite: 'lax'`) e chama `revalidatePath('/', 'layout')` |
+| UI                | [`src/components/settings/language-switcher.tsx`](../src/components/settings/language-switcher.tsx) | Select shadcn; chama a action dentro de `useTransition`, depois `router.refresh()` + toast                                        |
+| Local de exibição | [`appearance-panel.tsx`](../src/components/settings/appearance-panel.tsx)                           | Seção **Language** em Settings → Appearance                                                                                       |
 
 Fluxo:
 
@@ -134,10 +134,10 @@ Sem hard reload e sem segmento `[locale]` nas rotas (`/dashboard`,
 
 ### 2.5 Dicionários
 
-| Arquivo | Papel |
-|---|---|
-| [`messages/en.json`](../messages/en.json) | Fonte da verdade / fallback conceitual |
-| [`messages/pt-BR.json`](../messages/pt-BR.json) | Tradução 1:1 da árvore de chaves |
+| Arquivo                                         | Papel                                  |
+| ----------------------------------------------- | -------------------------------------- |
+| [`messages/en.json`](../messages/en.json)       | Fonte da verdade / fallback conceitual |
+| [`messages/pt-BR.json`](../messages/pt-BR.json) | Tradução 1:1 da árvore de chaves       |
 
 Namespaces de topo (ordem aproximada da navegação do produto):
 
@@ -195,18 +195,18 @@ Valores aceitos: `en`, `pt-BR`.
 
 Instrumentados / traduzidos (entre outros):
 
-| Área | Namespaces / abordagem |
-|---|---|
-| Signup / forgot-password / join | `SignupPage`, `ForgotPasswordPage`, `JoinPage` |
-| Notifications | `Notifications` |
-| AI Agents (page, playground, usage) | `Agents.*` |
-| Quick replies | `Settings.quickReplies` |
-| Interactive builder | `Interactive.builder` |
-| Status de templates Meta | `Settings.templates.status` + keys em `template-status.ts` |
-| Moedas | namespace `Currencies` + consumidores em deals/overview |
-| Galeria de automações | `Automations.list.templateCards.*` |
-| Triggers / relative time | `Automations.builder.triggers.*.label`, `Automations.relative` + `formatRelative(..., t?)` |
-| Galeria de flows | `Flows.list.templates.<slug>.*` |
+| Área                                | Namespaces / abordagem                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| Signup / forgot-password / join     | `SignupPage`, `ForgotPasswordPage`, `JoinPage`                                             |
+| Notifications                       | `Notifications`                                                                            |
+| AI Agents (page, playground, usage) | `Agents.*`                                                                                 |
+| Quick replies                       | `Settings.quickReplies`                                                                    |
+| Interactive builder                 | `Interactive.builder`                                                                      |
+| Status de templates Meta            | `Settings.templates.status` + keys em `template-status.ts`                                 |
+| Moedas                              | namespace `Currencies` + consumidores em deals/overview                                    |
+| Galeria de automações               | `Automations.list.templateCards.*`                                                         |
+| Triggers / relative time            | `Automations.builder.triggers.*.label`, `Automations.relative` + `formatRelative(..., t?)` |
+| Galeria de flows                    | `Flows.list.templates.<slug>.*`                                                            |
 
 **Labels de negócio em `src/lib/`:** enums/slugs/valores persistidos
 **não** são traduzidos — só o texto de exibição. Ex.:
@@ -224,7 +224,7 @@ Documentado em:
 
 - Comentário em [`src/middleware.ts`](../src/middleware.ts) (próximo
   ao JSON `Unauthorized`).
-- Seção *Language of error messages* em
+- Seção _Language of error messages_ em
   [`docs/public-api.md`](./public-api.md).
 
 A UI deve mapear códigos/formas de erro conhecidas para chaves
@@ -232,11 +232,10 @@ A UI deve mapear códigos/formas de erro conhecidas para chaves
 
 ### Fase 5 — Guardrails
 
-| Artefato | Descrição |
-|---|---|
-| [`scripts/check-i18n-parity.mjs`](../scripts/check-i18n-parity.mjs) | Compara árvores de chaves `en.json` vs demais locales |
-| `npm run i18n:check` | Script no `package.json` |
-| CI | Step *i18n key parity* em [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
+| Artefato                                                            | Descrição                                                         |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [`scripts/check-i18n-parity.mjs`](../scripts/check-i18n-parity.mjs) | Compara árvores de chaves `en.json` vs demais locales             |
+| `npm run i18n:check`                                                | Script no `package.json` — rode localmente antes de commit/deploy |
 
 Tipagem estrita `AppConfig` / `IntlMessages` do next-intl foi
 **avaliada e removida**: o codebase usa muitas chaves dinâmicas
@@ -284,16 +283,19 @@ src/lib/automations/trigger-meta.ts         # formatRelative(t?)
 src/lib/flows/validate.ts                   # comentário de política
 ```
 
-### Config / docs / CI
+### Config / docs
 
 ```
 .env.local.example
 package.json                                # i18n:check
-.github/workflows/ci.yml
 docs/public-api.md
 docs/i18n-implementation-report.md          # este arquivo
 README.md                                   # seção Idiomas
 ```
+
+> **Nota (2026):** a pasta `.github/` foi removida deste repositório.
+> Não há GitHub Actions para paridade i18n — use `npm run i18n:check`
+> localmente ou configure CI no seu fork.
 
 ---
 
@@ -303,21 +305,21 @@ Auditoria executada após a implementação das fases 0–5.
 
 ### 5.1 Checks automatizados
 
-| Check | Resultado |
-|---|---|
-| `npm run i18n:check` | Paridade EN ↔ pt-BR (mesma árvore de chaves) |
-| `npm run typecheck` | Sem erros |
-| `vitest` em `flows/validate.test.ts` | 30/30 passando |
+| Check                                | Resultado                                    |
+| ------------------------------------ | -------------------------------------------- |
+| `npm run i18n:check`                 | Paridade EN ↔ pt-BR (mesma árvore de chaves) |
+| `npm run typecheck`                  | Sem erros                                    |
+| `vitest` em `flows/validate.test.ts` | 30/30 passando                               |
 
 ### 5.2 Bugs encontrados e corrigidos na auditoria
 
-| Severidade | Achado | Correção |
-|---|---|---|
-| **Alta (UI)** | `Settings.sections` não tinha a chave `quick-replies`, mas o rail (`settings-rail.tsx`) e o tipo `SettingsSection` usam `'quick-replies'`. Em runtime o next-intl falhava / mostrava MISSING_MESSAGE ao abrir Settings com PT ou EN. | Adicionadas chaves `Settings.sections.quick-replies` em `en.json` e `pt-BR.json`. |
-| **Alta (regressão)** | Em `ai-playground.tsx`, o callback `turns.map((t) => …)` sombreava o `t` de `useTranslations`, quebrando `t('handoffNote')` (erro TS2349 / runtime). | Renomeado o item do map para `turn`. |
-| **Média** | `template-manager` passou a chamar `t(\`status.${label}\`)` antes das chaves `Settings.templates.status.*` existirem. | Chaves `draft`…`pendingDeletion` adicionadas em EN+PT. |
-| **Média** | Comentários em `currency.ts` referiam namespace `Currencies` sem o namespace / sem atualizar consumidores. | Namespace `Currencies` + uso em `deals-settings` / `settings-overview`. |
-| **Baixa (Fase 0)** | Namespace `roles` inválido em overview. | `Settings.roles`. |
+| Severidade           | Achado                                                                                                                                                                                                                               | Correção                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| **Alta (UI)**        | `Settings.sections` não tinha a chave `quick-replies`, mas o rail (`settings-rail.tsx`) e o tipo `SettingsSection` usam `'quick-replies'`. Em runtime o next-intl falhava / mostrava MISSING_MESSAGE ao abrir Settings com PT ou EN. | Adicionadas chaves `Settings.sections.quick-replies` em `en.json` e `pt-BR.json`. |
+| **Alta (regressão)** | Em `ai-playground.tsx`, o callback `turns.map((t) => …)` sombreava o `t` de `useTranslations`, quebrando `t('handoffNote')` (erro TS2349 / runtime).                                                                                 | Renomeado o item do map para `turn`.                                              |
+| **Média**            | `template-manager` passou a chamar `t(\`status.${label}\`)`antes das chaves`Settings.templates.status.*` existirem.                                                                                                                  | Chaves `draft`…`pendingDeletion` adicionadas em EN+PT.                            |
+| **Média**            | Comentários em `currency.ts` referiam namespace `Currencies` sem o namespace / sem atualizar consumidores.                                                                                                                           | Namespace `Currencies` + uso em `deals-settings` / `settings-overview`.           |
+| **Baixa (Fase 0)**   | Namespace `roles` inválido em overview.                                                                                                                                                                                              | `Settings.roles`.                                                                 |
 
 ### 5.3 Decisões conscientes / limitações conhecidas
 
@@ -340,22 +342,22 @@ Auditoria executada após a implementação das fases 0–5.
 Ainda podem existir strings em inglês em componentes de menor
 tráfego ou em helpers de formatação não listados na Fase 3. O
 padrão para novas features é: chave em `en.json` → espelho PT →
-`useTranslations` / `getTranslations`. O CI falha se a paridade de
-chaves quebrar.
+`useTranslations` / `getTranslations`. Rode `npm run i18n:check` antes
+de commitar — a paridade de chaves quebra o script se EN e PT divergirem.
 
 ---
 
 ## 6. Como o estado é gerenciado
 
-| Preocupação | Estratégia |
-|---|---|
-| Locale atual no SSR | Cookie lido em `getRequestConfig` |
-| Locale atual no client | `useLocale()` (next-intl) |
-| Troca de idioma | Server Action + `router.refresh()` |
-| Mensagens no client | Props do `NextIntlClientProvider` |
-| Default de deployment | `NEXT_PUBLIC_APP_LOCALE` |
-| Paridade de dicionários | Script + CI |
-| Tema (independente) | `localStorage` (`useTheme`) — ortogonal ao locale |
+| Preocupação             | Estratégia                                        |
+| ----------------------- | ------------------------------------------------- |
+| Locale atual no SSR     | Cookie lido em `getRequestConfig`                 |
+| Locale atual no client  | `useLocale()` (next-intl)                         |
+| Troca de idioma         | Server Action + `router.refresh()`                |
+| Mensagens no client     | Props do `NextIntlClientProvider`                 |
+| Default de deployment   | `NEXT_PUBLIC_APP_LOCALE`                          |
+| Paridade de dicionários | `npm run i18n:check`                              |
+| Tema (independente)     | `localStorage` (`useTheme`) — ortogonal ao locale |
 
 Não há store Redux/Zustand para idioma. O cookie é a única fonte
 mutável; o servidor re-resolve a cada request.
@@ -367,7 +369,7 @@ mutável; o servidor re-resolve a cada request.
 Foi experimentada a augmentação:
 
 ```ts
-declare module "next-intl" {
+declare module 'next-intl' {
   interface AppConfig {
     Locale: AppLocale;
     Messages: typeof en;
@@ -401,27 +403,28 @@ Passos canônicos (detalhados também no [README](../README.md#idiomas-i18n)):
 
 ## 9. Referências internas
 
-| Recurso | Caminho |
-|---|---|
-| Constantes de locale | `src/lib/i18n/locales.ts` |
-| Request config | `src/i18n/request.ts` |
-| Server Action | `src/lib/i18n/actions.ts` |
-| Seletor | `src/components/settings/language-switcher.tsx` |
-| Dicionários | `messages/*.json` |
-| Paridade | `scripts/check-i18n-parity.mjs` / `npm run i18n:check` |
-| Política de API | `docs/public-api.md` (§ Language of error messages) |
-| Env example | `.env.local.example` |
+| Recurso              | Caminho                                                           |
+| -------------------- | ----------------------------------------------------------------- |
+| Constantes de locale | `src/lib/i18n/locales.ts`                                         |
+| Request config       | `src/i18n/request.ts`                                             |
+| Server Action        | `src/lib/i18n/actions.ts`                                         |
+| Seletor              | `src/components/settings/language-switcher.tsx`                   |
+| Dicionários          | `messages/*.json`                                                 |
+| Paridade             | `scripts/check-i18n-parity.mjs` / `npm run i18n:check`            |
+| Guia de comandos     | [docs/comandos-desenvolvimento.md](./comandos-desenvolvimento.md) |
+| Política de API      | `docs/public-api.md` (§ Language of error messages)               |
+| Env example          | `.env.local.example`                                              |
 
 ---
 
 ## 10. Histórico resumido
 
-| Fase | Entrega |
-|---|---|
-| 0 | Bugfix namespace `roles` + estabilização de locale inválido |
-| 1 | Cookie + action + `pt-BR.json` |
-| 2 | Language switcher em Appearance |
-| 3 | Extração de gaps de UI + labels de negócio |
-| 4 | Política API em inglês documentada |
-| 5 | Paridade no CI; tipagem estrita descartada |
-| Auditoria pós-implementação | Fix `Settings.sections.quick-replies`; este relatório |
+| Fase                        | Entrega                                                     |
+| --------------------------- | ----------------------------------------------------------- |
+| 0                           | Bugfix namespace `roles` + estabilização de locale inválido |
+| 1                           | Cookie + action + `pt-BR.json`                              |
+| 2                           | Language switcher em Appearance                             |
+| 3                           | Extração de gaps de UI + labels de negócio                  |
+| 4                           | Política API em inglês documentada                          |
+| 5                           | Paridade via script local; tipagem estrita descartada       |
+| Auditoria pós-implementação | Fix `Settings.sections.quick-replies`; este relatório       |
