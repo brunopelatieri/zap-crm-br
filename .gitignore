@@ -1,0 +1,44 @@
+# Veja https://help.github.com/articles/ignoring-files/ para mais detalhes sobre como ignorar arquivos.
+
+# dependências
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testes
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# produção
+/build
+
+# diversos
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# arquivos de env (pode ser commitado opcionalmente, se necessário)
+.env*
+# mantém os arquivos de exemplo para quem faz fork ter um template para copiar
+!.env.local.example
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

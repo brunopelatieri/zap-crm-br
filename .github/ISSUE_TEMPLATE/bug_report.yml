@@ -1,0 +1,76 @@
+name: Bug report
+description: Something in the template isn't working the way the docs say it should.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The more specific you can be, the faster we
+        can land a fix.
+
+        **Not a bug in the code?** If this is a security issue, close this
+        form and follow [SECURITY.md](https://github.com/ArnasDon/wacrm/blob/main/.github/SECURITY.md)
+        instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: One or two sentences describing the symptom.
+      placeholder: Clicking a conversation leaves the thread stuck on "No messages yet".
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The minimum steps we need to trigger the bug on our side.
+      placeholder: |
+        1. Sign in, go to /inbox.
+        2. Click any conversation that has past messages.
+        3. Thread pane shows "No messages yet" until hard refresh.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: Messages load the first time, every time.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit / version
+      description: |
+        The commit SHA or release you're on. `git rev-parse --short HEAD`
+        in the fork works.
+      placeholder: "e.g. d6a4677 or v0.2.0"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Where is it running?
+      options:
+        - Local dev (npm run dev)
+        - Hostinger Managed Node.js
+        - Hostinger VPS
+        - Vercel
+        - Other Node host
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Server logs, browser console errors, network tab — anything that looks suspicious. Scrub tokens before pasting.
+      render: text
+    validations:
+      required: false
