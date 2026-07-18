@@ -12,11 +12,12 @@
  * the language switcher, and the locale cookie all import from here.
  */
 
-export const SUPPORTED_LOCALES = ["en", "pt-BR"] as const;
+export const SUPPORTED_LOCALES = ["pt-BR", "en"] as const;
 
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number];
 
-export const DEFAULT_LOCALE: AppLocale = "en";
+/** Runtime fallback when cookie and `NEXT_PUBLIC_APP_LOCALE` are absent. */
+export const DEFAULT_LOCALE: AppLocale = "pt-BR";
 
 /**
  * Cookie that persists the user's chosen locale across visits. Read on

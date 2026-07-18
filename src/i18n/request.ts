@@ -12,7 +12,7 @@ import { DEFAULT_LOCALE, LOCALE_COOKIE, isAppLocale } from '@/lib/i18n/locales';
 //   2. `NEXT_PUBLIC_APP_LOCALE` — the deployment's default for a
 //      visitor who hasn't chosen a language yet (e.g. first visit,
 //      or a browser that blocks cookies).
-//   3. `DEFAULT_LOCALE` ('en') as the last resort.
+//   3. `DEFAULT_LOCALE` ('pt-BR') as the last resort.
 //
 // Both cookie and env values are validated against `isAppLocale`
 // before use, so a stale/invalid value (e.g. a locale that no longer

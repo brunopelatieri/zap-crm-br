@@ -10,7 +10,7 @@ produto e resultados da revisão de qualidade.
 |---|---|
 | **Status** | Implementado (v1) |
 | **Biblioteca** | [`next-intl`](https://next-intl.dev) `^4.13.1` |
-| **Locales** | `en` (padrão / fonte da verdade), `pt-BR` |
+| **Locales** | `pt-BR` (padrão de runtime), `en` (fonte da verdade das chaves) |
 | **Roteamento** | Sem prefixo de URL (`/pt-br/...`) |
 | **Persistência** | Cookie `NEXT_LOCALE` (por dispositivo) |
 | **Última validação** | Paridade de chaves + `tsc --noEmit` OK |
@@ -85,7 +85,7 @@ Implementada em `src/i18n/request.ts`:
 1. **Cookie `NEXT_LOCALE`** — se o valor passar em `isAppLocale()`.
 2. **`NEXT_PUBLIC_APP_LOCALE`** — default do deployment para quem
    ainda não escolheu idioma (primeira visita / cookies bloqueados).
-3. **`DEFAULT_LOCALE` (`en`)** — último recurso.
+3. **`DEFAULT_LOCALE` (`pt-BR`)** — último recurso.
 
 Valores inválidos ou obsoletos nunca chegam ao
 `import(\`../../messages/${locale}.json\`)`, o que elimina o warning
@@ -101,9 +101,9 @@ env apontava para um locale sem arquivo.
 
 | Export | Papel |
 |---|---|
-| `SUPPORTED_LOCALES` | `['en', 'pt-BR']` |
+| `SUPPORTED_LOCALES` | `['pt-BR', 'en']` |
 | `AppLocale` | Tipo união derivado do array |
-| `DEFAULT_LOCALE` | `'en'` |
+| `DEFAULT_LOCALE` | `'pt-BR'` |
 | `LOCALE_COOKIE` | `'NEXT_LOCALE'` |
 | `LOCALE_LABELS` | Rótulos nativos no seletor |
 | `isAppLocale()` | Type guard |
