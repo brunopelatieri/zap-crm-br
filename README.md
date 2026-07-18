@@ -8,13 +8,13 @@
 
 ---
 
-[Licença: MIT](./LICENSE)
-[CI](https://github.com/brunopelatieri/zap-crm-br/actions/workflows/ci.yml)
-[Idioma: pt-BR](./docs/i18n-implementation-report.md)
-[i18n: next-intl](./docs/i18n-implementation-report.md)
-[Next.js 16](https://nextjs.org)
-[Supabase](https://supabase.com)
-[Stars](https://github.com/brunopelatieri/zap-crm-br/stargazers)
+[![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-violet.svg)](./LICENSE)
+[![CI](https://github.com/brunopelatieri/zap-crm-br/actions/workflows/ci.yml/badge.svg)](https://github.com/brunopelatieri/zap-crm-br/actions/workflows/ci.yml)
+[![Idioma: pt-BR](https://img.shields.io/badge/Idioma-pt--BR-009c3b)](./docs/i18n-implementation-report.md)
+[![i18n: next-intl](https://img.shields.io/badge/i18n-next--intl-7c3aed)](./docs/i18n-implementation-report.md)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)](https://nextjs.org)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ecf8e?logo=supabase)](https://supabase.com)
+[![Stars](https://img.shields.io/github/stars/brunopelatieri/zap-crm-br?style=social)](https://github.com/brunopelatieri/zap-crm-br/stargazers)
 
 Este repositório é o produto — clone ou faça o fork para rodar o seu
 próprio CRM **em português**, com suporte opcional a inglês para times
@@ -22,8 +22,6 @@ internacionais. A interface, os rótulos de negócio e a experiência de
 configuração foram localizadas para o **mercado brasileiro**.
 
 ---
-
-
 
 ## Feito para o Brasil — interface em português (pt-BR)
 
