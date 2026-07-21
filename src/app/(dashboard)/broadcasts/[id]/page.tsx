@@ -98,12 +98,12 @@ function FunnelChart({ steps }: { steps: FunnelStep[] }) {
                   className={`h-7 rounded-full ${step.color} transition-[width] duration-500`}
                   style={{ width: `${pctOfMax}%` }}
                 />
-                <span className="text-foreground absolute inset-0 flex items-center px-3 text-xs font-medium">
+                <span className="text-foreground absolute inset-0 flex items-center px-3 text-xs font-medium text-white">
                   {step.value.toLocaleString()}
-                  <span className="text-muted-foreground/80 ml-2">
+                  <span className="text-muted-foreground/80 ml-2 text-white">
                     ({pctOfSent}%)
                   </span>
-                </span>
+                </span> 
               </div>
             </div>
           );
