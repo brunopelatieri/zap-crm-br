@@ -7,11 +7,11 @@
  */
 
 export const DEFAULT_STAGE_KEYS = [
-  "newLead",
-  "qualified",
-  "proposalSent",
-  "negotiation",
-  "won",
+  'newLead',
+  'qualified',
+  'proposalSent',
+  'negotiation',
+  'won',
 ] as const;
 
 export type DefaultStageKey = (typeof DEFAULT_STAGE_KEYS)[number];
@@ -23,11 +23,11 @@ export interface DefaultStageDef {
 }
 
 export const DEFAULT_STAGE_DEFS: ReadonlyArray<DefaultStageDef> = [
-  { key: "newLead", color: "#3b82f6", position: 0 },
-  { key: "qualified", color: "#eab308", position: 1 },
-  { key: "proposalSent", color: "#f97316", position: 2 },
-  { key: "negotiation", color: "#8b5cf6", position: 3 },
-  { key: "won", color: "#22c55e", position: 4 },
+  { key: 'newLead', color: '#3b82f6', position: 0 },
+  { key: 'qualified', color: '#eab308', position: 1 },
+  { key: 'proposalSent', color: '#f97316', position: 2 },
+  { key: 'negotiation', color: '#8b5cf6', position: 3 },
+  { key: 'won', color: '#22c55e', position: 4 },
 ];
 
 /**
@@ -36,32 +36,32 @@ export const DEFAULT_STAGE_DEFS: ReadonlyArray<DefaultStageDef> = [
  * locale without clobbering user-renamed stages.
  */
 export const DEFAULT_STAGE_NAME_ALIASES: Record<DefaultStageKey, string[]> = {
-  newLead: ["New Lead", "Novo Lead"],
-  qualified: ["Qualified", "Qualificado"],
-  proposalSent: ["Proposal Sent", "Proposta Enviada"],
-  negotiation: ["Negotiation", "Negociação"],
-  won: ["Won", "Ganho", "Ganhos"],
+  newLead: ['New Lead', 'Novo Lead'],
+  qualified: ['Qualified', 'Qualificado'],
+  proposalSent: ['Proposal Sent', 'Proposta Enviada'],
+  negotiation: ['Negotiation', 'Negociação'],
+  won: ['Won', 'Ganho', 'Ganhos'],
 };
 
 export const DEFAULT_PIPELINE_NAME_ALIASES = [
-  "Sales Pipeline",
-  "Funil de Vendas",
+  'Sales Pipeline',
+  'Funil de Vendas',
 ] as const;
 
 export function isDefaultStageName(
   key: DefaultStageKey,
-  name: string,
+  name: string
 ): boolean {
   return DEFAULT_STAGE_NAME_ALIASES[key].includes(name);
 }
 
 export function isStockDefaultPipeline(
   pipelineName: string,
-  stages: ReadonlyArray<{ name: string; position: number }>,
+  stages: ReadonlyArray<{ name: string; position: number }>
 ): boolean {
   if (
     !DEFAULT_PIPELINE_NAME_ALIASES.includes(
-      pipelineName as (typeof DEFAULT_PIPELINE_NAME_ALIASES)[number],
+      pipelineName as (typeof DEFAULT_PIPELINE_NAME_ALIASES)[number]
     )
   ) {
     return false;

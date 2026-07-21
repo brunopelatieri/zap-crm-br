@@ -200,7 +200,12 @@ export default function PipelinesPage() {
         const name = t(`defaultStages.${def.key}`);
         return name === stage.name
           ? null
-          : { id: stage.id, name, color: stage.color, position: stage.position };
+          : {
+              id: stage.id,
+              name,
+              color: stage.color,
+              position: stage.position,
+            };
       }).filter(Boolean) as Array<{
         id: string;
         name: string;
