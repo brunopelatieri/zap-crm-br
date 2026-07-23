@@ -1,0 +1,911 @@
+{
+  "name": "Contact Ingestion (contacts + tags + custom fields + notes)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contact-ingestion",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "89368434-3946-47e3-bb44-c112201568f9",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-432, -176],
+      "webhookId": "d29e4f81-6b3a-4c77-9e05-1a8f3c6b2d40"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ==============================================\n// Validador de Email + Nome + Telefone BR (Celular e Fixo)\n// Baseado no guia: mobile_number_brasil_guide.md\n// Com fast path para input já em E.164 perfeito\n// Modo do node: \"Run Once for Each Item\"\n// ==============================================\n\nconst item = $input.item.json.body;\n\n// ---------- Email ----------\nfunction validarEmail(email) {\n  if (!email || typeof email !== 'string') return false;\n  const regex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$/;\n  return regex.test(email.trim());\n}\n\n// ---------- Nome ----------\nfunction validarNome(name) {\n  return !!(name && typeof name === 'string' && name.trim().length > 0);\n}\n\n// ---------- Telefone BR (Celular ou Fixo) ----------\nconst DDDS_VALIDOS = new Set([\n  11,12,13,14,15,16,17,18,19,\n  21,22,24,27,28,\n  31,32,33,34,35,37,38,\n  41,42,43,44,45,46,47,48,49,\n  51,53,54,55,\n  61,62,63,64,65,66,67,68,69,\n  71,73,74,75,77,79,\n  81,82,83,84,85,86,87,88,89,\n  91,92,93,94,95,96,97,98,99\n]);\n\nconst E164_REGEX = /^\\+55([1-9]{2})(9\\d{8}|[2-8]\\d{7})$/;\n\nfunction validarEFormatarTelefoneBR(telefoneOriginal) {\n  const original = (telefoneOriginal || '').toString().trim();\n\n  const fastMatch = original.match(E164_REGEX);\n  if (fastMatch) {\n    const ddd = parseInt(fastMatch[1], 10);\n    if (!DDDS_VALIDOS.has(ddd)) {\n      return { valido: false, tipo: 'invalido', e164: null };\n    }\n    const tipo = fastMatch[2].length === 9 ? 'celular' : 'fixo';\n    return { valido: true, tipo, e164: original };\n  }\n\n  let numeros = original.replace(/\\D/g, '');\n\n  if (numeros.startsWith('55') && (numeros.length === 12 || numeros.length === 13)) {\n    numeros = numeros.slice(2);\n  }\n\n  if (numeros.startsWith('0') && (numeros.length === 11 || numeros.length === 12)) {\n    numeros = numeros.slice(1);\n  }\n\n  if (numeros.length !== 10 && numeros.length !== 11) {\n    return { valido: false, tipo: 'invalido', e164: null };\n  }\n\n  const ddd = parseInt(numeros.slice(0, 2), 10);\n  const numeroLocal = numeros.slice(2);\n\n  if (!DDDS_VALIDOS.has(ddd)) {\n    return { valido: false, tipo: 'invalido', e164: null };\n  }\n\n  if (numeros.length === 11) {\n    if (numeroLocal[0] !== '9') {\n      return { valido: false, tipo: 'invalido', e164: null };\n    }\n    return { valido: true, tipo: 'celular', e164: `+55${numeros}` };\n  }\n\n  if (!/^[2-8]/.test(numeroLocal)) {\n    return { valido: false, tipo: 'invalido', e164: null };\n  }\n  return { valido: true, tipo: 'fixo', e164: `+55${numeros}` };\n}\n\n// ---------- Execução ----------\nconst emailValido = validarEmail(item.email);\nconst nomeValido = validarNome(item.name);\nconst telefoneResult = validarEFormatarTelefoneBR(item.phone);\n\nconst e164 = telefoneResult.e164;\nconst phone_ddi = e164 ? e164.replace(/^\\+/, '') : null; // DDI sem '+', vai para contacts.phone\n\nreturn {\n  json: {\n    ...item,\n    valid_email: emailValido,\n    valid_name: nomeValido,\n    valid_number: telefoneResult.valido,\n    tipo: telefoneResult.tipo,\n    phone_e164: e164,\n    phone_ddi: phone_ddi\n  }\n};"
+      },
+      "id": "634c03cb-7675-41d7-9f06-ecbeb496e064",
+      "name": "setData",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-224, -176]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-valid-number", "leftValue": "={{ $json.valid_number }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } },
+            { "id": "cond-valid-name", "leftValue": "={{ $json.valid_name }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [0, -176],
+      "id": "daefafd9-e661-4391-9623-352ac4193b15",
+      "name": "Valid Input?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, reason: (!$json.valid_number ? 'invalid_number' : 'missing_name') } }}",
+        "options": { "responseCode": 422 }
+      },
+      "id": "node_04_respond_invalid",
+      "name": "Respond Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [224, 80]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "phone-number-id", "name": "supabase_url", "value": "https://awylbfsywsrnkztvovud.supabase.co", "type": "string" },
+            { "id": "56c03200-bec2-48cc-9c05-7cadce4eb659", "name": "supabase_anon_service_role", "value": "<REDACTED — valor real só existe no node CONFIG dentro do n8n; nunca versionar aqui>", "type": "string" },
+            { "id": "cfg-account-id", "name": "account_id", "value": "5e0564ad-a8f6-4dec-89a1-7e7bdc1775be", "type": "string" },
+            { "id": "cfg-user-id", "name": "user_id", "value": "9558de50-2c72-4879-92df-83e916d90fde", "type": "string" },
+            { "id": "cfg-update-existing", "name": "update_existing_contact", "value": true, "type": "boolean" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a52c719b-6a00-47b7-8f50-cb68d16d54c7",
+      "name": "CONFIG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [336, -176]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/contacts",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "=eq.{{ $('CONFIG').item.json.account_id }}" },
+            { "name": "phone_normalized", "value": "=eq.{{ $('setData').item.json.phone_ddi }}" },
+            { "name": "select", "value": "id,name,email,company" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" }
+          ]
+        },
+        "options": { "response": { "response": { "fullResponse": true, "neverError": false } } }
+      },
+      "id": "node_06_lookup_contact",
+      "name": "Lookup Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, -176]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-contact-exists", "leftValue": "={{ $json.body.length }}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_07_contact_exists",
+      "name": "Contact Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [784, -176]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-update-existing", "leftValue": "={{ $('CONFIG').item.json.update_existing_contact === true }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_08_update_existing",
+      "name": "Update Existing Contact?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1008, -280]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/contacts",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [ { "name": "id", "value": "=eq.{{ $('Lookup Contact').item.json.body[0].id }}" } ] },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Webhook').item.json.body.name, email: $('Webhook').item.json.body.email || null, company: $('Webhook').item.json.body.company || null }) }}",
+        "options": { "response": { "response": { "fullResponse": true } } }
+      },
+      "id": "node_09_update_contact",
+      "name": "Update Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1232, -360]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "res-upd-id", "name": "contact_id", "value": "={{ $json.body[0].id }}", "type": "string" },
+            { "id": "res-upd-action", "name": "contact_action", "value": "updated", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_10_contact_result_updated",
+      "name": "Contact Result (Updated)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1456, -360]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "res-unc-id", "name": "contact_id", "value": "={{ $('Lookup Contact').item.json.body[0].id }}", "type": "string" },
+            { "id": "res-unc-action", "name": "contact_action", "value": "unchanged", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_11_contact_result_unchanged",
+      "name": "Contact Result (Unchanged)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1232, -200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/contacts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: $('CONFIG').item.json.user_id, account_id: $('CONFIG').item.json.account_id, phone: $('setData').item.json.phone_ddi, name: $('Webhook').item.json.body.name, email: $('Webhook').item.json.body.email || null, company: $('Webhook').item.json.body.company || null }) }}",
+        "options": { "response": { "response": { "fullResponse": true } } }
+      },
+      "id": "node_12_insert_contact",
+      "name": "Insert Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1008, -80]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "res-ins-id", "name": "contact_id", "value": "={{ $json.body[0].id }}", "type": "string" },
+            { "id": "res-ins-action", "name": "contact_action", "value": "created", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_13_contact_result_created",
+      "name": "Contact Result (Created)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1232, -80]
+    },
+    {
+      "parameters": {},
+      "id": "node_14_contact_ready",
+      "name": "Contact Ready",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1680, -176]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-tag-present", "leftValue": "={{ $('Webhook').item.json.body.tag }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_15_tag_present",
+      "name": "Tag Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1904, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "tag-none-slug", "name": "tag_slug", "value": "", "type": "string" },
+            { "id": "tag-none-action", "name": "tag_action", "value": "none", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_16_tag_result_none",
+      "name": "Tag Result (None)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2128, -200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function slugifyTag(tag) {\n  if (!tag || typeof tag !== 'string') return '';\n  let s = tag.trim();\n  s = s.normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); // remove acentos (ç, ã, é ...)\n  s = s.replace(/\\s+/g, '_');\n  s = s.replace(/[^A-Za-z0-9_-]/g, '');\n  s = s.replace(/_+/g, '_');\n  s = s.replace(/^[_-]+|[_-]+$/g, '');\n  return s;\n}\n\nconst tagOriginal = $('Webhook').item.json.body.tag;\nreturn {\n  json: {\n    tag_original: tagOriginal,\n    tag_slug: slugifyTag(tagOriginal)\n  }\n};"
+      },
+      "id": "node_17_slugify_tag",
+      "name": "Slugify Tag",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2128, -480]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/tags",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "=eq.{{ $('CONFIG').item.json.account_id }}" },
+            { "name": "name", "value": "=ilike.{{ $json.tag_slug }}" },
+            { "name": "select", "value": "id,name" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" }
+          ]
+        },
+        "options": { "response": { "response": { "fullResponse": true } } }
+      },
+      "id": "node_18_lookup_tag",
+      "name": "Lookup Tag",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2352, -480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-tag-exists", "leftValue": "={{ $json.body.length }}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_19_tag_exists",
+      "name": "Tag Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [2576, -480]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "tag-found-id", "name": "tag_id", "value": "={{ $json.body[0].id }}", "type": "string" },
+            { "id": "tag-found-action", "name": "tag_action", "value": "linked_existing", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_20_tag_found",
+      "name": "Tag Found",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2800, -560]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-tag-create", "leftValue": "={{ $('Webhook').item.json.body.tag_create === true }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_21_tag_create",
+      "name": "Tag Create?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [2800, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "tag-skip-id", "name": "tag_id", "value": "", "type": "string" },
+            { "id": "tag-skip-action", "name": "tag_action", "value": "skipped_not_created", "type": "string" },
+            { "id": "tag-skip-slug", "name": "tag_slug", "value": "={{ $('Slugify Tag').item.json.tag_slug }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_22_tag_skipped",
+      "name": "Tag Skipped",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [3024, -280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/tags",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: $('CONFIG').item.json.user_id, account_id: $('CONFIG').item.json.account_id, name: $('Slugify Tag').item.json.tag_slug }) }}",
+        "options": { "response": { "response": { "fullResponse": true } } }
+      },
+      "id": "node_23_insert_tag",
+      "name": "Insert Tag",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3024, -480]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "tag-created-id", "name": "tag_id", "value": "={{ $json.body[0].id }}", "type": "string" },
+            { "id": "tag-created-action", "name": "tag_action", "value": "created_and_linked", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_24_tag_created",
+      "name": "Tag Created",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [3248, -480]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/contact_tags",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Prefer", "value": "resolution=ignore-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contact_id: $('Contact Ready').item.json.contact_id, tag_id: $json.tag_id }) }}",
+        "options": { "response": { "response": { "fullResponse": true } } },
+        "sendQuery": true,
+        "queryParameters": { "parameters": [ { "name": "on_conflict", "value": "contact_id,tag_id" } ] }
+      },
+      "id": "node_25_link_tag_existing",
+      "name": "Link Tag (Existing)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3024, -560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/contact_tags",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Prefer", "value": "resolution=ignore-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contact_id: $('Contact Ready').item.json.contact_id, tag_id: $json.tag_id }) }}",
+        "options": { "response": { "response": { "fullResponse": true } } },
+        "sendQuery": true,
+        "queryParameters": { "parameters": [ { "name": "on_conflict", "value": "contact_id,tag_id" } ] }
+      },
+      "id": "node_26_link_tag_created",
+      "name": "Link Tag (Created)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3472, -480]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "tag-a-slug", "name": "tag_slug", "value": "={{ $('Slugify Tag').item.json.tag_slug }}", "type": "string" },
+            { "id": "tag-a-action", "name": "tag_action", "value": "linked_existing", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_27_tag_result_a",
+      "name": "Tag Result A",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [3248, -560]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "tag-b-slug", "name": "tag_slug", "value": "={{ $('Slugify Tag').item.json.tag_slug }}", "type": "string" },
+            { "id": "tag-b-action", "name": "tag_action", "value": "created_and_linked", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_28_tag_result_b",
+      "name": "Tag Result B",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [3696, -480]
+    },
+    {
+      "parameters": {},
+      "id": "node_29_tag_done",
+      "name": "Tag Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [3920, -360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-custom-present", "leftValue": "={{ Object.keys(($('Webhook').item.json.body.contact_custom_values && $('Webhook').item.json.body.contact_custom_values[0]) || {}).length > 0 }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_30_custom_present",
+      "name": "Custom Values Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1904, 60]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "custom-none-matched", "name": "matched", "value": 0, "type": "number" },
+            { "id": "custom-none-ignored", "name": "ignored_keys", "value": "={{ [] }}", "type": "array" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_31_custom_result_none",
+      "name": "Custom Result (None)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2128, 200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const body = $('Webhook').first().json.body;\nconst contact_id = $('Contact Ready').first().json.contact_id;\nconst account_id = $('CONFIG').first().json.account_id;\nconst user_id = $('CONFIG').first().json.user_id;\n\nconst raw = (body.contact_custom_values && body.contact_custom_values[0]) || {};\n\nconst items = Object.entries(raw)\n  .filter(([key, value]) => value !== null && value !== undefined)\n  .map(([key, value]) => ({\n    json: { key, value: String(value), contact_id, account_id, user_id }\n  }));\n\nreturn items;"
+      },
+      "id": "node_32_split_custom_values",
+      "name": "Split Custom Values",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2128, 60]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/custom_fields",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "=eq.{{ $json.account_id }}" },
+            { "name": "field_name", "value": "=ilike.{{ $json.key }}" },
+            { "name": "select", "value": "id,field_name" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" }
+          ]
+        },
+        "options": { "response": { "response": { "fullResponse": true } } }
+      },
+      "id": "node_33_lookup_custom_field",
+      "name": "Lookup Custom Field",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2352, 60]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-custom-field-exists", "leftValue": "={{ $json.body.length }}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_34_custom_field_exists",
+      "name": "Custom Field Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [2576, 60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/contact_custom_values",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contact_id: $('Split Custom Values').item.json.contact_id, custom_field_id: $json.body[0].id, value: $('Split Custom Values').item.json.value }) }}",
+        "options": { "response": { "response": { "fullResponse": true } } },
+        "sendQuery": true,
+        "queryParameters": { "parameters": [ { "name": "on_conflict", "value": "contact_id,custom_field_id" } ] }
+      },
+      "id": "node_35_upsert_custom_value",
+      "name": "Upsert Custom Value",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2800, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "custom-matched-flag", "name": "matched", "value": true, "type": "boolean" },
+            { "id": "custom-matched-key", "name": "key", "value": "={{ $('Split Custom Values').item.json.key }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_36_custom_value_matched",
+      "name": "Custom Value Matched",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [3024, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "custom-skipped-flag", "name": "matched", "value": false, "type": "boolean" },
+            { "id": "custom-skipped-key", "name": "key", "value": "={{ $('Split Custom Values').item.json.key }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_37_custom_value_skipped",
+      "name": "Custom Value Skipped",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2800, 120]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nlet matched = 0;\nconst ignored_keys = [];\n\nfor (const it of items) {\n  if (it.json.matched) {\n    matched += 1;\n  } else {\n    ignored_keys.push(it.json.key);\n  }\n}\n\nreturn [{ json: { matched, ignored_keys } }];"
+      },
+      "id": "node_38_aggregate_custom_results",
+      "name": "Aggregate Custom Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3248, 60]
+    },
+    {
+      "parameters": {},
+      "id": "node_39_custom_done",
+      "name": "Custom Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [3472, 140]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "node_40_combine",
+      "name": "Combine Tag + Custom",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [4144, -160]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contact = $('Contact Ready').first().json;\nconst items = $input.all();\nconst tagItem = items.find(i => Object.prototype.hasOwnProperty.call(i.json, 'tag_action'));\nconst customItem = items.find(i => Object.prototype.hasOwnProperty.call(i.json, 'matched'));\nconst notesItem = items.find(i => Object.prototype.hasOwnProperty.call(i.json, 'notes_inserted'));\n\nreturn [{\n  json: {\n    ok: true,\n    contact_id: contact.contact_id,\n    contact_action: contact.contact_action,\n    tag: {\n      slug: (tagItem && tagItem.json.tag_slug) || null,\n      action: tagItem ? tagItem.json.tag_action : null\n    },\n    custom_values: {\n      matched: customItem ? customItem.json.matched : 0,\n      ignored_keys: customItem ? customItem.json.ignored_keys : []\n    },\n    notes: {\n      inserted: notesItem ? notesItem.json.notes_inserted : 0\n    }\n  }\n}];"
+      },
+      "id": "node_41_build_response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4592, -160]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "node_42_respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [5040, -160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            { "id": "cond-notes-present", "leftValue": "={{ ($('Webhook').item.json.body.contact_notes || []).some(n => typeof n === 'string' && n.trim().length > 0) }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_43_notes_present",
+      "name": "Contact Notes Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1904, 340]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "notes-none-count", "name": "notes_inserted", "value": 0, "type": "number" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_44_notes_result_none",
+      "name": "Notes Result (None)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2128, 420]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contact_id = $('Contact Ready').first().json.contact_id;\nconst account_id = $('CONFIG').first().json.account_id;\nconst user_id = $('CONFIG').first().json.user_id;\nconst notes = $('Webhook').first().json.body.contact_notes || [];\n\nreturn notes\n  .filter(n => typeof n === 'string' && n.trim().length > 0)\n  .map(n => ({ json: { note_text: n.trim(), contact_id, account_id, user_id } }));"
+      },
+      "id": "node_45_split_contact_notes",
+      "name": "Split Contact Notes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2128, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIG').item.json.supabase_url }}/rest/v1/contact_notes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('CONFIG').item.json.supabase_anon_service_role }}" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contact_id: $json.contact_id, user_id: $json.user_id, account_id: $json.account_id, note_text: $json.note_text }) }}",
+        "options": { "response": { "response": { "fullResponse": true } } }
+      },
+      "id": "node_46_insert_contact_note",
+      "name": "Insert Contact Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2352, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nreturn [{ json: { notes_inserted: items.length } }];"
+      },
+      "id": "node_47_aggregate_notes_results",
+      "name": "Aggregate Notes Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2576, 300]
+    },
+    {
+      "parameters": {},
+      "id": "node_48_notes_done",
+      "name": "Notes Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2800, 340]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "node_49_combine_notes",
+      "name": "Combine + Notes",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [4368, -160]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "setData", "type": "main", "index": 0 }]] },
+    "setData": { "main": [[{ "node": "Valid Input?", "type": "main", "index": 0 }]] },
+    "Valid Input?": {
+      "main": [
+        [{ "node": "CONFIG", "type": "main", "index": 0 }],
+        [{ "node": "Respond Invalid", "type": "main", "index": 0 }]
+      ]
+    },
+    "CONFIG": { "main": [[{ "node": "Lookup Contact", "type": "main", "index": 0 }]] },
+    "Lookup Contact": { "main": [[{ "node": "Contact Exists?", "type": "main", "index": 0 }]] },
+    "Contact Exists?": {
+      "main": [
+        [{ "node": "Update Existing Contact?", "type": "main", "index": 0 }],
+        [{ "node": "Insert Contact", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Existing Contact?": {
+      "main": [
+        [{ "node": "Update Contact", "type": "main", "index": 0 }],
+        [{ "node": "Contact Result (Unchanged)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Contact": { "main": [[{ "node": "Contact Result (Updated)", "type": "main", "index": 0 }]] },
+    "Insert Contact": { "main": [[{ "node": "Contact Result (Created)", "type": "main", "index": 0 }]] },
+    "Contact Result (Updated)": { "main": [[{ "node": "Contact Ready", "type": "main", "index": 0 }]] },
+    "Contact Result (Unchanged)": { "main": [[{ "node": "Contact Ready", "type": "main", "index": 0 }]] },
+    "Contact Result (Created)": { "main": [[{ "node": "Contact Ready", "type": "main", "index": 0 }]] },
+    "Contact Ready": {
+      "main": [
+        [
+          { "node": "Tag Present?", "type": "main", "index": 0 },
+          { "node": "Custom Values Present?", "type": "main", "index": 0 },
+          { "node": "Contact Notes Present?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Tag Present?": {
+      "main": [
+        [{ "node": "Slugify Tag", "type": "main", "index": 0 }],
+        [{ "node": "Tag Result (None)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Slugify Tag": { "main": [[{ "node": "Lookup Tag", "type": "main", "index": 0 }]] },
+    "Lookup Tag": { "main": [[{ "node": "Tag Exists?", "type": "main", "index": 0 }]] },
+    "Tag Exists?": {
+      "main": [
+        [{ "node": "Tag Found", "type": "main", "index": 0 }],
+        [{ "node": "Tag Create?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tag Create?": {
+      "main": [
+        [{ "node": "Insert Tag", "type": "main", "index": 0 }],
+        [{ "node": "Tag Skipped", "type": "main", "index": 0 }]
+      ]
+    },
+    "Insert Tag": { "main": [[{ "node": "Tag Created", "type": "main", "index": 0 }]] },
+    "Tag Found": { "main": [[{ "node": "Link Tag (Existing)", "type": "main", "index": 0 }]] },
+    "Tag Created": { "main": [[{ "node": "Link Tag (Created)", "type": "main", "index": 0 }]] },
+    "Link Tag (Existing)": { "main": [[{ "node": "Tag Result A", "type": "main", "index": 0 }]] },
+    "Link Tag (Created)": { "main": [[{ "node": "Tag Result B", "type": "main", "index": 0 }]] },
+    "Tag Result (None)": { "main": [[{ "node": "Tag Done", "type": "main", "index": 0 }]] },
+    "Tag Skipped": { "main": [[{ "node": "Tag Done", "type": "main", "index": 0 }]] },
+    "Tag Result A": { "main": [[{ "node": "Tag Done", "type": "main", "index": 0 }]] },
+    "Tag Result B": { "main": [[{ "node": "Tag Done", "type": "main", "index": 0 }]] },
+    "Custom Values Present?": {
+      "main": [
+        [{ "node": "Split Custom Values", "type": "main", "index": 0 }],
+        [{ "node": "Custom Result (None)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Split Custom Values": { "main": [[{ "node": "Lookup Custom Field", "type": "main", "index": 0 }]] },
+    "Lookup Custom Field": { "main": [[{ "node": "Custom Field Exists?", "type": "main", "index": 0 }]] },
+    "Custom Field Exists?": {
+      "main": [
+        [{ "node": "Upsert Custom Value", "type": "main", "index": 0 }],
+        [{ "node": "Custom Value Skipped", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Custom Value": { "main": [[{ "node": "Custom Value Matched", "type": "main", "index": 0 }]] },
+    "Custom Value Matched": { "main": [[{ "node": "Aggregate Custom Results", "type": "main", "index": 0 }]] },
+    "Custom Value Skipped": { "main": [[{ "node": "Aggregate Custom Results", "type": "main", "index": 0 }]] },
+    "Custom Result (None)": { "main": [[{ "node": "Custom Done", "type": "main", "index": 0 }]] },
+    "Aggregate Custom Results": { "main": [[{ "node": "Custom Done", "type": "main", "index": 0 }]] },
+    "Tag Done": { "main": [[{ "node": "Combine Tag + Custom", "type": "main", "index": 0 }]] },
+    "Custom Done": { "main": [[{ "node": "Combine Tag + Custom", "type": "main", "index": 1 }]] },
+    "Combine Tag + Custom": { "main": [[{ "node": "Combine + Notes", "type": "main", "index": 0 }]] },
+    "Contact Notes Present?": {
+      "main": [
+        [{ "node": "Split Contact Notes", "type": "main", "index": 0 }],
+        [{ "node": "Notes Result (None)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Split Contact Notes": { "main": [[{ "node": "Insert Contact Note", "type": "main", "index": 0 }]] },
+    "Insert Contact Note": { "main": [[{ "node": "Aggregate Notes Results", "type": "main", "index": 0 }]] },
+    "Aggregate Notes Results": { "main": [[{ "node": "Notes Done", "type": "main", "index": 0 }]] },
+    "Notes Result (None)": { "main": [[{ "node": "Notes Done", "type": "main", "index": 0 }]] },
+    "Notes Done": { "main": [[{ "node": "Combine + Notes", "type": "main", "index": 1 }]] },
+    "Combine + Notes": { "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]] },
+    "Build Response": { "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "b9519554dc7b1f396ea81fae52e934645b3950c0fd40e86da5596d185785b679"
+  }
+}

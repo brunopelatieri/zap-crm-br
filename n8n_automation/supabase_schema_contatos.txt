@@ -1,0 +1,125 @@
+Tabela para inserir contato:
+
+create table public.contacts (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  user_id uuid not null,
+  phone text not null,
+  name text null,
+  email text null,
+  company text null,
+  avatar_url text null,
+  created_at timestamp with time zone null default now(),
+  updated_at timestamp with time zone null default now(),
+  account_id uuid not null,
+  phone_normalized text GENERATED ALWAYS as (
+    regexp_replace(phone, '\D'::text, ''::text, 'g'::text)
+  ) STORED null,
+  constraint contacts_pkey primary key (id),
+  constraint contacts_account_id_fkey foreign KEY (account_id) references accounts (id) on delete CASCADE,
+  constraint contacts_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_contacts_user_id on public.contacts using btree (user_id) TABLESPACE pg_default;
+
+create index IF not exists idx_contacts_phone on public.contacts using btree (phone) TABLESPACE pg_default;
+
+create index IF not exists idx_contacts_account on public.contacts using btree (account_id) TABLESPACE pg_default;
+
+create unique INDEX IF not exists idx_contacts_account_phone_normalized on public.contacts using btree (account_id, phone_normalized) TABLESPACE pg_default
+where
+  (phone_normalized <> ''::text);
+
+create trigger set_updated_at BEFORE
+update on contacts for EACH row
+execute FUNCTION update_updated_at_column ();
+
+---
+
+Tabela para inserir tag:
+
+create table public.tags (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  user_id uuid not null,
+  name text not null,
+  color text not null default '#3b82f6'::text,
+  created_at timestamp with time zone null default now(),
+  account_id uuid not null,
+  constraint tags_pkey primary key (id),
+  constraint tags_account_id_fkey foreign KEY (account_id) references accounts (id) on delete CASCADE,
+  constraint tags_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_tags_account on public.tags using btree (account_id) TABLESPACE pg_default;
+
+---
+
+Tabela para inserir relação contato - tag:
+
+create table public.contact_tags (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  contact_id uuid not null,
+  tag_id uuid not null,
+  created_at timestamp with time zone null default now(),
+  constraint contact_tags_pkey primary key (id),
+  constraint contact_tags_contact_id_tag_id_key unique (contact_id, tag_id),
+  constraint contact_tags_contact_id_fkey foreign KEY (contact_id) references contacts (id) on delete CASCADE,
+  constraint contact_tags_tag_id_fkey foreign KEY (tag_id) references tags (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_contact_tags_contact on public.contact_tags using btree (contact_id) TABLESPACE pg_default;
+
+create index IF not exists idx_contact_tags_tag on public.contact_tags using btree (tag_id) TABLESPACE pg_default;
+
+---
+
+Tabela de campos customizado para contatos:
+
+create table public.custom_fields (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  user_id uuid not null,
+  field_name text not null,
+  field_type text not null default 'text'::text,
+  field_options jsonb null,
+  created_at timestamp with time zone null default now(),
+  account_id uuid not null,
+  constraint custom_fields_pkey primary key (id),
+  constraint custom_fields_account_id_fkey foreign KEY (account_id) references accounts (id) on delete CASCADE,
+  constraint custom_fields_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_custom_fields_account on public.custom_fields using btree (account_id) TABLESPACE pg_default;
+
+---
+
+Tabela que relaciona contatos - campos customizado com o valor 
+
+create table public.contact_custom_values (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  contact_id uuid not null,
+  custom_field_id uuid not null,
+  value text null,
+  created_at timestamp with time zone null default now(),
+  constraint contact_custom_values_pkey primary key (id),
+  constraint contact_custom_values_contact_id_custom_field_id_key unique (contact_id, custom_field_id),
+  constraint contact_custom_values_contact_id_fkey foreign KEY (contact_id) references contacts (id) on delete CASCADE,
+  constraint contact_custom_values_custom_field_id_fkey foreign KEY (custom_field_id) references custom_fields (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+---
+
+Tabela de notas de contato (histórico, sem constraint de unicidade — todo insert é uma linha nova):
+
+create table public.contact_notes (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  contact_id uuid not null,
+  user_id uuid not null,
+  note_text text not null,
+  created_at timestamp with time zone null default now(),
+  account_id uuid not null,
+  constraint contact_notes_pkey primary key (id),
+  constraint contact_notes_account_id_fkey foreign KEY (account_id) references accounts (id) on delete CASCADE,
+  constraint contact_notes_contact_id_fkey foreign KEY (contact_id) references contacts (id) on delete CASCADE,
+  constraint contact_notes_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_contact_notes_account on public.contact_notes using btree (account_id) TABLESPACE pg_default;

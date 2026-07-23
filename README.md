@@ -103,6 +103,13 @@ Aparência → Idioma**; a escolha fica salva no navegador.
 - **API REST pública** (`/api/v1`) — chaves escopadas para integrar
   com Zapier, n8n ou sistemas próprios. Veja
   [docs/public-api.md](./docs/public-api.md).
+- **Automação n8n de ingestão de contatos** — um webhook pronto que
+  cria/atualiza contatos, tags, campos personalizados e notas a partir
+  de qualquer origem externa (formulário, e-commerce, planilha, outro
+  CRM). Template documentado e reutilizável para novas integrações. O
+  JSON exportado é versionado sem credencial (placeholder `<REDACTED>`
+  no lugar da service_role key) — configure a sua antes de reimportar.
+  Veja [n8n_automation/](./n8n_automation/README.md).
 - **Servidor MCP** — controle o CRM pelo Claude, Cursor e outros
   assistentes via [Model Context Protocol](https://modelcontextprotocol.io).
   Veja [docs/mcp.md](./docs/mcp.md).
@@ -249,6 +256,8 @@ URL** (não existe `/pt-br/dashboard`). O locale é resolvido por cookie
 - [Relatório de implementação i18n](./docs/i18n-implementation-report.md)
 - [API pública (`/api/v1`)](./docs/public-api.md)
 - [Servidor MCP](./docs/mcp.md)
+- [Automações n8n (ingestão de contatos e integrações externas)](./n8n_automation/README.md) —
+  como conectar formulários, e-commerce, planilhas e outros sistemas ao CRM sem tocar no código do app.
 
 **Projeto original wacrm (inglês — mesma base técnica):**
 
