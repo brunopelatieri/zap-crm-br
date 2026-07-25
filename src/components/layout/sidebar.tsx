@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
@@ -178,9 +179,17 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="border-border flex h-14 shrink-0 items-center justify-between gap-2 border-b px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground flex h-8 w-8 items-center justify-center rounded-lg">
-              <MessageSquare className="h-4 w-4" />
-            </div>
+            {/* Native 168x142 asset scaled to the row's 32px height —
+                width follows via the intrinsic aspect ratio instead of
+                squashing it into the old square icon slot. */}
+            <Image
+              src="/zap-crm-br_bruno_pelatieri_goulart-bizu-hub.webp"
+              alt={t('title')}
+              width={168}
+              height={142}
+              priority
+              className="h-8 w-auto shrink-0"
+            />
             <span className="text-foreground text-sm font-semibold">
               {t('title')}
             </span>
