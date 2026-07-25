@@ -67,6 +67,20 @@ interface WhatsAppMessage {
     button_reply?: { id: string; title: string };
     list_reply?: { id: string; title: string; description?: string };
   };
+  /**
+   * Set when the customer taps a Quick Reply button on a message
+   * TEMPLATE we sent. Distinct from `interactive` (which covers taps on
+   * Interactive messages we composed ourselves) — Meta uses this
+   * separate `button` type for template quick replies. `payload` is the
+   * developer-defined value configured on the template button; `text` is
+   * its display label.
+   */
+  button?: { text: string; payload: string };
+  /** Present when the customer shares one or more contact cards. */
+  contacts?: Array<{
+    name?: { formatted_name?: string };
+    phones?: Array<{ phone?: string }>;
+  }>;
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string };
 }
@@ -678,7 +692,9 @@ async function processMessage(
     ? message.type
     : message.type === 'sticker'
       ? 'image' // stickers are images
-      : 'text'; // reaction, unknown → text fallback
+      : message.type === 'button'
+        ? 'interactive' // template quick-reply tap — same UI as an interactive tap
+        : 'text'; // reaction, contacts, unknown → text fallback
 
   // Determine whether this is the contact's very first inbound message
   // BEFORE we insert, so the count is accurate. Covers the case where
@@ -991,6 +1007,32 @@ async function parseMessageContent(
         };
       }
       return { ...empty, contentText: '[Interactive reply]' };
+    }
+
+    case 'button':
+      // Quick-reply tap on a message TEMPLATE (not an Interactive message —
+      // see the `button` field comment on WhatsAppMessage). Same shape/intent
+      // as interactive.button_reply, so route it through interactiveReplyId
+      // too: Flows/automations that key off a tapped option's stable id work
+      // the same way regardless of whether the tap came from a template or
+      // an interactive send.
+      if (message.button) {
+        return {
+          ...empty,
+          contentText: message.button.text || message.button.payload || null,
+          interactiveReplyId: message.button.payload || null,
+        };
+      }
+      return { ...empty, contentText: '[Button reply]' };
+
+    case 'contacts': {
+      const names = (message.contacts ?? [])
+        .map((c) => c.name?.formatted_name)
+        .filter((n): n is string => !!n);
+      return {
+        ...empty,
+        contentText: names.length ? `\u{1F464} ${names.join(', ')}` : '[Contact shared]',
+      };
     }
 
     default:
