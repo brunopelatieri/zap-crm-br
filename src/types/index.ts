@@ -247,6 +247,13 @@ export interface Message {
    */
   interactive_payload?: InteractiveMessagePayload;
   /**
+   * Resolved header/body/footer/buttons of an OUTBOUND template message,
+   * so the bubble can render it exactly like the template (buttons
+   * included). Only set when `content_type === 'template'`; older rows
+   * sent before migration 037 fall back to the plain content_text badge.
+   */
+  template_preview?: TemplatePreviewPayload | null;
+  /**
    * True when the AI auto-reply bot generated + sent this message (as
    * opposed to a human agent or a deterministic Flow/automation send,
    * which all share `sender_type='bot'`/`'agent'`). Drives the "AI"
@@ -311,6 +318,27 @@ export type TemplateButton =
 export interface TemplateSampleValues {
   body?: string[];
   header?: string[];
+}
+
+/**
+ * Resolved header/body/footer/buttons of an OUTBOUND template message at
+ * send time (variables substituted), persisted so the inbox bubble can
+ * render it exactly like the template — buttons included — instead of
+ * just the plain body text. Migration 037. `buttons` carries the full
+ * `TemplateButton` union so the bubble can pick the right affordance
+ * (reply / link / phone / copy) per Meta button type.
+ */
+export interface TemplatePreviewPayload {
+  /** Set only when the template's header_type is 'text'. */
+  header?: string;
+  /** Set only when the template's header_type is image/video/document. */
+  headerMedia?: {
+    type: 'image' | 'video' | 'document';
+    url: string;
+  };
+  body: string;
+  footer?: string;
+  buttons?: TemplateButton[];
 }
 
 export interface MessageTemplate {

@@ -669,6 +669,9 @@ export function MessageThread({
       const renderedBody = renderTemplateBody(template.body_text, values.body);
       const tempId = `temp-${Date.now()}`;
 
+      // Optimistic bubble — renders header/body/footer/buttons immediately
+      // via template_preview, same as the persisted row will (mirrors how
+      // handleSendInteractive pre-fills interactive_payload above).
       const optimisticMsg: Message = {
         id: tempId,
         conversation_id: conversation.id,
@@ -676,6 +679,25 @@ export function MessageThread({
         content_type: 'template',
         content_text: renderedBody,
         template_name: template.name,
+        template_preview: {
+          header:
+            template.header_type === 'text' && template.header_content
+              ? renderTemplateBody(
+                  template.header_content,
+                  values.headerText ? [values.headerText] : []
+                )
+              : undefined,
+          headerMedia:
+            (template.header_type === 'image' ||
+              template.header_type === 'video' ||
+              template.header_type === 'document') &&
+            template.header_media_url
+              ? { type: template.header_type, url: template.header_media_url }
+              : undefined,
+          body: renderedBody,
+          footer: template.footer_text,
+          buttons: template.buttons,
+        },
         status: 'sending',
         created_at: new Date().toISOString(),
       };

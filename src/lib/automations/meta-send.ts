@@ -1,5 +1,8 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
+import type { MessageTemplate, TemplatePreviewPayload } from '@/types';
+import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { renderTemplateText } from '@/lib/whatsapp/template-send-builder';
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -145,6 +148,24 @@ async function sendViaMeta(
 
   const accessToken = decrypt(config.access_token);
 
+  // Load the local template row so the send builds the full components
+  // array (required for media-header templates — Meta rejects those
+  // without the header component on every send) and so the persisted
+  // message carries `template_preview` for the inbox bubble. A template
+  // that only exists on Meta (never synced locally) still sends via the
+  // legacy body-only path and just renders as plain text in the chat.
+  let templateRow: MessageTemplate | null = null;
+  if (input.kind === 'template') {
+    const { data } = await db
+      .from('message_templates')
+      .select('*')
+      .eq('account_id', input.accountId)
+      .eq('name', input.templateName)
+      .eq('language', input.language || 'en_US')
+      .maybeSingle();
+    if (data && isMessageTemplate(data)) templateRow = data;
+  }
+
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
@@ -153,6 +174,7 @@ async function sendViaMeta(
         to: phone,
         templateName: input.templateName,
         language: input.language,
+        template: templateRow ?? undefined,
         params: input.params,
       });
       return r.messageId;
@@ -197,8 +219,39 @@ async function sendViaMeta(
   // Persist the sent message so it appears in the inbox with a real
   // Meta message id. sender_type='bot' distinguishes automation sends
   // from manual agent sends.
+  // Templates: when the local row was found, resolve header/body/footer/
+  // buttons into `template_preview` (mirrors sendMessageToConversation,
+  // migration 037) so the bubble renders the template in full instead of
+  // an empty "Template" badge. Automations only carry positional body
+  // params — a text-header {{1}} has no value source here, so it keeps
+  // its placeholder (visible, not wrong).
+  let templatePreview: TemplatePreviewPayload | null = null;
+  let renderedBody: string | null = null;
+  if (input.kind === 'template' && templateRow) {
+    renderedBody = renderTemplateText(templateRow.body_text, input.params ?? []);
+    const headerMediaType =
+      templateRow.header_type === 'image' ||
+      templateRow.header_type === 'video' ||
+      templateRow.header_type === 'document'
+        ? templateRow.header_type
+        : null;
+    templatePreview = {
+      header:
+        templateRow.header_type === 'text' && templateRow.header_content
+          ? templateRow.header_content
+          : undefined,
+      headerMedia:
+        headerMediaType && templateRow.header_media_url
+          ? { type: headerMediaType, url: templateRow.header_media_url }
+          : undefined,
+      body: renderedBody,
+      footer: templateRow.footer_text,
+      buttons: templateRow.buttons,
+    };
+  }
+
   const content_type = input.kind === 'template' ? 'template' : 'text';
-  const content_text = input.kind === 'text' ? input.text : null;
+  const content_text = input.kind === 'text' ? input.text : renderedBody;
   const template_name = input.kind === 'template' ? input.templateName : null;
 
   const { error: msgErr } = await db.from('messages').insert({
@@ -207,6 +260,7 @@ async function sendViaMeta(
     content_type,
     content_text,
     template_name,
+    template_preview: templatePreview,
     message_id: waMessageId,
     status: 'sent',
   });
@@ -221,7 +275,7 @@ async function sendViaMeta(
     .update({
       last_message_text:
         input.kind === 'template'
-          ? `[template:${input.templateName}]`
+          ? (renderedBody ?? `[template:${input.templateName}]`)
           : input.text,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

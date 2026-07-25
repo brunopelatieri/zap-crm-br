@@ -19,6 +19,7 @@ import { format } from 'date-fns';
 import { ReplyQuote } from './reply-quote';
 import { MessageReactions } from './message-reactions';
 import { InteractivePreview } from '@/components/interactive/interactive-preview';
+import { TemplatePreview } from '@/components/interactive/template-preview';
 import { useTranslations } from 'next-intl';
 
 interface MessageBubbleProps {
@@ -217,10 +218,18 @@ function MessageContent({
             <LayoutTemplate className="h-3 w-3" />
             {t('template')}
           </span>
-          {message.content_text && (
-            <p className="mt-1 text-sm break-words whitespace-pre-wrap">
-              {message.content_text}
-            </p>
+          {message.template_preview ? (
+            // Full fidelity: header/body/footer/buttons rendered like the
+            // template appears on the recipient's phone (migration 037).
+            <TemplatePreview preview={message.template_preview} />
+          ) : (
+            // Older sends predate migration 037 (or the template row
+            // wasn't found locally at send time) — fall back to plain text.
+            message.content_text && (
+              <p className="mt-1 text-sm break-words whitespace-pre-wrap">
+                {message.content_text}
+              </p>
+            )
           )}
         </div>
       );

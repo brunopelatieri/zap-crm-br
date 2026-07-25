@@ -42,8 +42,12 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
-import type { MessageTemplate } from '@/types';
+import type { MessageTemplate, TemplatePreviewPayload } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import {
+  renderTemplateText,
+  type SendTimeParams,
+} from '@/lib/whatsapp/template-send-builder';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -453,6 +457,48 @@ export async function sendMessageToConversation(
   const interactiveBody =
     messageType === 'interactive' ? interactivePayload!.body : null;
 
+  // Template messages: resolve header/body/footer/buttons (variables
+  // substituted) so the bubble can render the sent template exactly as
+  // it appears on the recipient's phone, not just its plain body text.
+  // Only possible when the template row was found locally — a template
+  // that exists on Meta but never got synced locally still sends fine
+  // (legacy `params`-only path), it just falls back to the plain badge.
+  let templatePreview: TemplatePreviewPayload | null = null;
+  if (messageType === 'template' && templateRow) {
+    const sendParams = (templateMessageParams ?? {}) as Partial<SendTimeParams>;
+    const header =
+      templateRow.header_type === 'text' && templateRow.header_content
+        ? renderTemplateText(
+            templateRow.header_content,
+            sendParams.headerText ? [sendParams.headerText] : []
+          )
+        : undefined;
+    // Media headers: prefer a send-time URL override, else the template's
+    // stored public URL. No fallback for `headerMediaId`-only sends (a bare
+    // Meta media id, not a fetchable URL) — those still send fine to Meta,
+    // the bubble just won't have anything to render inline for them.
+    const headerMediaUrl = sendParams.headerMediaUrl ?? templateRow.header_media_url;
+    const headerMedia =
+      (templateRow.header_type === 'image' ||
+        templateRow.header_type === 'video' ||
+        templateRow.header_type === 'document') &&
+      headerMediaUrl
+        ? { type: templateRow.header_type, url: headerMediaUrl }
+        : undefined;
+    templatePreview = {
+      header,
+      headerMedia,
+      body:
+        contentText ||
+        renderTemplateText(
+          templateRow.body_text,
+          sendParams.body ?? templateParams ?? []
+        ),
+      footer: templateRow.footer_text,
+      buttons: templateRow.buttons,
+    };
+  }
+
   const { data: messageRecord, error: msgError } = await db
     .from('messages')
     .insert({
@@ -462,6 +508,7 @@ export async function sendMessageToConversation(
       content_text: interactiveBody ?? contentText ?? null,
       media_url: mediaUrl || null,
       template_name: templateName || null,
+      template_preview: templatePreview,
       interactive_payload:
         messageType === 'interactive' ? interactivePayload : null,
       message_id: waMessageId,

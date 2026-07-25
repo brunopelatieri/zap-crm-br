@@ -33,6 +33,19 @@
 import type { MessageTemplate, TemplateButton } from '@/types';
 import { extractVariableIndices } from './template-validators';
 
+/**
+ * Substitute `{{1}}`, `{{2}}`, … in a template string with positional
+ * values. Missing/blank values are left as the literal placeholder
+ * rather than dropped, so a caller can tell at a glance which variable
+ * still needs a value (mirrors the composer's own preview).
+ */
+export function renderTemplateText(text: string, values: string[]): string {
+  return text.replace(/\{\{(\d+)\}\}/g, (match, raw) => {
+    const value = values[Number(raw) - 1];
+    return value && value.trim().length > 0 ? value : match;
+  });
+}
+
 export interface SendTimeParams {
   /** Values for body {{1}}, {{2}}, … indexed by variable position. */
   body?: string[];
