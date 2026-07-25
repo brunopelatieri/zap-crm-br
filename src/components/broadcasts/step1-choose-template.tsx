@@ -113,11 +113,11 @@ export function Step1ChooseTemplate({
                 }`}
               >
                 <div className="flex items-start justify-between">
-                  <h3 className="text-foreground text-sm font-medium">
+                  <h3 className="text-foreground text-sm font-medium break-all">
                     {template.name}
                   </h3>
                   <span
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${catColor}`}
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 ml-1 text-[10px] font-medium ${catColor}`}
                   >
                     {template.category}
                   </span>
