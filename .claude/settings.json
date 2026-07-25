@@ -10,7 +10,10 @@
       "WebSearch",
       "WebFetch(domain:docs.360dialog.com)",
       "WebFetch(domain:docs.ycloud.com)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "WebFetch(domain:code.visualstudio.com)",
+      "WebFetch(domain:docs.cursor.com)",
+      "WebFetch(domain:cursor.com)"
     ]
   }
 }
