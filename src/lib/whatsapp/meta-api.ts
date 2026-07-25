@@ -24,7 +24,17 @@ export interface MetaPhoneInfo {
 }
 
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string };
+  error?: {
+    message?: string;
+    code?: number;
+    type?: string;
+    error_subcode?: number;
+    // Field-level detail for template validation failures (e.g. "Param
+    // body_text is invalid; ..."). `message` alone is often just the
+    // generic "Invalid parameter" — this is the part that says why.
+    error_user_msg?: string;
+    error_user_title?: string;
+  };
 }
 
 async function throwMetaError(
@@ -34,7 +44,13 @@ async function throwMetaError(
   let message = fallback;
   try {
     const data = (await response.json()) as MetaErrorResponse;
-    if (data.error?.message) message = data.error.message;
+    const err = data.error;
+    if (err?.message) {
+      message = err.error_user_msg
+        ? `${err.message}: ${err.error_user_msg}`
+        : err.message;
+      if (err.error_subcode) message += ` (subcode ${err.error_subcode})`;
+    }
   } catch {
     // response body wasn't JSON — keep the fallback
   }

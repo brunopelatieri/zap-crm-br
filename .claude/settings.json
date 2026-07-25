@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"console.log\\(require\\('./node_modules/next/package.json'\\).version\\)\")",
+      "Bash(git log *)",
+      "Bash(awk -F= '/^META_APP_ID=|^ENCRYPTION_KEY=|^WHATSAPP_TEMPLATES_DRY_RUN=/{print $1\"  len=\"length\\($0\\)-length\\($1\\)-1}' .env.local)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "WebFetch(domain:developers.facebook.com)",
+      "WebSearch",
+      "WebFetch(domain:docs.360dialog.com)",
+      "WebFetch(domain:docs.ycloud.com)",
+      "Bash(npx vitest *)"
+    ]
+  }
+}

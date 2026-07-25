@@ -31,7 +31,10 @@ interface MetaButtonPayload {
   text: string;
   url?: string;
   phone_number?: string;
-  example?: string[];
+  // URL buttons: array with the sample value, e.g. ["summer2023"].
+  // COPY_CODE buttons: a plain string, e.g. "250FF" — Meta rejects
+  // an array here with "Button example provided is invalid".
+  example?: string[] | string;
 }
 
 function buildHeaderComponent(payload: TemplatePayload): MetaComponent | null {
@@ -107,7 +110,14 @@ function buildButtonPayload(b: TemplateButton): MetaButtonPayload {
         phone_number: b.phone_number,
       };
     case 'COPY_CODE':
-      return { type: 'COPY_CODE', text: b.text, example: [b.example] };
+      // Meta hard-rejects any text other than this exact string (see
+      // subcode 2388153) — ignore whatever's stored locally, including
+      // rows saved before this constraint was enforced in the UI.
+      return {
+        type: 'COPY_CODE',
+        text: 'Copy offer code',
+        example: b.example,
+      };
   }
 }
 

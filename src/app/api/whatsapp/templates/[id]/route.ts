@@ -29,6 +29,11 @@ import { ensureImageHeaderHandle } from '@/lib/whatsapp/template-header-handle';
  * already-submitted templates.
  */
 
+// PATCH can re-run the same header-image upload + Meta edit chain as
+// /submit; see that route for why this needs headroom beyond the
+// platform default.
+export const maxDuration = 60;
+
 const EDITABLE_STATUSES = new Set(['APPROVED', 'REJECTED', 'PAUSED']);
 
 // uuid v4 plus the looser shape Postgres gen_random_uuid emits.

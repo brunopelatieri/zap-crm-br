@@ -107,7 +107,9 @@ describe('buildMetaTemplatePayload', () => {
       { type: 'QUICK_REPLY', text: 'Yes' },
       { type: 'URL', text: 'Track', url: 'https://x/{{1}}', example: ['abc'] },
       { type: 'PHONE_NUMBER', text: 'Call', phone_number: '+15551234567' },
-      { type: 'COPY_CODE', text: 'Copy', example: ['SUMMER20'] },
+      // Meta hard-codes this text; input 'Copy' above is intentionally
+      // discarded regardless of what's stored locally.
+      { type: 'COPY_CODE', text: 'Copy offer code', example: 'SUMMER20' },
     ]);
   });
 

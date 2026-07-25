@@ -126,8 +126,27 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
     case 'PHONE_NUMBER':
       return { type: 'PHONE_NUMBER', text: '', phone_number: '' };
     case 'COPY_CODE':
-      return { type: 'COPY_CODE', text: '', example: '' };
+      // Meta rejects any other value here — the button always reads
+      // "Copy offer code" and the label can't be customized.
+      return { type: 'COPY_CODE', text: 'Copy offer code', example: '' };
   }
+}
+
+/**
+ * A proxy/gateway timeout in front of the app can return its own HTML
+ * error page instead of the route handler's JSON. Guard on content-type
+ * so that case surfaces as a readable HTTP-status error instead of a
+ * raw "Unexpected token '<'" parser exception.
+ */
+async function parseJsonResponse(
+  res: Response
+): Promise<Record<string, unknown>> {
+  if (!res.headers.get('content-type')?.includes('application/json')) {
+    throw new Error(`Unexpected response (HTTP ${res.status})`);
+  }
+  return res.json().catch(() => {
+    throw new Error(`Unexpected response (HTTP ${res.status})`);
+  });
 }
 
 export function TemplateManager() {
@@ -279,10 +298,10 @@ export function TemplateManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildSubmitPayload()),
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) {
         throw new Error(
-          data?.error ||
+          (data?.error as string | undefined) ||
             `${isEdit ? 'Edit' : 'Submit'} failed (HTTP ${res.status})`
         );
       }
@@ -316,28 +335,34 @@ export function TemplateManager() {
       const res = await fetch('/api/whatsapp/templates/sync', {
         method: 'POST',
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) {
-        throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
+        throw new Error(
+          (data?.error as string | undefined) ||
+            `Sync failed (HTTP ${res.status})`
+        );
       }
       toast.success(
-        t('toastSyncCount', { total: data.total }) +
+        t('toastSyncCount', { total: data.total as number }) +
           (data.inserted || data.updated
             ? t('toastSyncDetails', {
-                inserted: data.inserted,
-                updated: data.updated,
+                inserted: data.inserted as number,
+                updated: data.updated as number,
               })
             : '')
       );
-      if (Array.isArray(data.errors) && data.errors.length > 0) {
-        const preview = data.errors
+      const errors = data.errors as
+        | { name: string; language: string; message: string }[]
+        | undefined;
+      if (Array.isArray(errors) && errors.length > 0) {
+        const preview = errors
           .slice(0, 3)
           .map(
             (e: { name: string; language: string; message: string }) =>
               `${e.name} (${e.language})`
           );
         const suffix =
-          data.errors.length > 3 ? `, +${data.errors.length - 3} more` : '';
+          errors.length > 3 ? `, +${errors.length - 3} more` : '';
         toast.error(
           t('toastSyncFailed', { preview: preview.join(', ') + suffix })
         );
@@ -368,9 +393,14 @@ export function TemplateManager() {
       const res = await fetch(`/api/whatsapp/templates/${target.id}`, {
         method: 'DELETE',
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await parseJsonResponse(res).catch(
+        () => ({}) as Record<string, unknown>
+      );
       if (!res.ok) {
-        throw new Error(data?.error || `Delete failed (HTTP ${res.status})`);
+        throw new Error(
+          (data?.error as string | undefined) ||
+            `Delete failed (HTTP ${res.status})`
+        );
       }
       toast.success(t('toastDeleteSuccess'));
       setTemplates((prev) => prev.filter((t) => t.id !== target.id));
@@ -1030,10 +1060,11 @@ export function TemplateManager() {
                           placeholder={t('btnLabelPlaceholder')}
                           value={btn.text}
                           maxLength={TEMPLATE_LIMITS.buttonTextMaxLength}
+                          disabled={btn.type === 'COPY_CODE'}
                           onChange={(e) =>
                             updateButton(i, { text: e.target.value })
                           }
-                          className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 flex-1 text-xs"
+                          className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 flex-1 text-xs disabled:opacity-70"
                         />
                         <Button
                           type="button"

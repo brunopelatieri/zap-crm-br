@@ -11,6 +11,14 @@ import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components';
 import { ensureImageHeaderHandle } from '@/lib/whatsapp/template-header-handle';
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize';
 
+// Header-image submits chain a media download + resumable upload (2
+// round trips) + template create against the Meta Graph API before
+// this handler can respond. Give it headroom beyond the platform
+// default so a slow-but-successful chain doesn't get cut off by a
+// gateway timeout (which would return an HTML error page instead of
+// this handler's JSON).
+export const maxDuration = 60;
+
 /**
  * Shared upsert payload builder — both the Meta-failure path and the
  * Meta-success path write nearly identical rows; dropping the shared
