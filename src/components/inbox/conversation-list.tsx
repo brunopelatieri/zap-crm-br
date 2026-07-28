@@ -545,7 +545,7 @@ function ConversationItem({
                 onClick={handleOpenTags}
                 aria-label={t('manageTags', { name: displayName })}
                 title={t('manageTagsShort')}
-                className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-primary flex h-5 w-5 items-center justify-center rounded transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100"
+                className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-primary flex h-5 w-5 items-center justify-center rounded-full transition-[opacity,background-color,color] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100"
               >
                 <TagIcon className="h-3 w-3" />
               </button>
