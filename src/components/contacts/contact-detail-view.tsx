@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
+import { assignTag, unassignTag } from '@/lib/tags';
 import { toast } from 'sonner';
 import type {
   Contact,
@@ -250,26 +251,25 @@ export function ContactDetailView({
 
     const isSelected = contactTagIds.includes(tagId);
 
-    if (isSelected) {
-      const { error } = await supabase
-        .from('contact_tags')
-        .delete()
-        .eq('contact_id', contactId)
-        .eq('tag_id', tagId);
-      if (!error) {
+    // Via lib/tags: `assignTag` usa upsert com ignoreDuplicates, então
+    // um duplo-clique ou uma corrida com outro operador não estoura
+    // mais 23505 no UNIQUE(contact_id, tag_id) — antes daqui esta
+    // função usava `insert` puro e engolia o erro silenciosamente,
+    // deixando a UI dessincronizada do banco.
+    try {
+      if (isSelected) {
+        await unassignTag(supabase, contactId, tagId);
         setContactTagIds((prev) => prev.filter((id) => id !== tagId));
-        onUpdated();
-      }
-    } else {
-      const { error } = await supabase
-        .from('contact_tags')
-        .insert({ contact_id: contactId, tag_id: tagId });
-      if (!error) {
+      } else {
+        await assignTag(supabase, contactId, tagId);
         setContactTagIds((prev) => [...prev, tagId]);
-        onUpdated();
       }
+      onUpdated();
+    } catch (err) {
+      console.error('Falha ao alternar etiqueta:', err);
+    } finally {
+      setSavingTags(false);
     }
-    setSavingTags(false);
   }
 
   async function addNote() {

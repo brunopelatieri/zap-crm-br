@@ -23,19 +23,9 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { DEFAULT_TAG_COLOR, PRESET_COLORS, createTag } from '@/lib/tags';
 import { useTranslations } from 'next-intl';
 import type { Tag } from '@/types';
-
-const PRESET_COLORS = [
-  { name: 'red', value: '#ef4444' },
-  { name: 'orange', value: '#f97316' },
-  { name: 'amber', value: '#f59e0b' },
-  { name: 'emerald', value: '#10b981' },
-  { name: 'cyan', value: '#06b6d4' },
-  { name: 'blue', value: '#3b82f6' },
-  { name: 'violet', value: '#8b5cf6' },
-  { name: 'pink', value: '#ec4899' },
-];
 
 /**
  * Tags card — colour-coded contact labels. Creation is an inline row
@@ -54,7 +44,7 @@ export function TagManager() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [newTagName, setNewTagName] = useState('');
-  const [selectedColor, setSelectedColor] = useState(PRESET_COLORS[3].value);
+  const [selectedColor, setSelectedColor] = useState<string>(DEFAULT_TAG_COLOR);
 
   useEffect(() => {
     if (authLoading) return;
@@ -98,20 +88,21 @@ export function TagManager() {
         return;
       }
 
-      // account_id is mandatory on every account-scoped insert (NOT
-      // NULL + RLS, no DB default).
-      const { error } = await supabase.from('tags').insert({
-        user_id: user.id,
-        account_id: accountId,
+      // `createTag` faz get-or-create: se o nome já existir na conta
+      // (case-insensitive, via o índice único da migração 038), ele
+      // devolve a etiqueta existente em vez de criar uma duplicata.
+      // account_id é obrigatório em todo insert com escopo de conta
+      // (NOT NULL + RLS, sem default no banco).
+      await createTag(supabase, {
+        userId: user.id,
+        accountId,
         name: newTagName.trim(),
         color: selectedColor,
       });
 
-      if (error) throw error;
-
       toast.success(t('tagCreated'));
       setNewTagName('');
-      setSelectedColor(PRESET_COLORS[3].value);
+      setSelectedColor(DEFAULT_TAG_COLOR);
       await fetchTags(user.id);
     } catch (err) {
       console.error('Create error:', err);

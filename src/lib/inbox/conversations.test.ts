@@ -30,6 +30,7 @@ function makeConversation(
 const tag = (id: string, name = id) => ({
   id,
   user_id: 'u1',
+  account_id: 'a1',
   name,
   color: '#fff',
   created_at: '',

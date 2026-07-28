@@ -217,7 +217,9 @@
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
       "noMessagesYet": "Ainda sem mensagens",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "manageTags": "Gerenciar etiquetas de {name}",
+      "manageTagsShort": "Gerenciar etiquetas"
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",
@@ -336,7 +338,24 @@
       "deals": "Negócios",
       "noTags": "Nenhuma etiqueta",
       "noDeals": "Nenhum negócio",
-      "addNotePlaceholder": "Adicionar uma nota..."
+      "addNotePlaceholder": "Adicionar uma nota...",
+      "manageTags": "Gerenciar etiquetas"
+    },
+    "tagPicker": {
+      "title": "Etiquetas de {name}",
+      "description": "Atribua ou remova etiquetas deste lead.",
+      "searchPlaceholder": "Buscar ou criar etiqueta...",
+      "createTag": "Criar \"{name}\"",
+      "useColor": "Usar {color}",
+      "noTags": "Ainda sem etiquetas",
+      "noResults": "Nenhuma etiqueta encontrada",
+      "close": "Fechar",
+      "readOnly": "Somente leitura — seu perfil não pode alterar etiquetas",
+      "onlyAdminsCanCreate": "Só administradores podem criar novas etiquetas.",
+      "failedToLoad": "Falha ao carregar etiquetas",
+      "failedToAssign": "Falha ao atribuir etiqueta",
+      "failedToRemove": "Falha ao remover etiqueta",
+      "failedToCreate": "Falha ao criar etiqueta"
     },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",

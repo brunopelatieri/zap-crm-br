@@ -13,11 +13,13 @@ import type {
   Message,
   Contact,
   ConversationStatus,
+  Tag,
 } from '@/types';
 import { useRealtime } from '@/hooks/use-realtime';
 import { ConversationList } from '@/components/inbox/conversation-list';
 import { MessageThread } from '@/components/inbox/message-thread';
 import { ContactSidebar } from '@/components/inbox/contact-sidebar';
+import { TagPickerProvider } from '@/components/inbox/tag-picker/tag-picker-context';
 import { toast } from 'sonner';
 import { WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -543,6 +545,37 @@ export default function InboxPage() {
     [activeConversation]
   );
 
+  /**
+   * Propaga uma mudança de etiquetas feita no picker para todo o
+   * estado da página. Precisa atingir DOIS lugares, e esquecer o
+   * primeiro é o bug mais fácil de introduzir aqui:
+   *
+   *   1. `conversations[].contact.tags` — é o que
+   *      `matchesContactFilters` lê para o filtro por etiqueta da
+   *      lista. Sem atualizar, uma conversa não entra nem sai da
+   *      lista filtrada até um refetch.
+   *   2. `activeContact.tags` — o que a ContactSidebar renderiza.
+   *
+   * O `map` casa por `contact.id` e não para no primeiro acerto de
+   * propósito: um mesmo contato pode ter mais de uma conversa
+   * (encerradas persistem depois do dedupe da migração 036).
+   */
+  const handleContactTagsChanged = useCallback(
+    (contactId: string, tags: Tag[]) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.contact?.id === contactId
+            ? { ...c, contact: { ...c.contact, tags } }
+            : c
+        )
+      );
+      setActiveContact((prev) =>
+        prev?.id === contactId ? { ...prev, tags } : prev
+      );
+    },
+    []
+  );
+
   // On mobile (<lg) we show a SINGLE pane — either the list or the
   // thread — rather than cramming both side-by-side. Selecting a
   // conversation slides the thread in; the thread's back button pops
@@ -561,26 +594,31 @@ export default function InboxPage() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left panel: Conversation list.
+      {/* O picker de etiquetas é montado UMA vez aqui, envolvendo os
+          dois painéis que o acionam. Ver o cabeçalho de
+          tag-picker-context.tsx para o porquê de não ficar dentro de
+          cada trigger. */}
+      <TagPickerProvider onTagsChanged={handleContactTagsChanged}>
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left panel: Conversation list.
             Hidden on mobile when a conversation is selected so the
             thread can occupy the full width. Always visible on lg+. */}
-        <div
-          className={cn(
-            'flex h-full flex-1 lg:flex-none',
-            hasActiveConv ? 'hidden lg:flex' : 'flex'
-          )}
-        >
-          <ConversationList
-            activeConversationId={activeConversation?.id ?? null}
-            onSelect={handleSelectConversation}
-            conversations={conversations}
-            onConversationsLoaded={handleConversationsLoaded}
-            resyncToken={resyncToken}
-          />
-        </div>
+          <div
+            className={cn(
+              'flex h-full flex-1 lg:flex-none',
+              hasActiveConv ? 'hidden lg:flex' : 'flex'
+            )}
+          >
+            <ConversationList
+              activeConversationId={activeConversation?.id ?? null}
+              onSelect={handleSelectConversation}
+              conversations={conversations}
+              onConversationsLoaded={handleConversationsLoaded}
+              resyncToken={resyncToken}
+            />
+          </div>
 
-        {/* Center panel: Message thread.
+          {/* Center panel: Message thread.
             Hidden on mobile when no conversation is selected so the
             list can occupy the full width. Always visible on lg+
             (shows its own empty-state if no thread is picked yet).
@@ -590,39 +628,40 @@ export default function InboxPage() {
             long URL in a message body) forces the flex child past
             its share and pushes the contact-sidebar panel off-screen
             on the right. Issue #165. */}
-        <div
-          className={cn(
-            'flex h-full min-w-0 flex-1 lg:flex',
-            hasActiveConv ? 'flex' : 'hidden lg:flex'
-          )}
-        >
-          <MessageThread
-            conversation={activeConversation}
-            contact={activeContact}
-            messages={messages}
-            onMessagesLoaded={handleMessagesLoaded}
-            onNewMessage={handleNewMessage}
-            onUpdateMessage={handleUpdateMessage}
-            onStatusChange={handleStatusChange}
-            onAssignChange={handleAssignChange}
-            onBack={handleCloseConversation}
-            resyncToken={resyncToken}
-            onRefresh={handleManualRefresh}
-            contactPanelOpen={contactPanelOpen}
-            onToggleContactPanel={handleToggleContactPanel}
-          />
-        </div>
+          <div
+            className={cn(
+              'flex h-full min-w-0 flex-1 lg:flex',
+              hasActiveConv ? 'flex' : 'hidden lg:flex'
+            )}
+          >
+            <MessageThread
+              conversation={activeConversation}
+              contact={activeContact}
+              messages={messages}
+              onMessagesLoaded={handleMessagesLoaded}
+              onNewMessage={handleNewMessage}
+              onUpdateMessage={handleUpdateMessage}
+              onStatusChange={handleStatusChange}
+              onAssignChange={handleAssignChange}
+              onBack={handleCloseConversation}
+              resyncToken={resyncToken}
+              onRefresh={handleManualRefresh}
+              contactPanelOpen={contactPanelOpen}
+              onToggleContactPanel={handleToggleContactPanel}
+            />
+          </div>
 
-        {/* Right panel: Contact sidebar — desktop only, and only when the
+          {/* Right panel: Contact sidebar — desktop only, and only when the
             agent hasn't collapsed it via the thread-header toggle (#258).
             On mobile it's always hidden (the `lg:block` below), so the
             toggle — which is itself desktop-only — never affects it. */}
-        {contactPanelOpen && (
-          <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
-          </div>
-        )}
-      </div>
+          {contactPanelOpen && (
+            <div className="hidden lg:block">
+              <ContactSidebar contact={activeContact} />
+            </div>
+          )}
+        </div>
+      </TagPickerProvider>
     </div>
   );
 }

@@ -81,6 +81,14 @@ Aparência → Idioma**; a escolha fica salva no navegador.
   conversa, status (aberta / pendente / encerrada) e anotações internas.
 - **Contatos + etiquetas + campos personalizados** — importação via
   CSV, deduplicação e busca por nome, telefone ou e-mail.
+- **Gestão de etiquetas direto no Inbox** — 🆕 _recurso exclusivo do
+  ZAP CRM BR, ausente no [wacrm](https://github.com/ArnasDon/wacrm)
+  original. Crie, atribua e remova etiquetas de um lead sem sair da
+  conversa: um único modal acionável tanto na lista de conversas
+  quanto na barra lateral de contato, com atualização otimista,
+  catálogo sem duplicatas por conta (nome único, case-insensitive) e
+  criação restrita a administradores/proprietários por papel de
+  conta.
 - **Funis de vendas (Kanban)** — negócios vinculados às conversas,
   etapas personalizáveis e totais em **Real (BRL)**.
 - **Disparos em massa** — templates aprovados pela Meta, funil de

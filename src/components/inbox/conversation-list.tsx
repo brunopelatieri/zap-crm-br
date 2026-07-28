@@ -8,8 +8,8 @@ import {
   normalizeConversations,
 } from '@/lib/inbox/conversations';
 import { cn } from '@/lib/utils';
-import type { Conversation, ConversationStatus, Tag } from '@/types';
-import { Search, ChevronDown, X } from 'lucide-react';
+import type { Contact, Conversation, ConversationStatus, Tag } from '@/types';
+import { Search, ChevronDown, Tag as TagIcon, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useTagPicker } from '@/components/inbox/tag-picker/tag-picker-context';
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -52,6 +53,7 @@ export function ConversationList({
   resyncToken = 0,
 }: ConversationListProps) {
   const t = useTranslations('Inbox.conversationList');
+  const { open: openTagPicker } = useTagPicker();
 
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(
     () => [
@@ -423,6 +425,7 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                onOpenTags={openTagPicker}
                 t={t}
               />
             ))}
@@ -437,6 +440,8 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /** Abre o picker de etiquetas para o contato desta conversa. */
+  onOpenTags: (contact: Contact) => void;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -444,6 +449,7 @@ function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  onOpenTags,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
@@ -454,6 +460,34 @@ function ConversationItem({
     onSelect(conversation);
   }, [onSelect, conversation]);
 
+  // O item era um <button>. Como ele passou a conter o gatilho de
+  // etiquetas — outro botão —, precisou virar um div com role/tabIndex:
+  // HTML proíbe <button> dentro de <button>, e o React não só avisa
+  // como o clique interno deixa de se comportar de forma previsível.
+  // O papel e o comportamento de teclado são reimplementados aqui.
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      // Só reage quando o próprio item tem o foco — Enter/Espaço com
+      // o foco no botão de etiquetas pertence àquele botão.
+      if (e.target !== e.currentTarget) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onSelect(conversation);
+      }
+    },
+    [onSelect, conversation]
+  );
+
+  const handleOpenTags = useCallback(
+    (e: React.MouseEvent) => {
+      // Sem isto, o clique borbulha até o item e troca a conversa
+      // ativa junto com a abertura do modal.
+      e.stopPropagation();
+      if (contact) onOpenTags(contact);
+    },
+    [contact, onOpenTags]
+  );
+
   const timeAgo = conversation.last_message_at
     ? formatDistanceToNow(new Date(conversation.last_message_at), {
         addSuffix: false,
@@ -461,10 +495,13 @@ function ConversationItem({
     : '';
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className={cn(
-        'hover:bg-muted/50 flex w-full items-start gap-3 px-3 py-3 text-left transition-colors',
+        'hover:bg-muted/50 focus-visible:ring-primary group flex w-full cursor-pointer items-start gap-3 px-3 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset',
         isActive && 'border-primary bg-muted/70 border-l-2'
       )}
     >
@@ -496,6 +533,23 @@ function ConversationItem({
             {conversation.last_message_text || t('noMessagesYet')}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {/* Gatilho do picker de etiquetas.
+                Sempre visível abaixo de lg: não há :hover no toque, e
+                no mobile esta lista é o ÚNICO caminho até o modal (a
+                ContactSidebar é hidden lg:block). Em telas grandes ele
+                aparece no hover/foco do item para não poluir a lista
+                em repouso. */}
+            {contact && (
+              <button
+                type="button"
+                onClick={handleOpenTags}
+                aria-label={t('manageTags', { name: displayName })}
+                title={t('manageTagsShort')}
+                className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-primary flex h-5 w-5 items-center justify-center rounded transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100"
+              >
+                <TagIcon className="h-3 w-3" />
+              </button>
+            )}
             {conversation.unread_count > 0 && (
               <span className="bg-primary text-primary-foreground flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold">
                 {conversation.unread_count}
@@ -511,6 +565,6 @@ function ConversationItem({
           </div>
         </div>
       </div>
-    </button>
+    </div>
   );
 }

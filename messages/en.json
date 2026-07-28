@@ -217,7 +217,9 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "manageTags": "Manage tags for {name}",
+      "manageTagsShort": "Manage tags"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -336,7 +338,24 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "manageTags": "Manage tags"
+    },
+    "tagPicker": {
+      "title": "Tags for {name}",
+      "description": "Assign or remove tags for this lead.",
+      "searchPlaceholder": "Search or create a tag...",
+      "createTag": "Create \"{name}\"",
+      "useColor": "Use {color}",
+      "noTags": "No tags yet",
+      "noResults": "No tags found",
+      "close": "Close",
+      "readOnly": "Read-only — your role can't change tags",
+      "onlyAdminsCanCreate": "Only admins can create new tags.",
+      "failedToLoad": "Failed to load tags",
+      "failedToAssign": "Failed to assign tag",
+      "failedToRemove": "Failed to remove tag",
+      "failedToCreate": "Failed to create tag"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",

@@ -118,6 +118,8 @@ export interface Contact {
 export interface Tag {
   id: string;
   user_id: string;
+  /** Chave de tenancy — NOT NULL desde a migração 017. */
+  account_id: string;
   name: string;
   color: string;
   created_at: string;

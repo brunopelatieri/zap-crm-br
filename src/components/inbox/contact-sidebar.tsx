@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
-import type { Contact, Deal, ContactNote, Tag } from '@/types';
+import type { Contact, Deal, ContactNote } from '@/types';
 import {
   Phone,
   Mail,
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { useTranslations } from 'next-intl';
+import { useTagPicker } from '@/components/inbox/tag-picker/tag-picker-context';
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -30,20 +31,28 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tThread = useTranslations('Inbox.messageThread');
 
   const { accountId } = useAuth();
+  const { open: openTagPicker } = useTagPicker();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
-  const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+
+  // As etiquetas vêm de `contact.tags`, já hidratado pela página via
+  // CONVERSATION_SELECT (`contact_tags(tags(*))`). Manter uma cópia
+  // local aqui criava uma segunda fonte de verdade para o mesmo dado:
+  // depois de uma mutação no picker, uma das duas ficava velha. Como
+  // efeito colateral, isso também elimina uma query por troca de
+  // conversa.
+  const tags = contact?.tags ?? [];
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals and notes in parallel
+    const [dealsRes, notesRes] = await Promise.all([
       supabase
         .from('deals')
         .select('*, stage:pipeline_stages(*)')
@@ -54,23 +63,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .select('*')
         .eq('contact_id', contact.id)
         .order('created_at', { ascending: false }),
-      supabase
-        .from('contact_tags')
-        .select('id, tag_id, tags(*)')
-        .eq('contact_id', contact.id),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
-    if (tagsRes.data) {
-      const mapped = tagsRes.data
-        .filter((ct: Record<string, unknown>) => ct.tags)
-        .map((ct: Record<string, unknown>) => ({
-          ...(ct.tags as Tag),
-          contact_tag_id: ct.id as string,
-        }));
-      setTags(mapped);
-    }
   }, [contact]);
 
   // Load on contact change. setContactData/setTags run inside async
@@ -188,6 +184,17 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase">
               <TagIcon className="h-3 w-3" />
               {tSidebar('tags')}
+              {/* Único caminho de escrita a partir daqui: todo o fluxo
+                  (criar / atribuir / remover) vive no picker. */}
+              <button
+                type="button"
+                onClick={() => openTagPicker(contact)}
+                aria-label={tSidebar('manageTags')}
+                title={tSidebar('manageTags')}
+                className="text-muted-foreground hover:bg-muted hover:text-foreground ml-auto flex h-5 w-5 items-center justify-center rounded transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {tags.length === 0 ? (
@@ -196,8 +203,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 </p>
               ) : (
                 tags.map((tag) => (
+                  // `tag.id` é único por contato — garantido pelo
+                  // UNIQUE(contact_id, tag_id) da tabela de vínculo.
                   <span
-                    key={tag.contact_tag_id}
+                    key={tag.id}
                     className="rounded-full px-2 py-0.5 text-[10px] font-medium"
                     style={{
                       backgroundColor: `${tag.color}20`,
