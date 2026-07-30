@@ -4,7 +4,7 @@
 // Antes desta lib, três módulos falavam com `tags` / `contact_tags`
 // direto e divergiam entre si:
 //
-//   - settings/tag-manager.tsx      → criar / excluir do catálogo
+//   - settings/tag-manager.tsx      → criar / editar / excluir do catálogo
 //   - contacts/contact-detail-view  → toggle atribuir / remover
 //   - contacts/contact-form.tsx     → sync no save
 //
@@ -46,6 +46,21 @@ export const DEFAULT_TAG_COLOR = PRESET_COLORS[3].value;
 
 /** Violação de unicidade no Postgres — o nome de etiqueta já existe. */
 const PG_UNIQUE_VIOLATION = '23505';
+
+/**
+ * RLS negou a escrita. Exportado — ao contrário da decisão da §9.3 do
+ * SPEC do Inbox, que o descartou por falta de consumidor — porque o
+ * fluxo de edição em Configurações distingue "sem permissão" de "falha
+ * genérica" na mensagem que mostra ao usuário.
+ */
+export const PG_INSUFFICIENT_PRIVILEGE = '42501';
+
+/**
+ * PostgREST: `.single()` não encontrou exatamente uma linha. Num
+ * UPDATE por `id`, significa que a etiqueta sumiu ou que a RLS filtrou
+ * a linha — nos dois casos o catálogo em memória está velho.
+ */
+export const PGRST_NO_SINGLE_ROW = 'PGRST116';
 
 /**
  * Normaliza um nome de etiqueta para comparação. Espelha o
@@ -164,4 +179,73 @@ export async function createTag(
   }
 
   throw error;
+}
+
+/**
+ * O nome pedido já pertence a outra etiqueta da conta.
+ *
+ * Existe como erro tipado, e não como string, porque o chamador
+ * precisa tratá-lo de forma diferente de qualquer outra falha: em vez
+ * de um toast, a mensagem vai para baixo do campo de nome e o modal
+ * fica aberto com o rascunho intacto.
+ *
+ * `tagName` e não `name`: `Error.prototype.name` é o nome da CLASSE do
+ * erro e é lido por ferramenta de log. Sobrescrevê-lo com o nome da
+ * etiqueta faria um conflito de "Financeiro" ser logado como um erro
+ * da categoria "Financeiro".
+ */
+export class TagNameConflictError extends Error {
+  constructor(public readonly tagName: string) {
+    super(`Tag name already in use: ${tagName}`);
+    this.name = 'TagNameConflictError';
+  }
+}
+
+export interface UpdateTagInput {
+  id: string;
+  /** Já trimado pelo chamador. Ausente = não mexe no nome. */
+  name?: string;
+  /** HEX canônico (`#rrggbb`). Ausente = não mexe na cor. */
+  color?: string;
+}
+
+/**
+ * Atualiza nome e/ou cor de uma etiqueta existente.
+ *
+ * Diferente de `createTag`, um 23505 aqui NÃO é get-or-create: o
+ * usuário pediu para renomear ESTA etiqueta, e devolver outra
+ * silenciosamente mesclaria duas etiquetas distintas — o operador veria
+ * "salvo" e um dos dois conjuntos de contatos teria mudado de etiqueta
+ * sem ninguém pedir. Por isso o conflito sobe como
+ * `TagNameConflictError`.
+ *
+ * O patch é parcial de propósito: mandar `color` num update que só
+ * renomeia sobrescreveria uma cor alterada em paralelo por outro admin.
+ *
+ * `account_id` e `user_id` nunca são enviados — são imutáveis, e a RLS
+ * (`tags_update`, migração 017) já resolve o escopo pelo `id`.
+ */
+export async function updateTag(
+  supabase: SupabaseClient,
+  { id, name, color }: UpdateTagInput
+): Promise<Tag> {
+  const patch: Record<string, string> = {};
+  if (name !== undefined) patch.name = name;
+  if (color !== undefined) patch.color = color;
+
+  const { data, error } = await supabase
+    .from('tags')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === PG_UNIQUE_VIOLATION) {
+      throw new TagNameConflictError(name ?? '');
+    }
+    throw error;
+  }
+
+  return data as Tag;
 }
