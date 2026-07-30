@@ -45,6 +45,11 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 type InboxFilter = ConversationStatus | 'all' | 'unread';
 
+/** Quantas etiquetas o item mostra antes de resumir o resto num "+N".
+ *  A lista tem 320px no desktop — acima disto os nomes viram reticências
+ *  e deixam de informar qualquer coisa. */
+const MAX_VISIBLE_TAGS = 3;
+
 export function ConversationList({
   activeConversationId,
   onSelect,
@@ -456,6 +461,13 @@ function ConversationItem({
   const displayName = contact?.name || contact?.phone || t('unknown');
   const initials = displayName.charAt(0).toUpperCase();
 
+  // As etiquetas já chegam hidratadas em `contact.tags` pelo
+  // CONVERSATION_SELECT (`contact_tags(tags(*))`) e o TagPickerProvider
+  // as mantém em dia via `onTagsChanged` — não há nada a buscar aqui.
+  const contactTags = contact?.tags ?? [];
+  const visibleTags = contactTags.slice(0, MAX_VISIBLE_TAGS);
+  const hiddenTags = contactTags.slice(MAX_VISIBLE_TAGS);
+
   const handleClick = useCallback(() => {
     onSelect(conversation);
   }, [onSelect, conversation]);
@@ -564,6 +576,41 @@ function ConversationItem({
             />
           </div>
         </div>
+
+        {/* Etiquetas do contato.
+            Sem etiquetas nada é renderizado — nenhuma margem sobra para
+            desalinhar o item em relação aos vizinhos.
+            Uma linha só, sem wrap: as pills encolhem e truncam
+            (`min-w-0` + `truncate`) em vez de empurrar a altura do item,
+            o que deixaria a lista com itens de alturas irregulares. O
+            excedente vira um "+N" fixo à direita. */}
+        {contactTags.length > 0 && (
+          <div className="mt-1 flex items-center gap-1 overflow-hidden">
+            {visibleTags.map((tag) => (
+              // `tag.id` é único por contato — garantido pelo
+              // UNIQUE(contact_id, tag_id) da tabela de vínculo.
+              <span
+                key={tag.id}
+                title={tag.name}
+                className="min-w-0 truncate rounded-full px-1.5 py-0.5 text-[10px] leading-none font-medium"
+                style={{
+                  backgroundColor: `${tag.color}20`,
+                  color: tag.color,
+                }}
+              >
+                {tag.name}
+              </span>
+            ))}
+            {hiddenTags.length > 0 && (
+              <span
+                title={hiddenTags.map((tag) => tag.name).join(', ')}
+                className="bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none font-medium"
+              >
+                +{hiddenTags.length}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
