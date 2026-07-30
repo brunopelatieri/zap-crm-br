@@ -748,6 +748,20 @@ A §9.3 do SPEC do Inbox o havia descartado por falta de consumidor. Aqui
 ele tem um: a §5.6 pede mensagem específica para `42501`. Exportado
 junto com `PGRST_NO_SINGLE_ROW`.
 
+### 11.11 Lápis e `×` sempre visíveis (§3.2, medida 5)
+
+A §3.2 previa revelar os dois ícones em hover/foco em ponteiros finos.
+Decisão do mantenedor após ver o resultado: **sempre visíveis**, em
+qualquer viewport. Esconder o lápis escondia junto a existência da
+edição — a feature nova ficava indescobrível para quem não passasse o
+mouse por cima.
+
+A separação das zonas de clique não dependia dessa medida: continuam de
+pé os dois botões irmãos, o separador de 1px, o alvo de 28px, o realce
+de fundo próprio do `×` e o modal de confirmação. O slot de largura fixa
+do lápis perde a razão de existir (não há mais mudança de largura em
+hover), mas fica: agora só a opacidade anima, de 70% para 100%.
+
 ---
 
 ## 12. Pendências operacionais

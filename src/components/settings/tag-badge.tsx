@@ -14,6 +14,11 @@
 // alvo do `×` de 28px (o mínimo da WCAG 2.2 §2.5.8 é 24px; o `×`
 // anterior tinha ~16px), realce de fundo próprio no `×`, e o modal de
 // confirmação que continua sendo a rede final.
+//
+// Os dois ícones ficam SEMPRE visíveis (pedido do mantenedor, §11.11 do
+// SPEC): a revelação em hover que a §3.2 previa escondia a existência da
+// edição e não funcionava em toque. A separação das zonas continua
+// inteira sem ela — nenhuma das outras cinco medidas dependia do hover.
 // ============================================================
 
 import { useTranslations } from 'next-intl';
@@ -78,10 +83,10 @@ export function TagBadge({ tag, canEdit, onEdit, onDelete }: TagBadgeProps) {
           style={{ backgroundColor: tag.color }}
         />
         {tag.name}
-        {/* Slot de largura fixa: o lápis só muda de opacidade, nunca
-            de tamanho, para o chip não reflowar a grade `flex-wrap`
-            em hover. */}
-        <Pencil className="size-3 shrink-0 opacity-0 transition-opacity group-focus-within:opacity-70 group-hover:opacity-70" />
+        {/* Sempre visível (não só em hover): a descoberta da ação vale
+            mais que o chip enxuto, e o alvo de exclusão só é atingido
+            depois do separador. */}
+        <Pencil className="size-3 shrink-0 opacity-70 transition-opacity group-hover:opacity-100" />
       </button>
 
       <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-current/25" />
@@ -90,10 +95,10 @@ export function TagBadge({ tag, canEdit, onEdit, onDelete }: TagBadgeProps) {
         type="button"
         onClick={() => onDelete(tag)}
         aria-label={t('deleteAria', { name: tag.name })}
-        // `lg:opacity-0` e não `opacity-0`: em telas sem hover, esconder
-        // o alvo é pior que mostrá-lo (mesma solução da §9.2 do SPEC do
-        // Inbox). Nunca `display:none` — o botão segue focável por Tab.
-        className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full opacity-70 transition-all hover:bg-black/10 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-current lg:opacity-0 lg:group-focus-within:opacity-70 lg:group-hover:opacity-70 dark:hover:bg-white/10"
+        // Sempre visível, em qualquer viewport. A proteção contra o
+        // clique acidental fica por conta do que não mudou: separador,
+        // alvo de 28px, realce de fundo próprio e o modal de confirmação.
+        className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full opacity-70 transition-all hover:bg-black/10 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-current dark:hover:bg-white/10"
       >
         <X className="size-3.5" />
       </button>
