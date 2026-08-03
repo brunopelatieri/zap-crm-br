@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble } from './message-bubble';
+import { MediaLightbox, type LightboxItem } from './media-lightbox';
 import { MessageActions } from './message-actions';
 import {
   MessageComposer,
@@ -791,6 +792,47 @@ export function MessageThread({
     return map;
   }, [messages]);
 
+  // ------------------------------------------------------------------
+  // Lightbox — mídia (imagem/vídeo) de toda a conversa, não só a
+  // mensagem clicada. Guarda o id da mensagem em vez do índice: novas
+  // mensagens chegando via realtime mudariam a posição no array, e um
+  // índice preso ficaria apontando pra mídia errada.
+  // ------------------------------------------------------------------
+  const lightboxItems = useMemo<LightboxItem[]>(
+    () =>
+      messages
+        .filter(
+          (m): m is Message & { media_url: string } =>
+            (m.content_type === 'image' || m.content_type === 'video') &&
+            !!m.media_url
+        )
+        .map((m) => ({
+          id: m.id,
+          type: m.content_type as 'image' | 'video',
+          url: m.media_url,
+          caption: m.content_text ?? null,
+          downloadable: m.sender_type === 'customer',
+        })),
+    [messages]
+  );
+  const [lightboxMessageId, setLightboxMessageId] = useState<string | null>(
+    null
+  );
+  const lightboxIndex = lightboxMessageId
+    ? lightboxItems.findIndex((item) => item.id === lightboxMessageId)
+    : -1;
+  const openLightbox = useCallback((messageId: string) => {
+    setLightboxMessageId(messageId);
+  }, []);
+  const closeLightbox = useCallback(() => setLightboxMessageId(null), []);
+  const navigateLightbox = useCallback(
+    (nextIndex: number) => {
+      const item = lightboxItems[nextIndex];
+      if (item) setLightboxMessageId(item.id);
+    },
+    [lightboxItems]
+  );
+
   // Bucket reactions by their target message_id for O(1) per-bubble lookup.
   const reactionsByMessageId = useMemo(() => {
     const map = new Map<string, MessageReaction[]>();
@@ -1267,6 +1309,7 @@ export function MessageThread({
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
                           senderName={senderNameFor(msg)}
+                          onOpenMedia={openLightbox}
                         />
                       </MessageActions>
                     );
@@ -1310,6 +1353,13 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <MediaLightbox
+        items={lightboxItems}
+        index={lightboxIndex >= 0 ? lightboxIndex : null}
+        onClose={closeLightbox}
+        onNavigate={navigateLightbox}
       />
     </div>
   );

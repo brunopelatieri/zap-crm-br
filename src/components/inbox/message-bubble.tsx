@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message, MessageReaction } from '@/types';
 import {
@@ -14,12 +14,14 @@ import {
   ImageOff,
   CornerDownLeft,
   Sparkles,
+  Maximize2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ReplyQuote } from './reply-quote';
 import { MessageReactions } from './message-reactions';
 import { InteractivePreview } from '@/components/interactive/interactive-preview';
 import { TemplatePreview } from '@/components/interactive/template-preview';
+import { DownloadIconButton, useProxyMediaSrc } from './media-download';
 import { useTranslations } from 'next-intl';
 
 interface MessageBubbleProps {
@@ -31,6 +33,8 @@ interface MessageBubbleProps {
   onToggleReaction?: (emoji: string) => void;
   /** Agent/bot name (outgoing) or contact name (incoming), shown atop the bubble. */
   senderName?: string;
+  /** Abre o lightbox nesta mensagem — só passado para image/video. */
+  onOpenMedia?: (messageId: string) => void;
 }
 
 function StatusIcon({ status }: { status: Message['status'] }) {
@@ -66,43 +70,13 @@ function MediaUnavailable({
 }
 
 function MediaImage({ url, alt }: { url: string; alt: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const { src, loading, error } = useProxyMediaSrc(url);
+  // Erro do fetch (proxy) e erro de render do <img> (URL pública que
+  // carrega mas não decodifica) são duas falhas distintas — a segunda
+  // só é detectável depois que o hook já devolveu um `src`.
+  const [renderError, setRenderError] = useState(false);
 
-  const loadImage = useCallback(async () => {
-    if (!url) return;
-
-    // Proxy URLs need auth fetch to create blob URL
-    if (url.startsWith('/api/whatsapp/media/')) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Failed to load media');
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        setSrc(blobUrl);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setSrc(url);
-      setLoading(false);
-    }
-  }, [url]);
-
-  useEffect(() => {
-    loadImage();
-    return () => {
-      if (src?.startsWith('blob:')) {
-        URL.revokeObjectURL(src);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadImage]);
-
-  if (error) {
+  if (error || renderError) {
     return (
       <div className="bg-muted flex h-40 w-60 items-center justify-center rounded-lg">
         <ImageOff className="text-muted-foreground h-8 w-8" />
@@ -123,7 +97,7 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
       src={src ?? ''}
       alt={alt}
       className="max-h-64 max-w-60 rounded-lg object-cover"
-      onError={() => setError(true)}
+      onError={() => setRenderError(true)}
     />
   );
 }
@@ -131,9 +105,11 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
 function MessageContent({
   message,
   t,
+  onOpenMedia,
 }: {
   message: Message;
   t: ReturnType<typeof useTranslations>;
+  onOpenMedia?: (messageId: string) => void;
 }) {
   switch (message.content_type) {
     case 'text':
@@ -143,11 +119,32 @@ function MessageContent({
         </p>
       );
 
-    case 'image':
+    case 'image': {
+      // Botão de download só na mídia RECEBIDA (sender_type='customer')
+      // — o que o agente envia já é o próprio arquivo que ele escolheu
+      // no computador dele; não há nada novo para salvar.
+      const canDownload =
+        message.sender_type === 'customer' && !!message.media_url;
       return (
         <div>
           {message.media_url ? (
-            <MediaImage url={message.media_url} alt="Shared image" />
+            <div
+              className={cn(
+                'relative inline-block',
+                onOpenMedia && 'cursor-zoom-in'
+              )}
+              onClick={() => onOpenMedia?.(message.id)}
+            >
+              <MediaImage url={message.media_url} alt="Shared image" />
+              {canDownload && (
+                <DownloadIconButton
+                  url={message.media_url}
+                  filename={null}
+                  fallbackId={message.id}
+                  className="absolute top-1.5 right-1.5"
+                />
+              )}
+            </div>
           ) : (
             <MediaUnavailable label={t('photo')} t={t} />
           )}
@@ -158,16 +155,43 @@ function MessageContent({
           )}
         </div>
       );
+    }
 
-    case 'video':
+    case 'video': {
+      const canDownload =
+        message.sender_type === 'customer' && !!message.media_url;
       return (
         <div>
           {message.media_url ? (
-            <video
-              src={message.media_url}
-              controls
-              className="max-h-64 max-w-60 rounded-lg"
-            />
+            <div className="relative inline-block">
+              <video
+                src={message.media_url}
+                controls
+                className="max-h-64 max-w-60 rounded-lg"
+              />
+              {/* Botão explícito (não a área toda) — o clique em cima do
+                  <video> precisa continuar chegando aos controles nativos
+                  (play/pause/seek) sem abrir o lightbox por engano. */}
+              {onOpenMedia && (
+                <button
+                  type="button"
+                  onClick={() => onOpenMedia(message.id)}
+                  title={t('expand')}
+                  aria-label={t('expand')}
+                  className="absolute top-1.5 left-1.5 inline-flex items-center justify-center rounded-full bg-black/50 p-1.5 text-white transition-colors hover:bg-black/70"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {canDownload && (
+                <DownloadIconButton
+                  url={message.media_url}
+                  filename={null}
+                  fallbackId={message.id}
+                  className="absolute top-1.5 right-1.5"
+                />
+              )}
+            </div>
           ) : (
             <MediaUnavailable label={t('video')} t={t} />
           )}
@@ -178,19 +202,33 @@ function MessageContent({
           )}
         </div>
       );
+    }
 
-    case 'audio':
+    case 'audio': {
+      const canDownload =
+        message.sender_type === 'customer' && !!message.media_url;
       return (
-        <div>
+        <div className="flex items-center gap-2">
           {message.media_url ? (
-            <audio src={message.media_url} controls className="max-w-60" />
+            <>
+              <audio src={message.media_url} controls className="max-w-60" />
+              {canDownload && (
+                <DownloadIconButton
+                  url={message.media_url}
+                  filename={null}
+                  fallbackId={message.id}
+                  className="bg-muted-foreground/20 text-foreground hover:bg-muted-foreground/30 shrink-0"
+                />
+              )}
+            </>
           ) : (
             <MediaUnavailable label={t('audio')} t={t} />
           )}
         </div>
       );
+    }
 
-    case 'document':
+    case 'document': {
       if (!message.media_url) {
         return (
           <MediaUnavailable
@@ -199,19 +237,35 @@ function MessageContent({
           />
         );
       }
+      const canDownload = message.sender_type === 'customer';
+      // `<a>` e `<button>` são dois elementos interativos — não podem
+      // ficar um dentro do outro (HTML inválido, o parser fecharia a
+      // tag errado). O link de "abrir" e o botão de "baixar" ficam
+      // lado a lado dentro do mesmo cartão, não aninhados.
       return (
-        <a
-          href={message.media_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="bg-muted/50 hover:bg-muted flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
-        >
-          <FileText className="text-muted-foreground h-5 w-5 shrink-0" />
-          <span className="truncate">
-            {message.content_text || t('document')}
-          </span>
-        </a>
+        <div className="bg-muted/50 hover:bg-muted flex items-center gap-2 rounded-lg px-3 py-2 text-sm">
+          <a
+            href={message.media_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-w-0 flex-1 items-center gap-2"
+          >
+            <FileText className="text-muted-foreground h-5 w-5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              {message.content_text || t('document')}
+            </span>
+          </a>
+          {canDownload && (
+            <DownloadIconButton
+              url={message.media_url}
+              filename={message.content_text}
+              fallbackId={message.id}
+              className="bg-muted-foreground/20 text-foreground hover:bg-muted-foreground/30 shrink-0"
+            />
+          )}
+        </div>
       );
+    }
 
     case 'template':
       return (
@@ -293,6 +347,7 @@ export function MessageBubble({
   currentUserId,
   onToggleReaction,
   senderName,
+  onOpenMedia,
 }: MessageBubbleProps) {
   const t = useTranslations('Inbox.bubble');
 
@@ -333,7 +388,7 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} t={t} />
+        <MessageContent message={message} t={t} onOpenMedia={onOpenMedia} />
         <div
           className={cn(
             'mt-1 flex items-center gap-1',

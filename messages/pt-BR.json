@@ -212,7 +212,7 @@
     "tabs": {
       "tablistLabel": "Visões do Inbox",
       "chat": "Chat",
-      "open": "Open",
+      "open": "Fila",
       "contacts": "Contatos"
     },
     "contactsDirectory": {
@@ -322,7 +322,14 @@
       "aiBadge": "IA",
       "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
       "bot": "Automação",
-      "customerFallback": "Cliente"
+      "customerFallback": "Cliente",
+      "download": "Baixar",
+      "downloadFailed": "Falha ao baixar este arquivo",
+      "expand": "Expandir",
+      "mediaViewer": "Visualizador de mídia",
+      "previous": "Anterior",
+      "next": "Próxima",
+      "close": "Fechar"
     },
     "actions": {
       "reply": "Responder",

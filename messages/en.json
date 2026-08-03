@@ -322,7 +322,14 @@
       "aiBadge": "AI",
       "aiBadgeTitle": "Sent automatically by the AI assistant",
       "bot": "Automation",
-      "customerFallback": "Customer"
+      "customerFallback": "Customer",
+      "download": "Download",
+      "downloadFailed": "Failed to download this file",
+      "expand": "Expand",
+      "mediaViewer": "Media viewer",
+      "previous": "Previous",
+      "next": "Next",
+      "close": "Close"
     },
     "actions": {
       "reply": "Reply",
