@@ -6,6 +6,12 @@ const h = vi.hoisted(() => ({
   state: {
     owned: null as { id: string } | null,
     ownedCustomField: null as { id: string } | null,
+    // Resultado da checagem de elegibilidade do destino de uma
+    // atribuição (`profiles` filtrada por conta + papel). `null` = o
+    // uuid configurado não é membro elegível desta conta.
+    eligibleProfile: null as { user_id: string } | null,
+    /** Filtros de cada consulta a `profiles`, para assertar o gate de papel. */
+    profileQueries: [] as [string, string, unknown][][],
     automations: [] as Record<string, unknown>[],
     steps: [] as Record<string, unknown>[],
     fromCalls: [] as string[],
@@ -34,6 +40,23 @@ vi.mock('./admin-client', () => {
       }
       // ownership guard / condition read
       return { data: state.owned, error: null };
+    }
+    if (table === 'profiles') {
+      state.profileQueries.push(ops.filters);
+      // Tanto o `.maybeSingle()` da checagem de elegibilidade quanto o
+      // `.limit(1)` do round_robin passam por aqui. O primeiro espera um
+      // objeto; o segundo, um array — o `type` não distingue, então
+      // devolvemos o objeto e o round_robin lê `?.[0]` de um objeto
+      // (undefined), que é justamente o caminho "no agent resolved".
+      // Os testes de round_robin usam `roundRobinProfiles` abaixo.
+      return { data: state.eligibleProfile, error: null };
+    }
+    if (table === 'conversations') {
+      if (type === 'update') {
+        state.updateCalls.push({ table, filters: ops.filters });
+        return { data: null, error: null };
+      }
+      return { data: null, error: null };
     }
     if (table === 'custom_fields') {
       // account-scoped ownership lookup for a custom field definition
@@ -71,6 +94,7 @@ vi.mock('./admin-client', () => {
       delete: () => ((ops.type = 'delete'), b),
       upsert: (p: unknown) => ((ops.type = 'upsert'), (ops.payload = p), b),
       eq: (k: string, v: unknown) => (ops.filters.push(['eq', k, v]), b),
+      in: (k: string, v: unknown) => (ops.filters.push(['in', k, v]), b),
       gte: () => b,
       is: () => b,
       order: () => b,
@@ -108,6 +132,8 @@ const ACCOUNT = 'acct-1';
 beforeEach(() => {
   h.state.owned = null;
   h.state.ownedCustomField = null;
+  h.state.eligibleProfile = null;
+  h.state.profileQueries = [];
   h.state.automations = [];
   h.state.steps = [];
   h.state.fromCalls = [];
@@ -346,5 +372,153 @@ describe('triggerMatches — interactive_reply', () => {
     expect(
       triggerMatches(automation([]), { interactive_reply_id: 'yes' })
     ).toBe(false);
+  });
+});
+
+// ============================================================
+// assign_conversation — elegibilidade do destino (SPEC 041, F-41-A)
+//
+// O motor roda com SERVICE ROLE: a RLS não opina, e nenhuma das travas
+// que a 039 criou (policy `conversations_update` com WITH CHECK, RPC
+// `reassign_conversation`) se aplica. O `agent_id` vem de
+// `step_config`, um JSON gravado quando a automação foi criada, e nada
+// o revalida na hora de executar.
+//
+// Se um destino inválido passar, a conversa ganha dono e some da fila,
+// mas o dono não é ninguém que a conta enxergue — ela fica INVISÍVEL
+// PARA TODOS, sem erro nenhum. Estes testes travam o comportamento.
+// ============================================================
+
+function assignStep(config: Record<string, unknown>) {
+  return {
+    id: 's1',
+    automation_id: 'a1',
+    step_type: 'assign_conversation',
+    position: 0,
+    parent_step_id: null,
+    step_config: config,
+  };
+}
+
+/** Só as escritas em `conversations` — o resto do motor também usa updateCalls. */
+function conversationUpdates() {
+  return h.state.updateCalls.filter((c) => c.table === 'conversations');
+}
+
+describe('assign_conversation — eligibility of the target (F-41-A)', () => {
+  it('assigns when the target is an eligible member of the account', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.eligibleProfile = { user_id: 'agent-1' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [assignStep({ mode: 'specific', agent_id: 'agent-1' })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    const updates = conversationUpdates();
+    expect(updates).toHaveLength(1);
+    // A escrita continua escopada à conta e ao contato.
+    expect(updates[0].filters).toContainEqual(['eq', 'account_id', ACCOUNT]);
+    expect(updates[0].filters).toContainEqual(['eq', 'contact_id', 'c1']);
+  });
+
+  it('refuses an agent_id from another account and leaves the conversation untouched', async () => {
+    // Cenário 3 da SPEC: a FK da 039 aponta para `auth.users`, não para
+    // `profiles`, então um uuid de outro inquilino passa pelo banco.
+    h.state.owned = { id: 'c1' };
+    h.state.eligibleProfile = null; // não é membro desta conta
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      assignStep({ mode: 'specific', agent_id: 'agent-de-outra-conta' }),
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    // Chegou ao passo e consultou a elegibilidade com os três filtros
+    // que importam: o uuid pedido, a conta da automação e o papel.
+    const check = h.state.profileQueries.at(-1)!;
+    expect(check).toContainEqual(['eq', 'user_id', 'agent-de-outra-conta']);
+    expect(check).toContainEqual(['eq', 'account_id', ACCOUNT]);
+    expect(check).toContainEqual([
+      'in',
+      'account_role',
+      ['owner', 'admin', 'agent'],
+    ]);
+    // …e não escreveu nada.
+    expect(conversationUpdates()).toHaveLength(0);
+  });
+
+  it('refuses a viewer as the target', async () => {
+    // Cenário 2: um `viewer` não pode responder nem devolver a conversa
+    // à fila. Atribuir a ele a tira da fila e a trava. O filtro de papel
+    // vive na query (`.in('account_role', …)`), então um viewer não
+    // aparece no resultado — mesmo caminho do teste acima.
+    h.state.owned = { id: 'c1' };
+    h.state.eligibleProfile = null;
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [assignStep({ mode: 'specific', agent_id: 'viewer-1' })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(conversationUpdates()).toHaveLength(0);
+  });
+
+  it('filters the round_robin candidate query by assignable role', async () => {
+    // O `limit(1)` sem filtro de papel podia sortear um `viewer`.
+    h.state.owned = { id: 'c1' };
+    h.state.eligibleProfile = null;
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [assignStep({ mode: 'round_robin' })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    // A consulta de candidatos precisa carregar o filtro de papel. Sem
+    // ele, o sorteio pega `profiles` de qualquer papel e pode cair num
+    // `viewer` — que é exatamente o bug.
+    const candidateQuery = h.state.profileQueries[0];
+    expect(candidateQuery).toContainEqual([
+      'in',
+      'account_role',
+      ['owner', 'admin', 'agent'],
+    ]);
+    expect(candidateQuery).toContainEqual(['eq', 'account_id', ACCOUNT]);
+
+    // E, sem candidato elegível, não há atribuição — nunca um fallback
+    // para "qualquer membro".
+    expect(conversationUpdates()).toHaveLength(0);
+  });
+
+  it('does nothing when no agent is configured at all', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [assignStep({ mode: 'specific' })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(conversationUpdates()).toHaveLength(0);
   });
 });

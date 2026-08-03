@@ -352,12 +352,44 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_contact
 -- assignment + audit) but is no longer consulted for isolation.
 -- ============================================================
 
+-- ⚠️ GUARDA CONTRA REAPLICAÇÃO DEPOIS DA 039 (SPEC 041, F-41-B).
+--
+-- A premissa declarada logo abaixo — "017 owns every policy on these
+-- tables (no later migration adds others)" — DEIXOU DE SER VERDADEIRA
+-- quando a 039 reescreveu `conversations`, `messages`,
+-- `message_reactions`, `contact_notes`, `flow_runs` e `flow_run_events`
+-- para isolamento POR LINHA.
+--
+-- Sem esta guarda, reexecutar a 017 num banco que já tem a 039 dropa
+-- todas as políticas dela e recria as antigas, planas por conta: a
+-- conta volta em silêncio ao modelo em que qualquer `viewer` lê todas
+-- as conversas. As duas migrações são idempotentes isoladamente e
+-- destrutivas em conjunto.
+--
+-- A guarda NÃO atrapalha um `supabase db reset`: ali as migrações
+-- rodam em ordem, então a 017 executa antes de a 039 existir e o
+-- `IF EXISTS` não dispara. Ela só morde no caso perigoso — alguém
+-- reaplicando a 017 sozinha depois da 039 — e aborta a transação
+-- ANTES de qualquer DROP, deixando o banco intacto.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc
+     WHERE proname = 'can_access_conversation'
+       AND pronamespace = 'public'::regnamespace
+  ) THEN
+    RAISE EXCEPTION
+      'A migracao 039 ja foi aplicada neste banco. Reexecutar a 017 apagaria as politicas de isolamento por linha dela e voltaria a conta ao modelo plano, sem erro. Se voce PRECISA reexecutar a 017, rode 039_conversation_assignment.sql imediatamente depois e remova esta guarda apenas para essa execucao.'
+      USING ERRCODE = '55006';
+  END IF;
+END $$;
+
 -- Make the RLS rewrite re-runnable. CREATE POLICY has no IF NOT EXISTS
 -- form, and the DROP statements below only name the *legacy* policies —
 -- the new ones (contacts_select, …) would error with 42710 "policy
 -- already exists" on a second run. 017 owns every policy on these tables
--- (no later migration adds others), so drop them all first, then the
--- CREATEs below re-establish the full set.
+-- EXCEPT the six that migration 039 took over (see the guard above), so
+-- drop them all first, then the CREATEs below re-establish the full set.
 DO $$
 DECLARE
   pol RECORD;

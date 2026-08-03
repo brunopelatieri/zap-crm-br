@@ -40,6 +40,7 @@ import {
   engineSendText,
 } from './meta-send';
 import { decideFallback, resolveFallbackPolicy } from './fallback';
+import { isAssignableMember } from '@/lib/inbox/assignment';
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -447,7 +448,36 @@ async function executeHandoff(
     status: 'pending',
     updated_at: new Date().toISOString(),
   };
-  if (cfg.assign_to) convUpdate.assigned_agent_id = cfg.assign_to;
+
+  // ⚠️ `db` é service role: a RLS não opina, e o `assign_to` vem do
+  // config do nó — um JSON gravado quando o flow foi desenhado, que
+  // nada revalida na hora de executar (SPEC 041, F-41-A). Atribuir a um
+  // agente que saiu da conta, ou a um `viewer`, tira a conversa da fila
+  // sem dar dono a ninguém que possa atendê-la: ela some para a conta
+  // inteira. Aqui é pior que na automação, porque o handoff é
+  // exatamente o momento em que um humano PRECISA assumir.
+  //
+  // Destino inelegível degrada para handoff SEM atribuição: a conversa
+  // vai para `pending` e fica na fila, visível para todos. Perder a
+  // atribuição é recuperável; perder a conversa não é.
+  let assignedTo: string | null = null;
+  if (cfg.assign_to) {
+    const eligible = await isAssignableMember(
+      db,
+      run.account_id,
+      cfg.assign_to
+    );
+    if (eligible) {
+      assignedTo = cfg.assign_to;
+      convUpdate.assigned_agent_id = cfg.assign_to;
+    } else {
+      console.warn(
+        '[flows] handoff assign_to is not an eligible member — handing off to the queue instead',
+        { runId: run.id, nodeKey: node.node_key, assignTo: cfg.assign_to }
+      );
+    }
+  }
+
   if (run.conversation_id) {
     await db
       .from('conversations')
@@ -456,7 +486,11 @@ async function executeHandoff(
   }
   await logEvent(db, run.id, 'handoff', node.node_key, {
     note: cfg.note ?? null,
-    assigned_to: cfg.assign_to ?? null,
+    // O que de fato foi atribuído, não o que estava configurado — o log
+    // de execução é onde se descobre que o `assign_to` do flow aponta
+    // para alguém que não está mais na conta.
+    assigned_to: assignedTo,
+    requested_assign_to: cfg.assign_to ?? null,
   });
   await endRun(db, run.id, 'handed_off', 'handoff_node');
 }

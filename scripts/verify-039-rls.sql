@@ -161,6 +161,28 @@ WITH checks AS (
              WHERE schemaname = 'public'
                AND tablename = '_039_assignment_backfill_snapshot'),
     'é o que permite desfazer o backfill'
+
+  -- 18-19. ⚠️ Sobrevivência da 039 a uma reaplicação da 017
+  --        (F-41-B da SPEC 041). A 017 se declara dona exclusiva das
+  --        políticas destas tabelas e dropa todas antes de recriar as
+  --        suas — com os MESMOS NOMES. Reaplicá-la depois da 039
+  --        devolve a conta ao modelo plano SEM ERRO NENHUM. Estas duas
+  --        asserções são o detector; a guarda que impede está no topo
+  --        da própria 017, e a trava de deploy é a migração 041.
+  UNION ALL SELECT
+    '18. Guarda anti-reaplicação presente na 017',
+    EXISTS (SELECT 1 FROM pg_proc
+             WHERE proname = 'can_access_conversation'
+               AND pronamespace = 'public'::regnamespace),
+    'se a função sumiu, a 017 foi reaplicada e levou a 039 junto'
+
+  UNION ALL SELECT
+    '19. messages_select ainda usa can_access_conversation',
+    EXISTS (SELECT 1 FROM pg_policies
+             WHERE schemaname = 'public' AND tablename = 'messages'
+               AND policyname = 'messages_select'
+               AND qual::text LIKE '%can_access_conversation%'),
+    'função órfã = política velha (plana por conta) sobreviveu'
 )
 SELECT
   verificacao,

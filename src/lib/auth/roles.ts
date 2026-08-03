@@ -128,6 +128,32 @@ export function canReassignToOthers(role: AccountRole): boolean {
   return hasMinRole(role, 'admin');
 }
 
+/**
+ * Papéis que podem SER donos de uma conversa.
+ *
+ * Um `viewer` não pode responder (`canSendMessages` é agent+) nem
+ * devolver a conversa à fila (`INSUFFICIENT_ROLE` no
+ * `reassign_conversation`), então atribuir uma conversa a ele a tira da
+ * fila e a deixa travada: ninguém a vê como sua, ninguém pode atender.
+ *
+ * Espelha o `p.account_role IN ('owner','admin','agent')` que a
+ * migração 039 usa no backfill (seção 12) e no `reassign_conversation`
+ * (seção 9). Exportado como array para poder ir direto num
+ * `.in('account_role', …)` do PostgREST — os escritores que rodam com
+ * service role (motor de automações, motor de flows) precisam validar
+ * em TypeScript o que a RLS validaria por eles.
+ */
+export const ASSIGNABLE_ACCOUNT_ROLES: readonly AccountRole[] = [
+  'owner',
+  'admin',
+  'agent',
+] as const;
+
+/** True iff uma conversa pode ser atribuída a alguém com este papel. */
+export function canBeAssignedConversations(role: AccountRole): boolean {
+  return hasMinRole(role, 'agent');
+}
+
 /** Owner only: irreversible destructive operations. */
 export function canDeleteAccount(role: AccountRole): boolean {
   return role === 'owner';

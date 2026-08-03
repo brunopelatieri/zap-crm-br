@@ -68,8 +68,23 @@ export function DealForm({
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [linkedConversation, setLinkedConversation] =
-    useState<Conversation | null>(null);
+  /**
+   * Resultado da busca pela conversa do contato — união discriminada,
+   * não `Conversation | null`.
+   *
+   * O tipo antigo colapsava três situações distintas num único `null`:
+   * "ainda buscando", "não há conversa que eu possa ver" e "a busca
+   * falhou". Sob a RLS da 039 essas três precisam de tratamentos
+   * diferentes na tela (ver o efeito adiante), e um `null` solto não
+   * consegue expressá-las.
+   */
+  const [conversationLink, setConversationLink] = useState<
+    | { state: 'idle' }
+    | { state: 'loading' }
+    | { state: 'linked'; conversation: Conversation }
+    | { state: 'unavailable' }
+    | { state: 'error' }
+  >({ state: 'idle' });
 
   const [saving, setSaving] = useState(false);
   const [statusAction, setStatusAction] = useState<DealStatus | null>(null);
@@ -128,15 +143,34 @@ export function DealForm({
   // Fetch linked conversation for the selected contact (newest open one).
   // Clearing on no-selection is sync with prop state; the populated
   // case runs setLinkedConversation inside the async fetch callback.
+  //
+  // ⚠️ 0 LINHAS DEIXOU DE SIGNIFICAR "NÃO EXISTE" (SPEC 041, F-41-E).
+  //
+  //   Esta query roda no browser, com a RLS ligada. Desde a 039 um
+  //   agente só enxerga as conversas atribuídas a ele mais a fila —
+  //   então, para uma conversa que é de OUTRO agente, o resultado é
+  //   vazio exatamente como seria para um contato que nunca conversou.
+  //
+  //   Antes, o componente tratava os dois casos como um só e
+  //   simplesmente não renderizava o atalho. O usuário via um sumiço
+  //   sem explicação, e o `error` era descartado — uma falha de rede
+  //   ficava indistinguível das outras duas.
+  //
+  //   Agora os três estados são separados, e o texto mostrado é
+  //   NEUTRO de propósito: "nenhuma conversa disponível para vincular"
+  //   é verdade nos dois casos sem revelar que existe uma conversa
+  //   atribuída a outra pessoa — dizer isso vazaria a existência de um
+  //   recurso que a RLS acabou de esconder.
   useEffect(() => {
     if (!open || !contactId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLinkedConversation(null);
+      setConversationLink({ state: 'idle' });
       return;
     }
     let cancelled = false;
+    setConversationLink({ state: 'loading' });
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('conversations')
         .select('*')
         .eq('contact_id', contactId)
@@ -144,7 +178,19 @@ export function DealForm({
         .limit(1)
         .maybeSingle();
       if (cancelled) return;
-      setLinkedConversation((data as Conversation | null) ?? null);
+      if (error) {
+        console.error(
+          '[deal-form] conversation lookup failed:',
+          error.message
+        );
+        setConversationLink({ state: 'error' });
+        return;
+      }
+      setConversationLink(
+        data
+          ? { state: 'linked', conversation: data as Conversation }
+          : { state: 'unavailable' }
+      );
     })();
     return () => {
       cancelled = true;
@@ -291,14 +337,30 @@ export function DealForm({
                 ))}
               </select>
 
-              {linkedConversation && (
+              {conversationLink.state === 'linked' && (
                 <Link
-                  href="/inbox"
+                  href={`/inbox?c=${conversationLink.conversation.id}`}
                   className="bg-primary/10 text-primary hover:bg-primary/20 mt-1 inline-flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-xs"
                 >
                   <MessageSquare className="h-3 w-3" />
                   {t('linkToConversation')}
                 </Link>
+              )}
+
+              {/* Um contato selecionado sem atalho visível precisa dizer
+                  por quê — antes o link simplesmente não aparecia e o
+                  usuário não tinha como saber se era ausência de
+                  conversa ou falha. `idle`/`loading` não mostram nada:
+                  piscar uma mensagem durante a busca seria pior. */}
+              {conversationLink.state === 'unavailable' && (
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {t('noConversationToLink')}
+                </p>
+              )}
+              {conversationLink.state === 'error' && (
+                <p className="mt-1 text-xs text-amber-500">
+                  {t('conversationLookupFailed')}
+                </p>
               )}
             </div>
 

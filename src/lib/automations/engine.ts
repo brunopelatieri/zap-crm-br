@@ -25,6 +25,8 @@ import {
 } from './meta-send';
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
+import { ASSIGNABLE_ACCOUNT_ROLES } from '@/lib/auth/roles';
+import { isAssignableMember } from '@/lib/inbox/assignment';
 
 // ------------------------------------------------------------
 // Public API
@@ -473,22 +475,63 @@ async function runStep(
     }
 
     case 'assign_conversation': {
+      // ⚠️ Defense in depth (SPEC 041, F-41-A). `db` é o cliente de
+      // service role: a RLS não opina, e nenhuma das travas que a 039
+      // criou se aplica aqui — nem a policy `conversations_update` com
+      // `WITH CHECK`, nem o RPC `reassign_conversation`.
+      //
+      // O `.eq('account_id', …)` do UPDATE protege a CONVERSA (não dá
+      // para atribuir a de outro inquilino). Não protege o DESTINO:
+      // `agent_id` vem de `step_config`, um JSON gravado quando a
+      // automação foi criada, e nada o revalida na hora de executar.
+      //
+      // Sem a checagem abaixo, três cenários — todos plausíveis sem
+      // má-fé — deixam a conversa INVISÍVEL PARA TODOS: ela ganha dono
+      // (some da fila) mas o dono não é ninguém que a conta enxergue
+      // (some da aba "Chat" de todo mundo). Nenhum erro é logado.
+      //   1. agente desligado, mas ainda no `step_config`;
+      //   2. `round_robin` sorteando um `viewer`, que não pode responder
+      //      nem devolver a conversa à fila;
+      //   3. uuid de outra conta — a FK da 039 aponta para `auth.users`,
+      //      não para `profiles`, então ela passa.
       const cfg = step.step_config as AssignConversationStepConfig;
       if (!args.contactId)
         throw new Error('assign_conversation needs a contact');
       let agentId = cfg.agent_id;
       if (cfg.mode === 'round_robin') {
-        // Pick any member of the account. The existing implementation
-        // only ever returned the automation's author; preserving that
-        // shape until a real round-robin algorithm replaces it.
+        // Pick any ELIGIBLE member of the account. The existing
+        // implementation only ever returned the automation's author;
+        // preserving that shape until a real round-robin algorithm
+        // replaces it — mas o filtro de papel não é adiável, senão o
+        // sorteio pode cair num `viewer` e travar a conversa.
         const { data: profiles } = await db
           .from('profiles')
           .select('user_id')
           .eq('account_id', args.automation.account_id)
+          .in('account_role', ASSIGNABLE_ACCOUNT_ROLES)
           .limit(1);
         agentId = profiles?.[0]?.user_id;
       }
       if (!agentId) return 'no agent resolved';
+
+      // O destino tem de ser membro DESTA conta com papel que possa
+      // atender. Mesmo predicado que a 039 usa no backfill (seção 12),
+      // compartilhado com os outros escritores de service role.
+      const eligible = await isAssignableMember(
+        db,
+        args.automation.account_id,
+        agentId
+      );
+
+      if (!eligible) {
+        // Retorno de passo, não exceção: a automação continua e o log da
+        // execução registra o motivo — mesmo tratamento que
+        // `update_contact_field` dá a um custom field de outra conta.
+        // Uma automação configurada com um agente que saiu da conta
+        // passa a aparecer no log em vez de sumir com a conversa.
+        return `agent ${agentId} is not an eligible member of this account`;
+      }
+
       await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })

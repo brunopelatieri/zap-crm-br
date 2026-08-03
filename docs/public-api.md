@@ -54,6 +54,41 @@ it. Grant the minimum.
 A key with **no scopes** still authenticates and can call
 `GET /api/v1/me` — useful for verifying a key works.
 
+### Scope is the *account*, never a single agent
+
+> **An API key sees every conversation and every message in the
+> account — including threads assigned to other agents.** It is not
+> equivalent to an agent user. Treat it as an administrator credential.
+
+This deserves spelling out because the app itself behaves differently.
+Inside the dashboard, an agent sees only the conversations assigned to
+them plus the unassigned queue — that isolation is enforced per row by
+Postgres RLS, which keys off the signed-in user (`auth.uid()`).
+
+The public API authenticates with an **API key**, not a user session.
+There is no signed-in user for RLS to reason about, so these endpoints
+run with a service-role client scoped explicitly to your `account_id`.
+Tenancy still holds — a key never reaches another account's data — but
+per-agent assignment plays no part in what it returns.
+
+Practical consequences:
+
+- `GET /api/v1/conversations` lists the account's conversations,
+  assigned or not.
+- `GET /api/v1/conversations/{id}/messages` returns the full thread
+  regardless of who owns it.
+- `POST /api/v1/messages` can write into any conversation in the
+  account.
+
+So: handing a key to a third-party integrator gives them the whole
+account's conversation history. If you need a narrower blast radius,
+use scopes (`conversations:read` alone can't send, for instance) and
+issue one key per integration so you can revoke it in isolation.
+
+Per-agent key scoping is not implemented. If you need it, say so — it
+would mean a new scope column on `api_keys` and a rework of these
+handlers.
+
 ## Language of error messages
 
 All `/api/**` responses (including this public API and internal app

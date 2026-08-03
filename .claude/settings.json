@@ -28,7 +28,12 @@
       "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx vitest run 2>&1 | Select-Object -Last 10; npx eslint src --ext .ts,.tsx 2>&1 | Select-Object -Last 3)",
       "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx next build --no-lint 2>&1 | Select-Object -Last 25; Write-Output \"EXIT=$LASTEXITCODE\")",
       "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx next build 2>&1 | Select-Object -Last 30; Write-Output \"EXIT=$LASTEXITCODE\")",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx vitest run 2>&1 | Select-Object -Last 25)",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx vitest run 2>&1 | Select-Object -Last 20)",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx eslint src --ext .ts,.tsx 2>&1 | Select-Object -Last 6; npx next build 2>&1 | Select-String -Pattern \"Failed|Error|error|✓ Compiled|Compiled successfully\" | Select-Object -First 8; Write-Output \"BUILD=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx eslint src --ext .ts,.tsx 2>&1 | Select-Object -Last 3; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx vitest run 2>&1 | Select-Object -Last 8; npx next build 2>&1 | Select-String -Pattern \"Compiled successfully|Failed to compile\"; Write-Output \"BUILD=$LASTEXITCODE\")"
     ]
   }
 }

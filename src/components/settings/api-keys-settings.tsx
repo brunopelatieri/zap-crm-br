@@ -410,6 +410,22 @@ function CreateKeyDialog({
             </DialogHeader>
 
             <div className="space-y-4">
+              {/* O app isola conversas por agente (RLS da 039); a API
+                  pública NÃO — ela autentica por chave, sem usuário, e
+                  roda escopada apenas à conta. Quem entrega uma chave a
+                  um integrador precisa saber disso ANTES de criá-la,
+                  não depois. Ver docs/public-api.md, "Scope is the
+                  account, never a single agent". */}
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+                <p className="text-xs text-amber-200">
+                  {t.rich('accountScopeWarning', {
+                    bold: (chunks: React.ReactNode) => (
+                      <span className="font-semibold">{chunks}</span>
+                    ),
+                  })}
+                </p>
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="api-key-name" className="text-muted-foreground">
                   {t('nameLabel')}

@@ -651,6 +651,8 @@
       "contact": "Contato",
       "selectContact": "Selecione um contato",
       "linkToConversation": "Vincular à conversa",
+      "noConversationToLink": "Nenhuma conversa disponível para vincular",
+      "conversationLookupFailed": "Não foi possível verificar a conversa deste contato",
       "value": "Valor",
       "currency": "Moeda",
       "expectedCloseDate": "Data prevista de fechamento",
@@ -1922,6 +1924,7 @@
       "copyFailed": "Falha ao copiar — selecione e copie manualmente",
       "newKeyTitle": "Nova chave de API",
       "newKeyDesc": "Nomeie de acordo com a integração que vai usá-la e conceda apenas as permissões necessárias.",
+      "accountScopeWarning": "Uma chave enxerga <bold>todas as conversas da conta</bold>, inclusive as atribuídas a outros agentes — ela não equivale a um usuário agente. Trate-a como credencial de administrador e crie uma chave por integração, para poder revogar isoladamente.",
       "done": "Concluído",
       "networkError": "Não foi possível conectar ao servidor"
     },

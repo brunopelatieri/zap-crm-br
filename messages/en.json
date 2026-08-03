@@ -651,6 +651,8 @@
       "contact": "Contact",
       "selectContact": "Select a contact",
       "linkToConversation": "Link to Conversation",
+      "noConversationToLink": "No conversation available to link",
+      "conversationLookupFailed": "Could not check this contact’s conversation",
       "value": "Value",
       "currency": "Currency",
       "expectedCloseDate": "Expected Close Date",
@@ -1934,6 +1936,7 @@
       "copyFailed": "Copy failed — select and copy manually",
       "newKeyTitle": "New API key",
       "newKeyDesc": "Name it after the integration that will use it, and grant only the scopes it needs.",
+      "accountScopeWarning": "A key sees <bold>every conversation in the account</bold>, including threads assigned to other agents — it is not equivalent to an agent user. Treat it as an administrator credential, and issue one key per integration so you can revoke it in isolation.",
       "done": "Done",
       "networkError": "Could not reach the server"
     },

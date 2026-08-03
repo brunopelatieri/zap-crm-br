@@ -14,6 +14,13 @@ const h = vi.hoisted(() => ({
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    /**
+     * Resultado da checagem de elegibilidade do agente de handoff
+     * (`profiles` filtrada por conta + papel). `null` = aquele uuid não
+     * é mais membro elegível — o motor deve deixar a conversa na fila
+     * em vez de escondê-la (SPEC 041, F-41-A).
+     */
+    eligibleProfile: null as { user_id: string } | null,
   },
 }));
 
@@ -35,6 +42,16 @@ vi.mock('./admin-client', () => ({
           in: () => chain,
           limit: () =>
             Promise.resolve({ data: h.state.autoResponders, error: null }),
+        };
+        return chain;
+      }
+      if (table === 'profiles') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => chain,
+          maybeSingle: () =>
+            Promise.resolve({ data: h.state.eligibleProfile, error: null }),
         };
         return chain;
       }
@@ -93,6 +110,9 @@ beforeEach(() => {
   h.state.claim = true;
   h.state.updatePayload = null;
   h.state.rpcCalls = [];
+  // Por padrão o agente de handoff configurado É elegível — os testes
+  // que exercitam o caminho inverso sobrescrevem isto.
+  h.state.eligibleProfile = { user_id: 'agent-7' };
   h.loadAiConfig.mockResolvedValue(aiConfig());
   h.buildConversationContext.mockResolvedValue([
     { role: 'user', content: 'hi' },
@@ -215,5 +235,26 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     });
+  });
+
+  it('leaves the conversation in the queue when the handoff agent is no longer eligible', async () => {
+    // SPEC 041, F-41-A. `handoffAgentId` é gravado uma vez na config da
+    // IA e nunca revalidado. Se aquele agente saiu da conta (ou virou
+    // `viewer`), atribuir a ele tiraria a conversa da fila sem dar dono
+    // a ninguém que possa atendê-la — ela sumiria para a conta inteira,
+    // justamente quando a IA desistiu e um humano precisa assumir.
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'ex-agent' }));
+    h.state.eligibleProfile = null; // não é mais membro elegível
+    h.generateReply.mockResolvedValue({ text: '', handoff: true });
+
+    await dispatchInboundToAiReply(ARGS);
+
+    // O handoff em si acontece — o que se perde é só a atribuição.
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+    });
+    expect(h.state.updatePayload?.ai_handoff_summary).toBeTruthy();
+    // E a conversa fica SEM dono, portanto visível na fila.
+    expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id');
   });
 });

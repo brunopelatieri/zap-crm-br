@@ -9,6 +9,7 @@ import { logAiUsage } from './usage';
 import { latestUserMessage } from './query';
 import { engineSendText } from '@/lib/flows/meta-send';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import { isAssignableMember } from '@/lib/inbox/assignment';
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -150,8 +151,28 @@ export async function dispatchInboundToAiReply(
       };
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.
+      //
+      // ⚠️ E só quando o destino ainda é elegível (SPEC 041, F-41-A).
+      // `db` é service role, e `handoffAgentId` vem da config da IA —
+      // gravada uma vez, nunca revalidada. Se aquele agente saiu da
+      // conta (ou virou `viewer`), atribuir a ele tira a conversa da
+      // fila e a esconde de todos, justamente no momento em que a IA
+      // desistiu e um humano precisa assumir. Destino inválido degrada
+      // para "handoff sem dono": a conversa fica na fila, visível.
       if (config.handoffAgentId && !conv.assigned_agent_id) {
-        update.assigned_agent_id = config.handoffAgentId;
+        const eligible = await isAssignableMember(
+          db,
+          accountId,
+          config.handoffAgentId
+        );
+        if (eligible) {
+          update.assigned_agent_id = config.handoffAgentId;
+        } else {
+          console.warn(
+            '[ai] handoff agent is no longer an eligible member — leaving the conversation in the queue',
+            { conversationId, handoffAgentId: config.handoffAgentId }
+          );
+        }
       }
       await db.from('conversations').update(update).eq('id', conversationId);
       return;

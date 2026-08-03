@@ -20,6 +20,52 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Conversation } from '@/types';
+import { ASSIGNABLE_ACCOUNT_ROLES } from '@/lib/auth/roles';
+
+/**
+ * O destino `userId` é membro de `accountId` com papel que pode atender?
+ *
+ * ⚠️ Existe para os escritores que rodam com SERVICE ROLE — motor de
+ * automações, motor de flows, auto-resposta da IA. Eles bypassam a RLS
+ * por desenho, então nada os impede de gravar em `assigned_agent_id` um
+ * uuid de outra conta (a FK da 039 aponta para `auth.users`, não para
+ * `profiles`) ou de um `viewer`. Nos dois casos a conversa ganha dono,
+ * some da fila e some da aba "Chat" de todo mundo — fica **invisível
+ * para a conta inteira**, sem erro nenhum no caminho.
+ *
+ * Os caminhos com JWT de usuário NÃO precisam disto: para eles o RPC
+ * `reassign_conversation` (039, seção 9) já faz a mesma checagem dentro
+ * do banco. Esta função é o espelho em TypeScript daquela validação,
+ * para quem não passa por ela.
+ *
+ * `false` também quando a consulta falha — negar é o lado seguro: uma
+ * atribuição que não acontece deixa a conversa na fila, visível; uma
+ * atribuição indevida a esconde de todos.
+ */
+export async function isAssignableMember(
+  supabase: SupabaseClient,
+  accountId: string,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('user_id')
+    .eq('user_id', userId)
+    .eq('account_id', accountId)
+    .in('account_role', ASSIGNABLE_ACCOUNT_ROLES)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[assignment] eligibility lookup failed:', {
+      accountId,
+      userId,
+      message: error.message,
+    });
+    return false;
+  }
+
+  return !!data;
+}
 
 /**
  * Códigos que os RPCs levantam via `RAISE EXCEPTION`. O `message` do
