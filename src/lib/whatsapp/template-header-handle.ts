@@ -20,11 +20,25 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png'];
 
 export async function ensureImageHeaderHandle(
   payload: TemplatePayload,
-  accessToken: string
+  accessToken: string,
+  /**
+   * URL a BAIXAR, quando diferente da que fica gravada no template.
+   *
+   * Desde a migração 040 o bucket `chat-media` é privado: a
+   * `header_media_url` de uma imagem que subimos não é mais buscável
+   * sem credencial, então o chamador assina uma URL de vida curta e a
+   * passa aqui. O que é persistido continua sendo `header_media_url`
+   * (estável) — a assinada só serve para este fetch.
+   *
+   * Ausente para URL externa colada pelo usuário, que já é pública.
+   */
+  fetchUrl?: string | null
 ): Promise<void> {
   if (payload.header_type !== 'image') return;
   if (payload.header_handle) return; // already have one
   if (!payload.header_media_url) return; // validator already requires url-or-handle
+
+  const downloadUrl = fetchUrl || payload.header_media_url;
 
   const appId = process.env.META_APP_ID;
   if (!appId) {
@@ -37,7 +51,7 @@ export async function ensureImageHeaderHandle(
   // and for a manually-pasted public link).
   let res: Response;
   try {
-    res = await fetch(payload.header_media_url);
+    res = await fetch(downloadUrl);
   } catch {
     throw new Error(
       'Could not fetch the header image URL. Make sure it is publicly reachable.'

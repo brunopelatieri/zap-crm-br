@@ -5,12 +5,14 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { ChevronLeft, ChevronRight, ImageOff, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { DownloadIconButton, useProxyMediaSrc } from './media-download';
+import { DownloadIconButton, useMediaSrc } from './media-download';
 
 export interface LightboxItem {
   id: string;
   type: 'image' | 'video';
   url: string;
+  /** `messages.media_path` — objeto no bucket privado (migração 040). */
+  path?: string | null;
   caption?: string | null;
   /** Só mídia recebida do cliente ganha botão de download — ver media-download.tsx. */
   downloadable: boolean;
@@ -24,8 +26,16 @@ interface MediaLightboxProps {
   onNavigate: (index: number) => void;
 }
 
-function LightboxImage({ url, alt }: { url: string; alt: string }) {
-  const { src, loading, error } = useProxyMediaSrc(url);
+function LightboxImage({
+  url,
+  path,
+  alt,
+}: {
+  url: string;
+  path?: string | null;
+  alt: string;
+}) {
+  const { src, loading, error } = useMediaSrc(url, path);
 
   if (error) {
     return (
@@ -48,6 +58,35 @@ function LightboxImage({ url, alt }: { url: string; alt: string }) {
       src={src}
       alt={alt}
       className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+    />
+  );
+}
+
+function LightboxVideo({ url, path }: { url: string; path?: string | null }) {
+  const { src, loading, error } = useMediaSrc(url, path);
+
+  if (error) {
+    return (
+      <div className="flex h-40 w-60 items-center justify-center">
+        <ImageOff className="h-8 w-8 text-white/60" />
+      </div>
+    );
+  }
+
+  if (loading || !src) {
+    return (
+      <div className="flex h-40 w-60 items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+      </div>
+    );
+  }
+
+  return (
+    <video
+      src={src}
+      controls
+      autoPlay
+      className="max-h-[85vh] max-w-[90vw] rounded-lg"
     />
   );
 }
@@ -119,14 +158,16 @@ export function MediaLightbox({
                 onClick={(e) => e.stopPropagation()}
               >
                 {current.type === 'image' ? (
-                  <LightboxImage url={current.url} alt={current.caption ?? ''} />
+                  <LightboxImage
+                    url={current.url}
+                    path={current.path}
+                    alt={current.caption ?? ''}
+                  />
                 ) : (
-                  <video
+                  <LightboxVideo
                     key={current.id}
-                    src={current.url}
-                    controls
-                    autoPlay
-                    className="max-h-[85vh] max-w-[90vw] rounded-lg"
+                    url={current.url}
+                    path={current.path}
                   />
                 )}
                 {current.downloadable && (
@@ -135,6 +176,7 @@ export function MediaLightbox({
                   // bolha de mensagem, o fallback por extensão entra.
                   <DownloadIconButton
                     url={current.url}
+                    path={current.path}
                     filename={null}
                     fallbackId={current.id}
                     className="absolute right-2 bottom-2"

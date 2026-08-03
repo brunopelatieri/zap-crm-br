@@ -3,6 +3,7 @@
 import { Reply, ExternalLink, Phone, Copy, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TemplatePreviewPayload, TemplateButton } from '@/types';
+import { useMediaSrc } from '@/lib/storage/use-media-src';
 
 /**
  * WhatsApp-style read-only render of a sent TEMPLATE message (header,
@@ -27,33 +28,46 @@ function HeaderMedia({
 }: {
   media: NonNullable<TemplatePreviewPayload['headerMedia']>;
 }) {
-  // header_media_url is always a plain public URL (pasted by the user or
-  // uploaded to our own storage bucket at template-edit time) — unlike
-  // inbound customer media, it needs no Meta-auth proxy/blob fetch, so a
-  // plain <img>/<video>/<a> is enough.
+  // `header_media_url` tem DUAS origens: um link público que o usuário
+  // colou, ou um arquivo que subimos para o bucket `chat-media`. Até a
+  // migração 040 os dois eram buscáveis do mesmo jeito; com o bucket
+  // privado, o segundo precisa de URL assinada. `useMediaSrc` distingue
+  // os casos — o link externo passa intocado.
+  const { src, loading } = useMediaSrc(media.url);
+
+  if (loading || !src) {
+    return (
+      <div className="bg-muted flex h-24 w-full items-center justify-center">
+        <div className="border-primary h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
+      </div>
+    );
+  }
+
   switch (media.type) {
     case 'image':
       return (
         <img
-          src={media.url}
+          src={src}
           alt="Template header"
           className="max-h-48 w-full object-cover"
         />
       );
     case 'video':
-      return (
-        <video src={media.url} controls className="max-h-48 w-full" />
-      );
+      return <video src={src} controls className="max-h-48 w-full" />;
     case 'document':
       return (
         <a
-          href={media.url}
+          href={src}
           target="_blank"
           rel="noopener noreferrer"
           className="bg-muted/50 hover:bg-muted flex items-center gap-2 px-3 py-2 text-sm"
         >
           <FileText className="text-muted-foreground h-5 w-5 shrink-0" />
-          <span className="truncate">{media.url.split('/').pop()}</span>
+          {/* Nome vem da URL ESTÁVEL, não da assinada: a assinada
+              termina em `?token=…` e o `.pop()` devolveria o token. */}
+          <span className="truncate">
+            {media.url.split('?')[0].split('/').pop()}
+          </span>
         </a>
       );
   }

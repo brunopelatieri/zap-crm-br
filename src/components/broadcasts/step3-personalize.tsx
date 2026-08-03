@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { ArrowLeft, ArrowRight, Eye, ImageIcon, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useMediaSrc } from '@/lib/storage/use-media-src';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -66,6 +67,25 @@ const SAMPLE_CONTACT: Contact = {
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
+
+/**
+ * Miniatura do header. Precisa passar por `useMediaSrc` porque o campo
+ * aceita tanto um link externo colado pelo usuário quanto uma URL do
+ * nosso bucket `chat-media`, privado desde a migração 040 — esta última
+ * só renderiza assinada.
+ */
+function HeaderImagePreview({ url }: { url: string }) {
+  const { src } = useMediaSrc(url);
+  if (!src) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt="Header preview"
+      className="border-border mt-3 max-h-40 rounded-lg border object-contain"
+    />
+  );
+}
 
 export function Step3Personalize({
   template,
@@ -274,12 +294,7 @@ export function Step3Personalize({
           {mediaHeaderType === 'image' &&
             headerMediaError === null &&
             headerMediaUrl.trim() && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={headerMediaUrl.trim()}
-                alt="Header preview"
-                className="border-border mt-3 max-h-40 rounded-lg border object-contain"
-              />
+              <HeaderImagePreview url={headerMediaUrl.trim()} />
             )}
           {headerMediaError && (
             <p className="mt-1.5 text-xs text-amber-300">

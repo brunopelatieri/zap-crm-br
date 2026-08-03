@@ -1,65 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { resolveMediaRef } from '@/lib/storage/media-url';
+import { signMediaUrl } from '@/lib/storage/sign-media-client';
 
-/**
- * Resolve uma `media_url` para algo que um `<img>`/blob consumidor
- * consiga usar. URLs da rota-proxy (`/api/whatsapp/media/[mediaId]`,
- * mídia recebida do cliente) precisam de fetch autenticado — um
- * `<img src>` direto perderia o cookie de sessão em alguns contextos, e
- * sem o blob não dá para mostrar loading/erro nem nomear o arquivo pela
- * extensão real depois. URLs públicas (bucket `chat-media`, mídia que o
- * AGENTE enviou) são usadas como estão.
- *
- * Compartilhado entre a miniatura na bolha (`MediaImage`) e o
- * lightbox — mesma lógica, dois tamanhos de exibição.
- */
-export function useProxyMediaSrc(url: string) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    let blobUrl: string | null = null;
-    setLoading(true);
-    setError(false);
-    setSrc(null);
-
-    async function load() {
-      if (!url) return;
-      if (url.startsWith('/api/whatsapp/media/')) {
-        try {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error('Failed to load media');
-          const blob = await res.blob();
-          blobUrl = URL.createObjectURL(blob);
-          if (!cancelled) setSrc(blobUrl);
-        } catch {
-          if (!cancelled) setError(true);
-        } finally {
-          if (!cancelled) setLoading(false);
-        }
-      } else {
-        setSrc(url);
-        setLoading(false);
-      }
-    }
-    load();
-
-    return () => {
-      cancelled = true;
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [url]);
-
-  return { src, loading, error };
-}
+// `useMediaSrc` mora em `lib/storage` porque os consumidores vão além
+// do Inbox (pré-visualização de template, construtor de flows, passo de
+// disparo). Reexportado aqui para que a bolha e o lightbox continuem
+// importando mídia de um lugar só.
+export { useMediaSrc } from '@/lib/storage/use-media-src';
 
 // ------------------------------------------------------------------
 // Download de mídia recebida do cliente — compartilhado entre a bolha
@@ -109,9 +63,23 @@ function guessExtension(mimeType: string): string {
 export async function downloadMedia(
   url: string,
   suggestedName: string | null | undefined,
-  fallbackId: string
+  fallbackId: string,
+  path?: string | null
 ) {
-  const res = await fetch(url);
+  // Mesma resolução em três vias do `useMediaSrc`: objeto nosso precisa
+  // de assinatura (bucket privado desde a 040), rota-proxy e URL externa
+  // são buscadas diretamente.
+  const ref = resolveMediaRef(url, path);
+  const fetchUrl =
+    ref.kind === 'storage'
+      ? await signMediaUrl({ bucket: ref.bucket, path: ref.path })
+      : ref.kind === 'none'
+        ? null
+        : ref.url;
+
+  if (!fetchUrl) throw new Error('no media to download');
+
+  const res = await fetch(fetchUrl);
   if (!res.ok) throw new Error('download failed');
   const blob = await res.blob();
   const filename =
@@ -129,11 +97,14 @@ export async function downloadMedia(
 
 export function DownloadIconButton({
   url,
+  path,
   filename,
   fallbackId,
   className,
 }: {
   url: string;
+  /** `messages.media_path`, quando o objeto é nosso (migração 040). */
+  path?: string | null;
   filename: string | null | undefined;
   fallbackId: string;
   className?: string;
@@ -148,14 +119,14 @@ export function DownloadIconButton({
       if (downloading) return;
       setDownloading(true);
       try {
-        await downloadMedia(url, filename, fallbackId);
+        await downloadMedia(url, filename, fallbackId, path);
       } catch {
         toast.error(t('downloadFailed'));
       } finally {
         setDownloading(false);
       }
     },
-    [url, filename, fallbackId, downloading, t]
+    [url, path, filename, fallbackId, downloading, t]
   );
 
   return (

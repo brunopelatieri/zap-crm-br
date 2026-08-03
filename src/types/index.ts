@@ -240,6 +240,22 @@ export interface Message {
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
+  /**
+   * Caminho do objeto no bucket `chat-media`, para mídia que o AGENTE
+   * enviou (migração 040). Fonte de verdade para exibir: o bucket é
+   * privado, então a URL só existe assinada, mintada na hora.
+   *
+   * Nulo para mídia RECEBIDA (que usa `media_id` + a rota-proxy) e para
+   * tudo que foi enviado antes da 040 — nesse caso a exibição cai em
+   * `media_url` e o caminho é derivado dela.
+   */
+  media_path?: string | null;
+  /**
+   * Id da mídia na Meta, para mensagens RECEBIDAS (migração 040). É por
+   * ele que `/api/whatsapp/media/[mediaId]` autoriza o download — ver
+   * F-40-A da SPEC 040.
+   */
+  media_id?: string | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;

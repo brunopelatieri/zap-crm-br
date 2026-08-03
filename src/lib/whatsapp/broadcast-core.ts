@@ -27,6 +27,7 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { createHeaderMediaResolver } from '@/lib/whatsapp/header-media';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 
@@ -271,7 +272,15 @@ export async function deliverBroadcast(
 ): Promise<void> {
   let sentCount = 0;
 
+  // Header de mídia: o bucket virou privado na migração 040, então a URL
+  // do template precisa ser assinada. Um broadcast longo ultrapassaria a
+  // validade de uma assinatura única, então o resolvedor reassina
+  // sozinho antes de vencer — ver `header-media.ts`.
+  const resolveHeaderParams = createHeaderMediaResolver(db, plan.templateRow);
+
   for (const recipient of plan.planned) {
+    const messageParams = await resolveHeaderParams();
+
     const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
@@ -285,6 +294,7 @@ export async function deliverBroadcast(
           templateName: plan.templateName,
           language: plan.templateLanguage,
           template: plan.templateRow ?? undefined,
+          messageParams,
           params: recipient.params,
         });
         sentMessageId = result.messageId;

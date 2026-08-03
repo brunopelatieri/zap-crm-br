@@ -21,7 +21,7 @@ import { ReplyQuote } from './reply-quote';
 import { MessageReactions } from './message-reactions';
 import { InteractivePreview } from '@/components/interactive/interactive-preview';
 import { TemplatePreview } from '@/components/interactive/template-preview';
-import { DownloadIconButton, useProxyMediaSrc } from './media-download';
+import { DownloadIconButton, useMediaSrc } from './media-download';
 import { useTranslations } from 'next-intl';
 
 interface MessageBubbleProps {
@@ -69,8 +69,29 @@ function MediaUnavailable({
   );
 }
 
-function MediaImage({ url, alt }: { url: string; alt: string }) {
-  const { src, loading, error } = useProxyMediaSrc(url);
+// ------------------------------------------------------------------
+// Wrappers de mídia.
+//
+// Desde a migração 040 nenhuma origem de mídia é utilizável direto do
+// que está gravado na linha: objeto nosso precisa de URL assinada
+// (bucket privado), mídia recebida precisa de fetch autenticado na
+// rota-proxy. Só URL externa continua servindo como está.
+//
+// `useMediaSrc` resolve os três casos, mas é um hook — por isso cada
+// tipo de mídia ganha seu componentezinho, em vez de um `switch` com
+// hooks dentro.
+// ------------------------------------------------------------------
+
+function MediaImage({
+  url,
+  path,
+  alt,
+}: {
+  url: string;
+  path?: string | null;
+  alt: string;
+}) {
+  const { src, loading, error } = useMediaSrc(url, path);
   // Erro do fetch (proxy) e erro de render do <img> (URL pública que
   // carrega mas não decodifica) são duas falhas distintas — a segunda
   // só é detectável depois que o hook já devolveu um `src`.
@@ -99,6 +120,76 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
       className="max-h-64 max-w-60 rounded-lg object-cover"
       onError={() => setRenderError(true)}
     />
+  );
+}
+
+function MediaVideo({ url, path }: { url: string; path?: string | null }) {
+  const { src, loading, error } = useMediaSrc(url, path);
+
+  if (error) {
+    return (
+      <div className="bg-muted flex h-40 w-60 items-center justify-center rounded-lg">
+        <ImageOff className="text-muted-foreground h-8 w-8" />
+      </div>
+    );
+  }
+  if (loading || !src) {
+    return (
+      <div className="bg-muted flex h-40 w-60 items-center justify-center rounded-lg">
+        <div className="border-primary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" />
+      </div>
+    );
+  }
+  return <video src={src} controls className="max-h-64 max-w-60 rounded-lg" />;
+}
+
+function MediaAudio({ url, path }: { url: string; path?: string | null }) {
+  const { src, loading, error } = useMediaSrc(url, path);
+
+  if (error) return null;
+  if (loading || !src) {
+    return (
+      <div className="bg-muted flex h-10 w-60 items-center justify-center rounded-lg">
+        <div className="border-primary h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
+      </div>
+    );
+  }
+  return <audio src={src} controls className="max-w-60" />;
+}
+
+/**
+ * Link "abrir documento". Precisa resolver antes de virar `href`: um
+ * `<a>` apontando para a URL pública de um bucket privado abriria uma
+ * aba com erro do Storage.
+ *
+ * Enquanto resolve, o link fica desabilitado (`aria-disabled` + sem
+ * `href`) em vez de sumir — o cartão não deve pular de layout.
+ */
+function DocumentLink({
+  url,
+  path,
+  label,
+}: {
+  url: string;
+  path?: string | null;
+  label: string;
+}) {
+  const { src } = useMediaSrc(url, path);
+
+  return (
+    <a
+      href={src ?? undefined}
+      aria-disabled={!src}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        'flex min-w-0 flex-1 items-center gap-2',
+        !src && 'pointer-events-none opacity-70'
+      )}
+    >
+      <FileText className="text-muted-foreground h-5 w-5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </a>
   );
 }
 
@@ -135,10 +226,15 @@ function MessageContent({
               )}
               onClick={() => onOpenMedia?.(message.id)}
             >
-              <MediaImage url={message.media_url} alt="Shared image" />
+              <MediaImage
+                url={message.media_url}
+                path={message.media_path}
+                alt="Shared image"
+              />
               {canDownload && (
                 <DownloadIconButton
                   url={message.media_url}
+                  path={message.media_path}
                   filename={null}
                   fallbackId={message.id}
                   className="absolute top-1.5 right-1.5"
@@ -164,11 +260,7 @@ function MessageContent({
         <div>
           {message.media_url ? (
             <div className="relative inline-block">
-              <video
-                src={message.media_url}
-                controls
-                className="max-h-64 max-w-60 rounded-lg"
-              />
+              <MediaVideo url={message.media_url} path={message.media_path} />
               {/* Botão explícito (não a área toda) — o clique em cima do
                   <video> precisa continuar chegando aos controles nativos
                   (play/pause/seek) sem abrir o lightbox por engano. */}
@@ -186,6 +278,7 @@ function MessageContent({
               {canDownload && (
                 <DownloadIconButton
                   url={message.media_url}
+                  path={message.media_path}
                   filename={null}
                   fallbackId={message.id}
                   className="absolute top-1.5 right-1.5"
@@ -211,10 +304,11 @@ function MessageContent({
         <div className="flex items-center gap-2">
           {message.media_url ? (
             <>
-              <audio src={message.media_url} controls className="max-w-60" />
+              <MediaAudio url={message.media_url} path={message.media_path} />
               {canDownload && (
                 <DownloadIconButton
                   url={message.media_url}
+                  path={message.media_path}
                   filename={null}
                   fallbackId={message.id}
                   className="bg-muted-foreground/20 text-foreground hover:bg-muted-foreground/30 shrink-0"
@@ -244,20 +338,15 @@ function MessageContent({
       // lado a lado dentro do mesmo cartão, não aninhados.
       return (
         <div className="bg-muted/50 hover:bg-muted flex items-center gap-2 rounded-lg px-3 py-2 text-sm">
-          <a
-            href={message.media_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex min-w-0 flex-1 items-center gap-2"
-          >
-            <FileText className="text-muted-foreground h-5 w-5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">
-              {message.content_text || t('document')}
-            </span>
-          </a>
+          <DocumentLink
+            url={message.media_url}
+            path={message.media_path}
+            label={message.content_text || t('document')}
+          />
           {canDownload && (
             <DownloadIconButton
               url={message.media_url}
+              path={message.media_path}
               filename={message.content_text}
               fallbackId={message.id}
               className="bg-muted-foreground/20 text-foreground hover:bg-muted-foreground/30 shrink-0"

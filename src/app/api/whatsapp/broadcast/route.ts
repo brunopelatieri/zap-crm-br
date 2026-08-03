@@ -4,6 +4,7 @@ import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { createHeaderMediaResolver } from '@/lib/whatsapp/header-media';
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -175,6 +176,15 @@ export async function POST(request: Request) {
     }
     const templateRow = rawTemplateRow ?? null;
 
+    // Header de mídia: o bucket virou privado na migração 040, então a
+    // URL do template precisa ser assinada. Um disparo longo
+    // ultrapassaria a validade de uma assinatura única, então o
+    // resolvedor reassina sozinho antes de vencer — ver `header-media.ts`.
+    const resolveHeaderParams = createHeaderMediaResolver(
+      supabase,
+      templateRow
+    );
+
     const results: BroadcastResult[] = [];
     let sentCount = 0;
     let failedCount = 0;
@@ -207,7 +217,7 @@ export async function POST(request: Request) {
             templateName: template_name,
             language: template_language || 'en_US',
             template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
+            messageParams: await resolveHeaderParams(recipient.messageParams),
             params: recipient.params ?? [],
           });
           sentMessageId = result.messageId;

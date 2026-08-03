@@ -69,6 +69,11 @@ export async function POST(request: Request) {
       message_type,
       content_text,
       media_url,
+      // Caminho do objeto no bucket, mandado pelo composer junto da URL
+      // (migração 040). É por ele que o envio assina a URL para a Meta e
+      // que a bolha exibe a mídia depois — a URL pública deixou de ser
+      // buscável quando o bucket virou privado.
+      media_path,
       filename,
       template_name,
       template_language,
@@ -207,6 +212,7 @@ export async function POST(request: Request) {
         messageType: message_type,
         contentText: content_text,
         mediaUrl: media_url,
+        mediaPath: media_path,
         filename,
         templateName: template_name,
         templateLanguage: template_language,

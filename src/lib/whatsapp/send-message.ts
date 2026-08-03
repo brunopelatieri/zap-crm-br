@@ -48,6 +48,8 @@ import {
   renderTemplateText,
   type SendTimeParams,
 } from '@/lib/whatsapp/template-send-builder';
+import { resolveMediaUrlForServer } from '@/lib/storage/sign-media';
+import { withSignedHeaderMedia } from '@/lib/whatsapp/header-media';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -78,6 +80,16 @@ export interface SendMessageParams {
   messageType: string;
   contentText?: string | null;
   mediaUrl?: string | null;
+  /**
+   * Caminho do objeto no bucket `chat-media`, quando o anexo foi subido
+   * por nós (migração 040). É a fonte de verdade para assinar a URL na
+   * hora do envio e para exibir a mídia depois — a `mediaUrl` pública
+   * deixou de ser buscável quando o bucket virou privado.
+   *
+   * Nulo em dois casos legítimos: envio pela API pública com um link
+   * externo, e chamadas anteriores à 040.
+   */
+  mediaPath?: string | null;
   filename?: string | null;
   templateName?: string | null;
   templateLanguage?: string | null;
@@ -213,6 +225,7 @@ export async function sendMessageToConversation(
     messageType,
     contentText,
     mediaUrl,
+    mediaPath,
     filename,
     templateName,
     templateLanguage,
@@ -353,6 +366,57 @@ export async function sendMessageToConversation(
     templateRow = data ?? null;
   }
 
+  // ---- URL que a Meta vai buscar (SPEC 040) -------------------------
+  //
+  // Desde a migração 040 o bucket `chat-media` é PRIVADO, então a URL
+  // gravada na linha não é mais buscável por um terceiro. A Meta precisa
+  // de um link que ela consiga abrir sem credencial — logo, assinamos
+  // aqui, imediatamente antes do envio.
+  //
+  // Isso é seguro porque a Meta baixa o arquivo UMA vez e o re-hospeda
+  // para servir ao destinatário; a validade curta da assinatura basta.
+  // E a URL assinada NÃO é persistida: `messages.media_url` continua
+  // guardando o valor estável (ver o insert adiante), senão o registro
+  // ficaria com um link morto em dez minutos.
+  //
+  // `resolveMediaUrlForServer` devolve a URL intocada quando ela é
+  // externa (link de terceiro colado pelo usuário), então este caminho
+  // cobre os dois casos sem ramificação no chamador.
+  let outboundMediaLink = mediaUrl ?? null;
+  if (isMediaKind && mediaUrl) {
+    outboundMediaLink = await resolveMediaUrlForServer(db, mediaUrl, mediaPath);
+    if (!outboundMediaLink) {
+      throw new SendMessageError(
+        'media_unavailable',
+        'Could not resolve the attachment for sending. It may have been removed from storage.',
+        400
+      );
+    }
+  }
+
+  // Idem para o header de mídia de TEMPLATE — ver `header-media.ts`,
+  // compartilhado com os motores de automações e flows.
+  let templateParamsForSend = templateMessageParams as
+    | SendTimeParams
+    | undefined;
+  if (messageType === 'template' && templateRow) {
+    try {
+      templateParamsForSend = await withSignedHeaderMedia(
+        db,
+        templateRow,
+        templateParamsForSend
+      );
+    } catch (err) {
+      throw new SendMessageError(
+        'media_unavailable',
+        err instanceof Error
+          ? err.message
+          : 'Could not resolve the template header media for sending.',
+        400
+      );
+    }
+  }
+
   const attempt = async (phone: string): Promise<string> => {
     if (messageType === 'template') {
       const result = await sendTemplateMessage({
@@ -362,7 +426,7 @@ export async function sendMessageToConversation(
         templateName: templateName!,
         language: templateLanguage || 'en_US',
         template: templateRow ?? undefined,
-        messageParams: templateMessageParams ?? undefined,
+        messageParams: templateParamsForSend ?? undefined,
         params: templateParams || [],
         contextMessageId,
       });
@@ -374,7 +438,7 @@ export async function sendMessageToConversation(
         accessToken,
         to: phone,
         kind: messageType as MediaKind,
-        link: mediaUrl!,
+        link: outboundMediaLink!,
         caption: contentText || undefined,
         filename: filename || undefined,
         contextMessageId,
@@ -523,7 +587,12 @@ export async function sendMessageToConversation(
       sender_id: senderId ?? null,
       content_type: messageType,
       content_text: interactiveBody ?? contentText ?? null,
+      // Valor ESTÁVEL, nunca a URL assinada que acabou de ir para a
+      // Meta: aquela expira em minutos e deixaria a bolha com um link
+      // morto. Quem exibe usa `media_path` (assinando de novo na hora)
+      // e cai em `media_url` para o histórico anterior à 040.
       media_url: mediaUrl || null,
+      media_path: mediaPath || null,
       template_name: templateName || null,
       template_preview: templatePreview,
       interactive_payload:

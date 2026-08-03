@@ -1,4 +1,5 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api';
+import { withSignedHeaderMedia } from '@/lib/whatsapp/header-media';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 import type { MessageTemplate, TemplatePreviewPayload } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
@@ -166,6 +167,15 @@ async function sendViaMeta(
     if (data && isMessageTemplate(data)) templateRow = data;
   }
 
+  // Header de mídia: o bucket virou privado na migração 040, então a
+  // URL guardada no template não é mais buscável pela Meta. Assina uma
+  // vez, fora do `attempt`, para não gerar uma assinatura nova a cada
+  // variante de telefone tentada.
+  const templateSendParams = await withSignedHeaderMedia(
+    db,
+    templateRow ?? undefined
+  );
+
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
@@ -175,6 +185,7 @@ async function sendViaMeta(
         templateName: input.templateName,
         language: input.language,
         template: templateRow ?? undefined,
+        messageParams: templateSendParams,
         params: input.params,
       });
       return r.messageId;

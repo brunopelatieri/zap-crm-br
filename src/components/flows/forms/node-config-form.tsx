@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { useMediaSrc } from '@/lib/storage/use-media-src';
 import {
   uploadAccountMedia,
   MEDIA_MAX_BYTES,
@@ -863,6 +864,33 @@ function useUserTags(): UserTag[] {
 // send_media
 // ============================================================
 
+/**
+ * Link para o arquivo anexado ao nó.
+ *
+ * O `media_url` do nó pode ser um objeto nosso no bucket `flow-media` —
+ * privado desde a migração 040 — ou um link externo que o usuário colou.
+ * `useMediaSrc` distingue os dois; enquanto a assinatura não volta, o
+ * link fica inerte em vez de sumir, para o cartão não pular de layout.
+ */
+function MediaFileLink({ url, label }: { url: string; label: string }) {
+  const { src } = useMediaSrc(url);
+  return (
+    <a
+      href={src ?? undefined}
+      aria-disabled={!src}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        'text-foreground min-w-0 flex-1 truncate hover:text-cyan-300',
+        !src && 'pointer-events-none opacity-70'
+      )}
+      title={label}
+    >
+      {label}
+    </a>
+  );
+}
+
 interface SendMediaCfg {
   media_type?: 'image' | 'video' | 'document';
   media_url?: string;
@@ -977,15 +1005,10 @@ function SendMediaForm({
         {cfg.media_url ? (
           <div className="border-border bg-muted flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
             <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
-            <a
-              href={cfg.media_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-foreground min-w-0 flex-1 truncate hover:text-cyan-300"
-              title={displayName || cfg.media_url}
-            >
-              {displayName || cfg.media_url}
-            </a>
+            <MediaFileLink
+              url={cfg.media_url}
+              label={displayName || cfg.media_url}
+            />
             <button
               type="button"
               onClick={handleClear}

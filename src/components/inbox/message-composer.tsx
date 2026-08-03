@@ -99,6 +99,16 @@ interface MediaDraft {
   mediaUrl: string;
   /** Storage path — used to GC the object if the draft is discarded. */
   path: string;
+  /**
+   * `URL.createObjectURL` do arquivo local, só para a pré-visualização.
+   *
+   * O bucket virou privado na migração 040, então a `mediaUrl` já não
+   * renderiza num `<img>`/`<video>` sem assinatura — e pedir assinatura
+   * aqui seria um round-trip inútil: o arquivo acabou de sair deste
+   * navegador e ainda está em memória. Revogado ao descartar, ao
+   * substituir e ao enviar.
+   */
+  previewUrl: string;
   filename: string;
   caption: string;
 }
@@ -173,6 +183,12 @@ export function MessageComposer({
     void deleteAccountMedia(CHAT_MEDIA_BUCKET, path).catch(() => {});
   }, []);
 
+  // O object URL da pré-visualização vive fora do React e não é coletado
+  // sozinho — revogar é o par obrigatório de todo `createObjectURL`.
+  const revokePreview = useCallback((previewUrl: string | undefined) => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, []);
+
   // Voice recording state. The recorder encodes Ogg/Opus in-browser
   // (opus-recorder) so there's no server-side transcode.
   const [recording, setRecording] = useState(false);
@@ -206,8 +222,9 @@ export function MessageComposer({
       // stop() releases the mic stream + audio context inside opus-recorder.
       void recorderRef.current?.stop().catch(() => {});
       removeStaged(draftRef.current?.path);
+      revokePreview(draftRef.current?.previewUrl);
     };
-  }, [clearTimer, removeStaged]);
+  }, [clearTimer, removeStaged, revokePreview]);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -401,10 +418,12 @@ export function MessageComposer({
         );
         // Replacing an existing draft? GC the previous object first.
         removeStaged(draftRef.current?.path);
+        revokePreview(draftRef.current?.previewUrl);
         setDraft({
           kind,
           mediaUrl: publicUrl,
           path,
+          previewUrl: URL.createObjectURL(file),
           filename: file.name,
           caption: '',
         });
@@ -414,7 +433,7 @@ export function MessageComposer({
         setBusy(false);
       }
     },
-    [removeStaged]
+    [removeStaged, revokePreview]
   );
 
   const handlePicked = useCallback(
@@ -451,10 +470,12 @@ export function MessageComposer({
           file
         );
         removeStaged(draftRef.current?.path);
+        revokePreview(draftRef.current?.previewUrl);
         setDraft({
           kind: 'audio',
           mediaUrl: publicUrl,
           path,
+          previewUrl: URL.createObjectURL(file),
           filename: file.name,
           caption: '',
         });
@@ -464,7 +485,7 @@ export function MessageComposer({
         setBusy(false);
       }
     },
-    [removeStaged]
+    [removeStaged, revokePreview]
   );
 
   const startRecording = useCallback(async () => {
@@ -544,15 +565,18 @@ export function MessageComposer({
       replyToId: replyTo?.id,
     });
     // The object is now owned by the sent message — clear without GC.
+    // A pré-visualização, porém, é local e morre aqui.
+    revokePreview(draft.previewUrl);
     setDraft(null);
     onClearReply?.();
-  }, [draft, busy, onSendMedia, replyTo?.id, onClearReply]);
+  }, [draft, busy, onSendMedia, replyTo?.id, onClearReply, revokePreview]);
 
   // Discard GCs the staged object — it was uploaded but never sent.
   const discardDraft = useCallback(() => {
     removeStaged(draft?.path);
+    revokePreview(draft?.previewUrl);
     setDraft(null);
-  }, [draft?.path, removeStaged]);
+  }, [draft?.path, draft?.previewUrl, removeStaged, revokePreview]);
 
   const setCaption = useCallback((caption: string) => {
     setDraft((d) => (d ? { ...d, caption } : d));
@@ -879,20 +903,20 @@ function MediaDraftPreview({
           {draft.kind === 'image' && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={draft.mediaUrl}
+              src={draft.previewUrl}
               alt={draft.filename}
               className="max-h-40 rounded-lg object-cover"
             />
           )}
           {draft.kind === 'video' && (
             <video
-              src={draft.mediaUrl}
+              src={draft.previewUrl}
               controls
               className="max-h-40 rounded-lg"
             />
           )}
           {draft.kind === 'audio' && (
-            <audio src={draft.mediaUrl} controls className="w-full" />
+            <audio src={draft.previewUrl} controls className="w-full" />
           )}
           {draft.kind === 'document' && (
             <div className="text-foreground flex items-center gap-2 text-sm">

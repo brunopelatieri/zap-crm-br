@@ -5,6 +5,7 @@ import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature';
+import { proxyMediaUrl } from '@/lib/storage/media-url';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
 import { dispatchInboundToFlows } from '@/lib/flows/engine';
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
@@ -645,7 +646,7 @@ async function processMessage(
   }
 
   // Parse message content based on type
-  const { contentText, mediaUrl, mediaType, interactiveReplyId } =
+  const { contentText, mediaUrl, mediaId, mediaType, interactiveReplyId } =
     await parseMessageContent(message, accessToken);
 
   // Resolve swipe-reply context if present. A missing parent is fine —
@@ -715,6 +716,10 @@ async function processMessage(
       content_type: contentType,
       content_text: contentText,
       media_url: mediaUrl,
+      // Migração 040: é por esta coluna que a rota-proxy autoriza o
+      // download (F-40-A). Sem ela, a mídia recebida fica inacessível
+      // até para quem é dono da conversa.
+      media_id: mediaId,
       message_id: message.id,
       status: 'delivered',
       created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
@@ -876,6 +881,15 @@ async function parseMessageContent(
 ): Promise<{
   contentText: string | null;
   mediaUrl: string | null;
+  /**
+   * Id da mídia na Meta. Persistido em `messages.media_id` (migração
+   * 040) porque é por ele que a rota-proxy autoriza o download: sem
+   * uma coluna própria, o id só existiria embutido na string de
+   * `mediaUrl` e a autorização ficaria amarrada ao formato da rota.
+   * Só é preenchido quando a verificação com a Meta passou — um id
+   * cuja mídia não existe não deve virar uma linha "autorizável".
+   */
+  mediaId: string | null;
   mediaType: string | null;
   /**
    * For interactive button / list replies: the stable id of the tapped
@@ -890,16 +904,24 @@ async function parseMessageContent(
   // the args swapped, so every verification hit an invalid Meta URL and
   // fell through to the catch block, leaving mediaUrl as null. That's
   // why images showed up as empty bubbles in the inbox.
-  const verifyAndBuildUrl = async (mediaId: string): Promise<string | null> => {
+  //
+  // Devolve os dois campos juntos, e não só a URL, para que seja
+  // impossível gravar `media_id` sem `media_url` (ou o contrário): a
+  // rota-proxy autoriza por `media_id` e exibe o que a `media_url`
+  // aponta — se um existir sem o outro, ou a mídia fica inacessível ou
+  // fica autorizável sem existir.
+  const verifyMedia = async (
+    mediaId: string
+  ): Promise<{ mediaUrl: string | null; mediaId: string | null }> => {
     try {
       await getMediaUrl({ mediaId, accessToken });
-      return `/api/whatsapp/media/${mediaId}`;
+      return { mediaUrl: proxyMediaUrl(mediaId), mediaId };
     } catch (error) {
       console.error(
         `Failed to verify media ${mediaId} with Meta:`,
         error instanceof Error ? error.message : error
       );
-      return null;
+      return { mediaUrl: null, mediaId: null };
     }
   };
 
@@ -908,6 +930,7 @@ async function parseMessageContent(
   const empty = {
     contentText: null,
     mediaUrl: null,
+    mediaId: null,
     mediaType: null,
     interactiveReplyId: null,
   };
@@ -921,7 +944,7 @@ async function parseMessageContent(
         return {
           ...empty,
           contentText: message.image.caption || null,
-          mediaUrl: await verifyAndBuildUrl(message.image.id),
+          ...(await verifyMedia(message.image.id)),
           mediaType: message.image.mime_type,
         };
       }
@@ -932,7 +955,7 @@ async function parseMessageContent(
         return {
           ...empty,
           contentText: message.video.caption || null,
-          mediaUrl: await verifyAndBuildUrl(message.video.id),
+          ...(await verifyMedia(message.video.id)),
           mediaType: message.video.mime_type,
         };
       }
@@ -944,7 +967,7 @@ async function parseMessageContent(
           ...empty,
           contentText:
             message.document.caption || message.document.filename || null,
-          mediaUrl: await verifyAndBuildUrl(message.document.id),
+          ...(await verifyMedia(message.document.id)),
           mediaType: message.document.mime_type,
         };
       }
@@ -954,7 +977,7 @@ async function parseMessageContent(
       if (message.audio?.id) {
         return {
           ...empty,
-          mediaUrl: await verifyAndBuildUrl(message.audio.id),
+          ...(await verifyMedia(message.audio.id)),
           mediaType: message.audio.mime_type,
         };
       }
@@ -967,7 +990,7 @@ async function parseMessageContent(
       if (message.sticker?.id) {
         return {
           ...empty,
-          mediaUrl: await verifyAndBuildUrl(message.sticker.id),
+          ...(await verifyMedia(message.sticker.id)),
           mediaType: message.sticker.mime_type,
         };
       }

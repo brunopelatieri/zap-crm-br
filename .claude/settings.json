@@ -15,7 +15,20 @@
       "WebFetch(domain:docs.cursor.com)",
       "WebFetch(domain:cursor.com)",
       "Bash(node -e ' *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(python -)",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx eslint src/lib/storage src/app/api/inbox/media src/components/inbox/media-download.tsx src/components/inbox/media-lightbox.tsx src/components/inbox/message-bubble.tsx src/components/inbox/message-composer.tsx src/lib/whatsapp/header-media.ts \"src/app/api/whatsapp/media/[mediaId]/route.ts\" 2>&1 | Select-Object -First 60; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx vitest run 2>&1 | Select-Object -Last 45; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx vitest run src/lib/storage/media-url.test.ts 2>&1 | Select-Object -Last 30; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx vitest run 2>&1 | Select-Object -Last 12; Write-Output \"TEST=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx eslint src --ext .ts,.tsx 2>&1 | Select-Object -Last 30; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx vitest run src/lib/whatsapp/header-media.test.ts 2>&1 | Select-Object -Last 30; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx vitest run 2>&1 | Select-Object -Last 10; npx eslint src --ext .ts,.tsx 2>&1 | Select-Object -Last 3)",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx next build --no-lint 2>&1 | Select-Object -Last 25; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx next build 2>&1 | Select-Object -Last 30; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "Bash(npx next *)"
     ]
   }
 }

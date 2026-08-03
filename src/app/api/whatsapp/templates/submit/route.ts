@@ -9,6 +9,7 @@ import {
 } from '@/lib/whatsapp/template-validators';
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components';
 import { ensureImageHeaderHandle } from '@/lib/whatsapp/template-header-handle';
+import { resolveMediaUrlForServer } from '@/lib/storage/sign-media';
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize';
 
 // Header-image submits chain a media download + resumable upload (2
@@ -191,7 +192,17 @@ export async function POST(request: Request) {
       // building the payload. Surfaces a 400 with an actionable message
       // (missing META_APP_ID, unreachable URL, wrong type/size).
       try {
-        await ensureImageHeaderHandle(payload, accessToken);
+        // A URL é baixada para virar o handle. Se ela apontar para o
+        // nosso bucket — privado desde a migração 040 — o fetch anônimo
+        // do helper receberia 400; por isso assinamos antes e passamos
+        // a URL efêmera. URL externa colada pelo usuário volta
+        // inalterada de `resolveMediaUrlForServer` e segue o caminho
+        // antigo.
+        const headerFetchUrl = await resolveMediaUrlForServer(
+          supabase,
+          payload.header_media_url
+        );
+        await ensureImageHeaderHandle(payload, accessToken, headerFetchUrl);
       } catch (e) {
         return NextResponse.json(
           {

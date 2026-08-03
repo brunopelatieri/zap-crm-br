@@ -556,6 +556,12 @@ export function MessageThread({
         content_type: payload.kind,
         content_text: contentText,
         media_url: payload.mediaUrl,
+        // O caminho no bucket acompanha a mensagem otimista para que a
+        // bolha já resolva a mídia pelo mesmo caminho que usará quando o
+        // servidor devolver a linha real — sem isto, a pré-visualização
+        // dependeria da URL pública, que deixou de funcionar quando o
+        // bucket virou privado (migração 040).
+        media_path: payload.path,
         status: 'sending',
         created_at: new Date().toISOString(),
         reply_to_message_id: payload.replyToId,
@@ -571,6 +577,7 @@ export function MessageThread({
             conversation_id: conversation.id,
             message_type: payload.kind,
             media_url: payload.mediaUrl,
+            media_path: payload.path,
             content_text: contentText,
             filename: payload.filename,
             reply_to_message_id: payload.replyToId,
@@ -810,6 +817,7 @@ export function MessageThread({
           id: m.id,
           type: m.content_type as 'image' | 'video',
           url: m.media_url,
+          path: m.media_path ?? null,
           caption: m.content_text ?? null,
           downloadable: m.sender_type === 'customer',
         })),

@@ -9,6 +9,7 @@ import {
 } from '@/lib/whatsapp/meta-api';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 import { decrypt } from '@/lib/whatsapp/encryption';
+import { resolveMediaUrlForServer } from '@/lib/storage/sign-media';
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -206,13 +207,26 @@ export async function engineSendMedia(
 
   const accessToken = decrypt(config.access_token);
 
+  // O `link` vem do config do nó (`cfg.media_url`), que pode ser um
+  // objeto nosso no bucket `flow-media` — privado desde a migração 040 —
+  // ou uma URL externa que o usuário colou no builder. A primeira
+  // precisa ser assinada para a Meta conseguir buscá-la; a segunda passa
+  // intocada. Assinado UMA vez, fora do `attempt`, para não gerar uma
+  // assinatura nova por variante de telefone tentada.
+  const outboundLink = await resolveMediaUrlForServer(db, args.link);
+  if (!outboundLink) {
+    throw new Error(
+      'Could not resolve the media for sending — the file may have been removed from storage.'
+    );
+  }
+
   const attempt = async (phone: string): Promise<string> => {
     const r = await sendMediaMessage({
       phoneNumberId: config.phone_number_id,
       accessToken,
       to: phone,
       kind: args.kind,
-      link: args.link,
+      link: outboundLink,
       caption: args.caption,
       filename: args.filename,
     });
