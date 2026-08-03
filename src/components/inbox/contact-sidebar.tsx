@@ -130,7 +130,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   return (
     <div className="border-border bg-card flex h-full w-70 flex-col border-l">
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">

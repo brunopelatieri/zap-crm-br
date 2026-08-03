@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { MessageTemplate } from '@/types';
+import type { Contact, MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +29,8 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
+  /** Used to auto-suggest the contact's name for the body's {{1}} variable. */
+  contact?: Contact | null;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -73,6 +75,7 @@ export function TemplatePicker({
   open,
   onOpenChange,
   onSelect,
+  contact,
 }: TemplatePickerProps) {
   const t = useTranslations('Inbox.templatePicker');
 
@@ -150,8 +153,14 @@ export function TemplatePicker({
       handleOpenChange(false);
       return;
     }
+    const initialParams = new Array(slots.bodyVars.length).fill('');
+    // Só sugere o nome do contato para {{1}} — variáveis seguintes ({{2}}...)
+    // dependem de contexto que não temos como adivinhar, então ficam em branco.
+    if (slots.bodyVars[0] === 1 && contact?.name) {
+      initialParams[0] = contact.name;
+    }
     setSelected(template);
-    setParams(new Array(slots.bodyVars.length).fill(''));
+    setParams(initialParams);
     setHeaderText('');
     setButtonParams({});
   }
