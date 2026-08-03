@@ -14,7 +14,8 @@
       "WebFetch(domain:code.visualstudio.com)",
       "WebFetch(domain:docs.cursor.com)",
       "WebFetch(domain:cursor.com)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(git stash *)"
     ]
   }
 }

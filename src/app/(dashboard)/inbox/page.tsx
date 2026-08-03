@@ -204,6 +204,15 @@ export default function InboxPage() {
     activeConversationRef.current = activeConversation;
   });
 
+  // Mesmo padrão, para a aba visível — o handler de evento realtime
+  // (abaixo) precisa saber se a conversa ativa mudou de aba SEM entrar
+  // como dependência do `useCallback`, senão toda troca de aba
+  // recriaria o handler e o `useRealtime` resubscreveria à toa.
+  const activeTabRef = useRef<TabId>(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  });
+
   // Idem para `searchParams` — o efeito de reconciliação por ausência
   // só deve rodar em cima de `resyncToken`, não a cada mudança de URL.
   const searchParamsRef = useRef(searchParams);
@@ -507,9 +516,28 @@ export default function InboxPage() {
         if (activeConversationRef.current?.id === conv.id) {
           setActiveConversation((prev) => (prev ? { ...prev, ...conv } : prev));
         }
+
+        // A conversa ATIVA mudou de aba — a aba visível acompanha. Cobre
+        // o caso que não passa pelo `handleClaim` explícito: o primeiro
+        // envio a uma conversa da fila a reivindica automaticamente no
+        // servidor (F-07 do SPEC), e o único aviso que o cliente recebe
+        // é este evento de UPDATE. Sem isto, a lista à esquerda continua
+        // mostrando a aba antiga (ex.: "Fila"), onde o item já não está
+        // mais — o agente segue digitando na thread sem ver onde ela foi
+        // parar até trocar de aba manualmente.
+        if (
+          targetTab &&
+          targetTab !== previousTab &&
+          activeConversationRef.current?.id === conv.id &&
+          activeTabRef.current !== targetTab
+        ) {
+          const params = new URLSearchParams(searchParamsRef.current.toString());
+          params.set('tab', targetTab);
+          router.replace(`/inbox?${params.toString()}`, { scroll: false });
+        }
       }
     },
-    [tabOfConversation, visitedTabs, patchFeed, readFeed, hydrateConversation]
+    [tabOfConversation, visitedTabs, patchFeed, readFeed, hydrateConversation, router]
   );
 
   // Subscribe to realtime. The `isConnected` flag below feeds the
@@ -760,8 +788,25 @@ export default function InboxPage() {
           ? { ...prev, assigned_agent_id: assignedAgentId }
           : prev
       );
+
+      // Mesma lógica de "seguir a aba" do handler de realtime (abaixo) —
+      // aqui cobre a reatribuição feita pelo dropdown/banner de IA
+      // enquanto a conversa está ativa, que não passa pelo `handleClaim`
+      // explícito nem, necessariamente, por um evento de UPDATE com
+      // `previousTab !== targetTab` (o `convTabMapRef` já pode ter sido
+      // atualizado por este mesmo `patchFeed` antes do evento chegar).
+      if (
+        newTab &&
+        newTab !== previousTab &&
+        activeConversationRef.current?.id === conversationId &&
+        activeTabRef.current !== newTab
+      ) {
+        const params = new URLSearchParams(searchParamsRef.current.toString());
+        params.set('tab', newTab);
+        router.replace(`/inbox?${params.toString()}`, { scroll: false });
+      }
     },
-    [userId, visitedTabs, readFeed, patchFeed]
+    [userId, visitedTabs, readFeed, patchFeed, router]
   );
 
   const handleAssignChange = useCallback(
