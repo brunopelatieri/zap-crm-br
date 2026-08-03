@@ -35,7 +35,10 @@ type RangeDays = 7 | 30 | 90;
 
 export default function DashboardPage() {
   const t = useTranslations('Dashboard.page');
-  const { defaultCurrency } = useAuth();
+  // `accountId` passou a ser obrigatório: desde a migração 039 os
+  // números que tocam conversas/mensagens vêm das RPCs `dashboard_*`,
+  // que são escopadas por conta (ver o cabeçalho de lib/dashboard/queries).
+  const { defaultCurrency, accountId } = useAuth();
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
 
@@ -63,28 +66,30 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
 
-  const loadAll = useCallback(() => {
+  const loadAll = useCallback((account: string) => {
     const db = createClient();
 
     // Kick everything off in parallel. Each block has its own
     // setState + finally so a slow query doesn't hold up faster
     // sections — each widget shows its own skeleton independently.
-    void loadMetrics(db)
+    void loadMetrics(db, account)
       .then((m) => setMetrics(m))
       .catch((err) => console.error('[dashboard] metrics failed:', err))
       .finally(() => setMetricsLoading(false));
 
-    void loadConversationsSeries(db, 30)
+    void loadConversationsSeries(db, account, 30)
       .then((s) => setSeries((prev) => ({ ...prev, 30: s })))
       .catch((err) => console.error('[dashboard] series failed:', err))
       .finally(() => setSeriesLoading(false));
 
+    // Sem `account`: pipelines/deals seguem com política plana por
+    // conta, a 039 não os tocou.
     void loadPipelineDonut(db)
       .then((p) => setPipeline(p))
       .catch((err) => console.error('[dashboard] pipeline failed:', err))
       .finally(() => setPipelineLoading(false));
 
-    void loadResponseTime(db)
+    void loadResponseTime(db, account)
       .then((r) => setResponseTime(r))
       .catch((err) => console.error('[dashboard] response time failed:', err))
       .finally(() => setResponseTimeLoading(false));
@@ -92,15 +97,20 @@ export default function DashboardPage() {
     // Fetch up to 50 so the biggest page-size option in the feed
     // (50 rows) is already in memory — switching sizes then becomes
     // a pure client-side slice with no extra round trip.
-    void loadActivity(db, 50)
+    void loadActivity(db, account, 50)
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false));
   }, []);
 
   useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+    // `accountId` só chega quando o perfil resolve, e as RPCs do
+    // dashboard o exigem — até lá os esqueletos cobrem a janela.
+    // `account_id` é NOT NULL desde a migração 017, então "resolvido e
+    // ainda nulo" não é um estado alcançável a tratar aqui.
+    if (!accountId) return;
+    loadAll(accountId);
+  }, [loadAll, accountId]);
 
   // Range switch handler — kept in an event callback (not an effect)
   // so the setState calls stay out of the react-hooks/set-state-in-effect
@@ -110,14 +120,15 @@ export default function DashboardPage() {
     (r: RangeDays) => {
       setRange(r);
       if (series[r] !== null) return;
+      if (!accountId) return;
       setSeriesLoading(true);
       const db = createClient();
-      loadConversationsSeries(db, r)
+      loadConversationsSeries(db, accountId, r)
         .then((s) => setSeries((prev) => ({ ...prev, [r]: s })))
         .catch((err) => console.error('[dashboard] series failed:', err))
         .finally(() => setSeriesLoading(false));
     },
-    [series]
+    [series, accountId]
   );
 
   return (

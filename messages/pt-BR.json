@@ -202,7 +202,30 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta."
+      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta.",
+      "conversationNotFound": "Conversa não encontrada",
+      "conversationNoLongerAvailable": "Esta conversa não está mais disponível",
+      "claimedByAnother": "Esta conversa acabou de ser atendida por outro agente",
+      "claimFailed": "Não foi possível assumir esta conversa",
+      "networkError": "Não foi possível conectar ao servidor"
+    },
+    "tabs": {
+      "tablistLabel": "Visões do Inbox",
+      "chat": "Chat",
+      "open": "Open",
+      "contacts": "Contatos"
+    },
+    "contactsDirectory": {
+      "title": "Contatos",
+      "subtitleAll": "Todos os contatos da conta",
+      "subtitleMine": "Contatos das conversas atribuídas a você",
+      "searchPlaceholder": "Buscar por nome, telefone ou e-mail...",
+      "loadError": "Falha ao carregar contatos",
+      "noneMatch": "Nenhum contato corresponde à busca",
+      "noneYet": "Ainda sem contatos",
+      "noneAssigned": "Nenhuma conversa atribuída a você ainda",
+      "unnamed": "Sem nome",
+      "pageCount": "Página {page} de {total}"
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversas...",
@@ -219,7 +242,9 @@
       "noMessagesYet": "Ainda sem mensagens",
       "unknown": "Desconhecido",
       "manageTags": "Gerenciar etiquetas de {name}",
-      "manageTagsShort": "Gerenciar etiquetas"
+      "manageTagsShort": "Gerenciar etiquetas",
+      "claimConversation": "Assumir conversa com {name}",
+      "claimConversationShort": "Assumir conversa"
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",
@@ -233,8 +258,10 @@
       "statusOpen": "Aberta",
       "statusPending": "Pendente",
       "statusClosed": "Encerrada",
+      "statusUpdateFailed": "Falha ao atualizar o status",
       "assign": "Atribuir",
       "assigned": "Atribuído",
+      "assignUpdateFailed": "Falha ao atualizar a atribuição",
       "unassign": "Remover atribuição",
       "noTeammates": "Nenhum colega de equipe disponível",
       "me": " (eu)",

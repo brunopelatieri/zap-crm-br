@@ -98,6 +98,36 @@ export function canViewOnly(role: AccountRole): boolean {
   return role === 'viewer';
 }
 
+/**
+ * Owner / admin: see every conversation in the account, including
+ * threads assigned to another agent.
+ *
+ * Mirrors the `is_account_member(account_id, 'admin')` arm of the
+ * `conversations_select` policy and the `can_access_conversation`
+ * helper (migration 039) — the DB is the enforcement point; this
+ * predicate only decides what the UI bothers to render.
+ *
+ * NOTE: do NOT reach for `useAuth().isAdmin` at call sites. That flag
+ * is strictly `role === 'admin'` and excludes the owner, which would
+ * lock the account owner out of their own inbox.
+ */
+export function canViewAllConversations(role: AccountRole): boolean {
+  return hasMinRole(role, 'admin');
+}
+
+/**
+ * Owner / admin: hand a conversation to a *third party*.
+ *
+ * The assigned agent can always release their own thread back to the
+ * queue or keep it — that's not this capability, and it needs no role
+ * check beyond `agent`. This gates only the "move it to someone else"
+ * action, matching the `ONLY_ADMIN_CAN_REASSIGN_TO_OTHERS` branch of
+ * the `reassign_conversation` RPC.
+ */
+export function canReassignToOthers(role: AccountRole): boolean {
+  return hasMinRole(role, 'admin');
+}
+
 /** Owner only: irreversible destructive operations. */
 export function canDeleteAccount(role: AccountRole): boolean {
   return role === 'owner';

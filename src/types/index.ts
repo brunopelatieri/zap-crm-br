@@ -162,9 +162,20 @@ export type ConversationStatus = 'open' | 'pending' | 'closed';
 export interface Conversation {
   id: string;
   user_id: string;
+  /** Tenancy key — NOT NULL since migration 017. */
+  account_id?: string;
   contact_id: string;
   status: ConversationStatus;
-  assigned_agent_id?: string;
+  /**
+   * Owning agent, or `null` for the unassigned queue ("Open" tab).
+   * The DB column has always been nullable; `null` (not `undefined`)
+   * is what Postgres/PostgREST actually send — migration 039 is what
+   * gives the value teeth (FK, RLS, the `claim_conversation` /
+   * `reassign_conversation` RPCs). Keep call sites on `null`, never
+   * `?? undefined`, so `'field' in patch` / equality checks against a
+   * fetched row behave the same as equality checks against local state.
+   */
+  assigned_agent_id?: string | null;
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;

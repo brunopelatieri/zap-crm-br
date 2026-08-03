@@ -88,6 +88,20 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /**
+   * Autor humano da mensagem, gravado em `messages.sender_id`.
+   *
+   * A coluna existe desde a migração 001 e NUNCA foi preenchida por
+   * este caminho — as 172 mensagens de agente da base tinham
+   * `sender_id` nulo. Isso deixava a autoria irrecuperável: o
+   * message-thread cai no fallback ao nomear quem respondeu, e o
+   * backfill da 039 (que atribuiria cada thread ao último agente a
+   * responder) não teve nenhum sinal com que trabalhar.
+   *
+   * Nulo quando não há humano: a API pública `/api/v1/messages` roda
+   * com service role e chave de API, sem `auth.uid()`.
+   */
+  senderId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -206,6 +220,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    senderId,
   } = params;
 
   if (!conversationId) {
@@ -504,6 +519,8 @@ export async function sendMessageToConversation(
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
+      // Nulo para envios da API pública (service role, sem usuário).
+      sender_id: senderId ?? null,
       content_type: messageType,
       content_text: interactiveBody ?? contentText ?? null,
       media_url: mediaUrl || null,
@@ -532,14 +549,29 @@ export async function sendMessageToConversation(
       ? interactivePayloadPreviewText(interactivePayload!)
       : contentText || `[${messageType}]`;
 
-  await db
+  // `.select()` não é decorativo aqui. Sem ele, uma recusa da RLS volta
+  // como SUCESSO com 0 linhas afetadas — o PostgREST não distingue "não
+  // atualizei nada" de "não posso atualizar". O preview da lista ficaria
+  // eternamente desatualizado sem um único erro no console.
+  //
+  // Não é fatal: a mensagem já foi entregue e gravada. Registrar e
+  // seguir — o evento de realtime e o resync convergem o preview.
+  const { data: touched, error: touchErr } = await db
     .from('conversations')
     .update({
       last_message_text: lastMessageText,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('id', conversationId);
+    .eq('id', conversationId)
+    .select('id');
+
+  if (touchErr || !touched || touched.length === 0) {
+    console.warn(
+      '[send-message] conversation preview not updated (RLS or missing row):',
+      { conversationId, error: touchErr?.message ?? 'no rows affected' }
+    );
+  }
 
   // Pause any active Flow run for this contact — the agent stepping in
   // is the strongest "yield, human is here" signal. Best-effort.

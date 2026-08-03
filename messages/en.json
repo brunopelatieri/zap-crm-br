@@ -202,7 +202,30 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
+      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account.",
+      "conversationNotFound": "Conversation not found",
+      "conversationNoLongerAvailable": "This conversation is no longer available",
+      "claimedByAnother": "This conversation has just been taken by another agent",
+      "claimFailed": "Couldn't claim this conversation",
+      "networkError": "Couldn't connect to the server"
+    },
+    "tabs": {
+      "tablistLabel": "Inbox views",
+      "chat": "Chat",
+      "open": "Open",
+      "contacts": "Contacts"
+    },
+    "contactsDirectory": {
+      "title": "Contacts",
+      "subtitleAll": "Every contact in the account",
+      "subtitleMine": "Contacts from conversations assigned to you",
+      "searchPlaceholder": "Search by name, phone or email...",
+      "loadError": "Failed to load contacts",
+      "noneMatch": "No contacts match your search",
+      "noneYet": "No contacts yet",
+      "noneAssigned": "No conversations assigned to you yet",
+      "unnamed": "Unnamed",
+      "pageCount": "Page {page} of {total}"
     },
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
@@ -219,7 +242,9 @@
       "noMessagesYet": "No messages yet",
       "unknown": "Unknown",
       "manageTags": "Manage tags for {name}",
-      "manageTagsShort": "Manage tags"
+      "manageTagsShort": "Manage tags",
+      "claimConversation": "Claim conversation with {name}",
+      "claimConversationShort": "Claim conversation"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -233,8 +258,10 @@
       "statusOpen": "Open",
       "statusPending": "Pending",
       "statusClosed": "Closed",
+      "statusUpdateFailed": "Failed to update status",
       "assign": "Assign",
       "assigned": "Assigned",
+      "assignUpdateFailed": "Failed to update assignment",
       "unassign": "Unassign",
       "noTeammates": "No teammates available",
       "me": " (me)",

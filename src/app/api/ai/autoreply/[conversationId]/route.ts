@@ -81,6 +81,15 @@ export async function POST(request: Request, { params }: Params) {
       // (e.g. the agent a prior handoff routed to) would silently keep
       // the bot muted and make "Resume AI" a no-op. This is the explicit
       // choice to let the bot own the thread again.
+      //
+      // "ANY assignment" deixou de ser irrestrito com a migração 039:
+      // soltar a atribuição é uma reatribuição, e a política
+      // `conversations_update` só a permite ao dono da thread ou a
+      // admin/owner. Na prática um agente só alcança as próprias
+      // conversas e as da fila — o caminho "resume para soltar a
+      // conversa de outro, take over para pegá-la" está fechado no
+      // banco. O `.select()` abaixo é o que impede a rota de mentir
+      // quando a política recusa.
       update.assigned_agent_id = null;
       // Give the bot a fresh reply budget on this thread. This is a
       // deliberate, manual, rate-limited action (not automatable), so it
@@ -90,16 +99,27 @@ export async function POST(request: Request, { params }: Params) {
       update.ai_handoff_summary = null;
     }
 
-    const { error: upErr } = await supabase
+    const { data: updated, error: upErr } = await supabase
       .from('conversations')
       .update(update)
       .eq('id', conversationId)
-      .eq('account_id', accountId);
+      .eq('account_id', accountId)
+      .select('id');
     if (upErr) {
       console.error('[ai/autoreply] update error:', upErr);
       return NextResponse.json(
         { error: 'Failed to update conversation' },
         { status: 500 }
+      );
+    }
+    // Zero linhas sem erro = a política recusou a escrita (o PostgREST
+    // não distingue "nada a atualizar" de "não pode atualizar"). Sem
+    // esta checagem a rota devolveria `success: true` e a interface
+    // mostraria a IA retomada numa thread que não mudou.
+    if (!updated || updated.length === 0) {
+      return NextResponse.json(
+        { error: 'Only the assigned agent or an admin can do this' },
+        { status: 403 }
       );
     }
 

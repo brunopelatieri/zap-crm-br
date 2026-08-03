@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { usePresence } from '@/hooks/use-presence';
 import { PresenceDot } from '@/components/presence/presence-dot';
 import { presenceLabel } from '@/lib/presence';
@@ -181,6 +182,12 @@ export function MessageThread({
   const tBubble = useTranslations('Inbox.bubble');
 
   const { user } = useAuth();
+  // Admin/owner podem mover uma conversa para QUALQUER colega; um
+  // agente comum só pode reivindicar para si (a lista fica restrita a
+  // "eu mesmo") ou devolver à fila — espelha exatamente o gate do RPC
+  // `reassign_conversation` (`ONLY_ADMIN_CAN_REASSIGN_TO_OTHERS`), só
+  // que aqui evita renderizar uma opção que o servidor recusaria.
+  const canReassignToOthers = useCan('reassign-conversation');
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -444,8 +451,22 @@ export function MessageThread({
       .from('conversations')
       .update({ unread_count: 0 })
       .eq('id', conversationId)
-      .then(({ error }) => {
-        if (error) console.error('Failed to reset unread_count:', error);
+      // `.select()` não é decorativo: sem ele, uma recusa silenciosa da
+      // RLS (ex.: a conversa acabou de ser reatribuída para outro
+      // agente entre o render e este UPDATE) volta como SUCESSO com 0
+      // linhas afetadas — indistinguível de "atualizei". Sem checar
+      // `data`, `hasUnread` nunca zeraria no servidor e este efeito
+      // reexecutaria a cada render, num loop de UPDATE.
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Failed to reset unread_count:', error);
+        } else if (!data || data.length === 0) {
+          console.warn(
+            '[message-thread] unread_count reset affected 0 rows — the conversation may have been reassigned away',
+            { conversationId }
+          );
+        }
       });
   }, [conversationId, hasUnread]);
 
@@ -642,14 +663,28 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
-      await supabase
+      const { data, error } = await supabase
         .from('conversations')
         .update({ status })
+        // `.select()` para acusar uma recusa silenciosa da RLS — sem
+        // ele, 0 linhas afetadas volta como sucesso e a UI mentiria
+        // (`onStatusChange` seria chamado mesmo sem nada ter mudado).
+        .select('id')
         .eq('id', conversation.id);
+
+      if (error) {
+        console.error('Failed to update status:', error);
+        toast.error(t('statusUpdateFailed'));
+        return;
+      }
+      if (!data || data.length === 0) {
+        toast.error(t('statusUpdateFailed'));
+        return;
+      }
 
       onStatusChange(conversation.id, status);
     },
-    [conversation, onStatusChange]
+    [conversation, onStatusChange, t]
   );
 
   const handleOpenTemplates = useCallback(() => {
@@ -879,21 +914,49 @@ export function MessageThread({
     async (agentId: string | null) => {
       if (!conversation) return;
 
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('conversations')
-        .update({ assigned_agent_id: agentId })
-        .eq('id', conversation.id);
+      // Reivindicar uma conversa LIVRE precisa passar pelo RPC atômico
+      // (`claim_conversation`, via /claim) — é o `WHERE
+      // assigned_agent_id IS NULL` dele que serializa dois agentes
+      // clicando a mesma conversa no mesmo instante (F-02 do SPEC). O
+      // RPC por trás de /assign (`reassign_conversation`) faz um
+      // UPDATE incondicional; usá-lo aqui reabriria exatamente essa
+      // corrida. Qualquer outra mudança (devolver à fila, transferir
+      // uma conversa que já tem dono) não tem essa corrida — o estado
+      // de origem já é inequívoco — e vai por /assign.
+      const isClaimFromQueue =
+        agentId !== null && conversation.assigned_agent_id == null;
+      const endpoint = isClaimFromQueue
+        ? `/api/inbox/conversations/${conversation.id}/claim`
+        : `/api/inbox/conversations/${conversation.id}/assign`;
 
-      if (error) {
-        console.error('Failed to update assignment:', error);
-        toast.error('Failed to update assignment');
-        return;
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          ...(isClaimFromQueue
+            ? {}
+            : {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assigned_agent_id: agentId }),
+              }),
+        });
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          console.error('Failed to update assignment:', json?.error);
+          toast.error(json?.error ?? t('assignUpdateFailed'));
+          return;
+        }
+
+        const updatedAgentId =
+          (json?.conversation?.assigned_agent_id as string | null | undefined) ??
+          agentId;
+        onAssignChange(conversation.id, updatedAgentId);
+      } catch (err) {
+        console.error('Failed to update assignment:', err);
+        toast.error(t('assignUpdateFailed'));
       }
-
-      onAssignChange(conversation.id, agentId);
     },
-    [conversation, onAssignChange]
+    [conversation, onAssignChange, t]
   );
 
   // Empty state — same WhatsApp-style doodle background as the active
@@ -927,6 +990,13 @@ export function MessageThread({
   );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
+  // Um agente comum só pode reivindicar para si mesmo — passar para um
+  // TERCEIRO exige admin/owner (`reassign_conversation` recusaria com
+  // `ONLY_ADMIN_CAN_REASSIGN_TO_OTHERS`). Restringir a lista aqui evita
+  // oferecer uma opção que o servidor vai rejeitar.
+  const assignableProfiles = canReassignToOthers
+    ? profiles
+    : profiles.filter((p) => p.user_id === user?.id);
   const assignLabel = assignedAgentId
     ? (currentAssignee?.full_name ?? t('assigned'))
     : t('assign');
@@ -1075,7 +1145,7 @@ export function MessageThread({
               align="end"
               className="border-border bg-popover"
             >
-              {profiles.length === 0 ? (
+              {assignableProfiles.length === 0 ? (
                 <DropdownMenuItem
                   disabled
                   className="text-muted-foreground text-sm"
@@ -1083,7 +1153,7 @@ export function MessageThread({
                   {t('noTeammates')}
                 </DropdownMenuItem>
               ) : (
-                profiles.map((p) => {
+                assignableProfiles.map((p) => {
                   const isSelected = p.user_id === assignedAgentId;
                   const presence = getPresence(p.user_id);
                   return (

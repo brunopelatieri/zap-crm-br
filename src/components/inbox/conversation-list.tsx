@@ -1,15 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import {
-  CONVERSATION_SELECT,
-  matchesContactFilters,
-  normalizeConversations,
-} from '@/lib/inbox/conversations';
+import { matchesContactFilters } from '@/lib/inbox/conversations';
+import type { ConversationTabId } from '@/lib/inbox/tabs';
+import type { InboxStatusFilter } from '@/hooks/use-inbox-tabs';
 import { cn } from '@/lib/utils';
 import type { Contact, Conversation, ConversationStatus, Tag } from '@/types';
-import { Search, ChevronDown, Tag as TagIcon, X } from 'lucide-react';
+import {
+  Search,
+  ChevronDown,
+  Tag as TagIcon,
+  X,
+  UserPlus,
+  Loader2,
+} from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
@@ -24,17 +29,45 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useTagPicker } from '@/components/inbox/tag-picker/tag-picker-context';
 
 interface ConversationListProps {
+  /** Qual das duas abas conversacionais esta lista está mostrando. */
+  tab: ConversationTabId;
   activeConversationId: string | null;
   onSelect: (conversation: Conversation) => void;
-  conversations: Conversation[];
-  onConversationsLoaded: (conversations: Conversation[]) => void;
   /**
-   * Increment to force the fetch effect below to refire. The parent
-   * bumps this on realtime reconnect / tab visibility → visible so the
-   * list catches up on any events sent while the WS was disconnected
-   * or the tab was throttled. Optional so existing callers keep working.
+   * Conversas JÁ recortadas para esta aba pelo hook
+   * `useConversationFeed` — este componente não busca nada, só
+   * apresenta e aplica os filtros de busca/etiqueta/empresa/status por
+   * cima do que recebeu.
    */
-  resyncToken?: number;
+  conversations: Conversation[];
+  loading: boolean;
+  /** Definições de etiquetas (para o dropdown de filtro), lista de nomes/cores das tags — referência estável, independente da aba. */
+  tags: Tag[];
+  filters: {
+    search: string;
+    statusFilter: InboxStatusFilter;
+    selectedTagIds: string[];
+    selectedCompany: string | null;
+  };
+  onSearchChange: (value: string) => void;
+  onStatusFilterChange: (value: InboxStatusFilter) => void;
+  onToggleTag: (tagId: string) => void;
+  onSelectCompany: (company: string | null) => void;
+  onClearFilters: () => void;
+  /**
+   * Dropdown de status/não-lidas. Só faz sentido dentro da fila (aba
+   * "Open") — a aba "Chat" mostra as MINHAS conversas em qualquer
+   * status, sem esse recorte adicional.
+   */
+  showStatusFilter: boolean;
+  /**
+   * Reivindicar uma conversa da fila. Só é passado (e só é renderizado
+   * o botão) na aba "Open" — reivindicar uma conversa que já é minha
+   * (aba "Chat") não faz sentido.
+   */
+  onClaim?: (conversation: Conversation) => void;
+  /** Id da conversa em processo de reivindicação — bloqueia o botão e mostra o spinner nela. */
+  claimingId?: string | null;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -43,24 +76,32 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: 'bg-muted-foreground',
 };
 
-type InboxFilter = ConversationStatus | 'all' | 'unread';
-
 /** Quantas etiquetas o item mostra antes de resumir o resto num "+N".
  *  A lista tem 320px no desktop — acima disto os nomes viram reticências
  *  e deixam de informar qualquer coisa. */
 const MAX_VISIBLE_TAGS = 3;
 
 export function ConversationList({
+  tab,
   activeConversationId,
   onSelect,
   conversations,
-  onConversationsLoaded,
-  resyncToken = 0,
+  loading,
+  tags,
+  filters,
+  onSearchChange,
+  onStatusFilterChange,
+  onToggleTag,
+  onSelectCompany,
+  onClearFilters,
+  showStatusFilter,
+  onClaim,
+  claimingId,
 }: ConversationListProps) {
   const t = useTranslations('Inbox.conversationList');
   const { open: openTagPicker } = useTagPicker();
 
-  const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(
+  const FILTER_OPTIONS: { label: string; value: InboxStatusFilter }[] = useMemo(
     () => [
       { label: t('filterAll'), value: 'all' },
       { label: t('filterUnread'), value: 'unread' },
@@ -71,86 +112,11 @@ export function ConversationList({
     [t]
   );
 
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<InboxFilter>('open');
-  const [loading, setLoading] = useState(true);
-  // Contact-based filters (issue #272). Tags use OR logic (a conversation
-  // matches if its contact carries any selected tag), consistent with
-  // Broadcast audience filtering. Company is an exact match on the field.
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  const { search, statusFilter, selectedTagIds, selectedCompany } = filters;
 
-  // Keep the latest callback in a ref so the fetch effect below can
-  // have a stable, empty-dep identity. Previously the fetch useCallback
-  // depended on `onConversationsLoaded`, which depends on the parent's
-  // `deepLinkConvId` — so every URL change (including one the parent
-  // triggered via router.replace after a click) caused a fresh
-  // conversations fetch. That extra refetch was the trigger for the
-  // deep-link auto-select running a second time and wiping the active
-  // thread's messages.
-  // Mutation lives in an effect (not render) per React 19's refs rule;
-  // the fetch runs once on mount so it's fine to read the slightly
-  // older value — the very next render updates the ref for any
-  // subsequent async completion.
-  const onConversationsLoadedRef = useRef(onConversationsLoaded);
-  useEffect(() => {
-    onConversationsLoadedRef.current = onConversationsLoaded;
-  });
-
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-
-    (async () => {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select(CONVERSATION_SELECT)
-        .order('last_message_at', { ascending: false });
-
-      if (cancelled) return;
-
-      if (error) {
-        // Supabase errors have non-enumerable properties — log fields explicitly
-        console.error('Failed to fetch conversations:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        setLoading(false);
-        return;
-      }
-
-      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // `resyncToken` is included so the parent can force a refetch when
-    // the realtime channel reconnects or the tab regains focus — catches
-    // up on any events sent while the WS was disconnected or throttled.
-  }, [resyncToken]);
-
-  // Tag definitions for the filter picker — loaded once so labels/colours
-  // stay stable regardless of which conversations happen to be loaded.
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase.from('tags').select('*').order('name');
-      if (!cancelled && data) setTags(data as Tag[]);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Company options are derived from the loaded conversations — there's no
-  // separate companies table, and only companies with a live conversation
-  // are worth offering as an inbox filter.
+  // Company options são derivadas das conversas JÁ carregadas nesta
+  // aba — não há uma tabela de empresas separada, e só empresas com
+  // uma conversa viva nesta aba valem a pena oferecer como filtro.
   const companies = useMemo(() => {
     const set = new Set<string>();
     for (const c of conversations) {
@@ -162,17 +128,19 @@ export function ConversationList({
 
   const tagsById = useMemo(() => {
     const m = new Map<string, Tag>();
-    for (const t of tags) m.set(t.id, t);
+    for (const tag of tags) m.set(tag.id, tag);
     return m;
   }, [tags]);
 
   const filtered = useMemo(() => {
     let result = conversations;
 
-    if (filter === 'unread') {
-      result = result.filter((c) => c.unread_count > 0);
-    } else if (filter !== 'all') {
-      result = result.filter((c) => c.status === filter);
+    if (showStatusFilter) {
+      if (statusFilter === 'unread') {
+        result = result.filter((c) => c.unread_count > 0);
+      } else if (statusFilter !== 'all') {
+        result = result.filter((c) => c.status === statusFilter);
+      }
     }
 
     // Contact-based filters (tags via OR logic, exact company match).
@@ -196,27 +164,20 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
-
-  const toggleTag = useCallback((id: string) => {
-    setSelectedTagIds((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
-    );
-  }, []);
-
-  const clearContactFilters = useCallback(() => {
-    setSelectedTagIds([]);
-    setSelectedCompany(null);
-  }, []);
-
-  const hasContactFilters =
-    selectedTagIds.length > 0 || selectedCompany !== null;
+  }, [
+    conversations,
+    showStatusFilter,
+    statusFilter,
+    search,
+    selectedTagIds,
+    selectedCompany,
+  ]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setSearch(e.target.value);
+      onSearchChange(e.target.value);
     },
-    []
+    [onSearchChange]
   );
 
   const handleSelect = useCallback(
@@ -226,7 +187,10 @@ export function ConversationList({
     [onSelect]
   );
 
-  const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
+  const hasContactFilters =
+    selectedTagIds.length > 0 || selectedCompany !== null;
+
+  const activeFilter = FILTER_OPTIONS.find((o) => o.value === statusFilter);
 
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
@@ -246,31 +210,33 @@ export function ConversationList({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs">
-              {activeFilter?.label ?? t('filterAll')}
-              <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="border-border bg-popover"
-            >
-              {FILTER_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => setFilter(opt.value)}
-                  className={cn(
-                    'text-sm',
-                    filter === opt.value
-                      ? 'text-primary'
-                      : 'text-popover-foreground'
-                  )}
-                >
-                  {opt.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {showStatusFilter && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs">
+                {activeFilter?.label ?? t('filterAll')}
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="border-border bg-popover"
+              >
+                {FILTER_OPTIONS.map((opt) => (
+                  <DropdownMenuItem
+                    key={opt.value}
+                    onClick={() => onStatusFilterChange(opt.value)}
+                    className={cn(
+                      'text-sm',
+                      statusFilter === opt.value
+                        ? 'text-primary'
+                        : 'text-popover-foreground'
+                    )}
+                  >
+                    {opt.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           {tags.length > 0 && (
             <DropdownMenu>
@@ -294,19 +260,19 @@ export function ConversationList({
                 align="start"
                 className="border-border bg-popover max-h-64 w-56"
               >
-                {tags.map((t) => (
+                {tags.map((tag) => (
                   <DropdownMenuCheckboxItem
-                    key={t.id}
-                    checked={selectedTagIds.includes(t.id)}
-                    onCheckedChange={() => toggleTag(t.id)}
+                    key={tag.id}
+                    checked={selectedTagIds.includes(tag.id)}
+                    onCheckedChange={() => onToggleTag(tag.id)}
                     className="text-popover-foreground text-sm"
                   >
                     <span className="flex items-center gap-2">
                       <span
                         className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: t.color }}
+                        style={{ backgroundColor: tag.color }}
                       />
-                      <span className="truncate">{t.name}</span>
+                      <span className="truncate">{tag.name}</span>
                     </span>
                   </DropdownMenuCheckboxItem>
                 ))}
@@ -334,7 +300,7 @@ export function ConversationList({
                 className="border-border bg-popover max-h-64 w-56"
               >
                 <DropdownMenuItem
-                  onClick={() => setSelectedCompany(null)}
+                  onClick={() => onSelectCompany(null)}
                   className={cn(
                     'text-sm',
                     selectedCompany === null
@@ -347,7 +313,7 @@ export function ConversationList({
                 {companies.map((co) => (
                   <DropdownMenuItem
                     key={co}
-                    onClick={() => setSelectedCompany(co)}
+                    onClick={() => onSelectCompany(co)}
                     className={cn(
                       'text-sm',
                       selectedCompany === co
@@ -370,7 +336,7 @@ export function ConversationList({
               return (
                 <button
                   key={id}
-                  onClick={() => toggleTag(id)}
+                  onClick={() => onToggleTag(id)}
                   className="bg-muted text-foreground hover:bg-muted/70 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
                 >
                   <span
@@ -388,7 +354,7 @@ export function ConversationList({
             })}
             {selectedCompany && (
               <button
-                onClick={() => setSelectedCompany(null)}
+                onClick={() => onSelectCompany(null)}
                 className="bg-muted text-foreground hover:bg-muted/70 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
               >
                 <span className="max-w-24 truncate">{selectedCompany}</span>
@@ -396,7 +362,7 @@ export function ConversationList({
               </button>
             )}
             <button
-              onClick={clearContactFilters}
+              onClick={onClearFilters}
               className="text-muted-foreground hover:text-foreground px-1 text-[11px]"
             >
               {t('clearAll')}
@@ -431,6 +397,9 @@ export function ConversationList({
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
                 onOpenTags={openTagPicker}
+                showClaim={tab === 'open' && !!onClaim}
+                isClaiming={claimingId === conv.id}
+                onClaim={onClaim}
                 t={t}
               />
             ))}
@@ -447,6 +416,10 @@ interface ConversationItemProps {
   onSelect: (conversation: Conversation) => void;
   /** Abre o picker de etiquetas para o contato desta conversa. */
   onOpenTags: (contact: Contact) => void;
+  /** Mostra o botão "Assumir" — só na aba "Open". */
+  showClaim: boolean;
+  isClaiming: boolean;
+  onClaim?: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -455,6 +428,9 @@ function ConversationItem({
   isActive,
   onSelect,
   onOpenTags,
+  showClaim,
+  isClaiming,
+  onClaim,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
@@ -498,6 +474,17 @@ function ConversationItem({
       if (contact) onOpenTags(contact);
     },
     [contact, onOpenTags]
+  );
+
+  const handleClaimClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Mesmo motivo do botão de etiquetas: reivindicar não deve
+      // também trocar a conversa ativa (embora abrir a thread depois
+      // do sucesso seja o próprio `onClaim` que decide fazer).
+      e.stopPropagation();
+      onClaim?.(conversation);
+    },
+    [conversation, onClaim]
   );
 
   const timeAgo = conversation.last_message_at
@@ -545,6 +532,27 @@ function ConversationItem({
             {conversation.last_message_text || t('noMessagesYet')}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {/* Botão "Assumir" — só na fila (aba Open). Reivindica a
+                conversa via RPC atômico (claim_conversation); o estado
+                `isClaiming` vem do pai porque a chamada de rede também
+                mora lá (o pai é quem move a conversa entre os feeds e
+                troca de aba no sucesso). */}
+            {showClaim && (
+              <button
+                type="button"
+                onClick={handleClaimClick}
+                disabled={isClaiming}
+                aria-label={t('claimConversation', { name: displayName })}
+                title={t('claimConversationShort')}
+                className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-primary flex h-5 w-5 items-center justify-center rounded-full transition-[opacity,background-color,color] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none disabled:opacity-60 lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100"
+              >
+                {isClaiming ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <UserPlus className="h-3 w-3" />
+                )}
+              </button>
+            )}
             {/* Gatilho do picker de etiquetas.
                 Sempre visível abaixo de lg: não há :hover no toque, e
                 no mobile esta lista é o ÚNICO caminho até o modal (a
@@ -614,4 +622,28 @@ function ConversationItem({
       </div>
     </div>
   );
+}
+
+/**
+ * Definições de etiquetas para o dropdown de filtro. Fetch próprio,
+ * independente da aba — os NOMES/CORES das etiquetas são referência
+ * estável, ao contrário das etiquetas SELECIONADAS (que vivem em
+ * `useInboxTabs`, por aba). Hook interno para não duplicar o
+ * `useEffect` de fetch nos dois lugares onde `<ConversationList>` é
+ * montado (Chat e Open).
+ */
+export function useInboxTagDefinitions(): Tag[] {
+  const [tags, setTags] = useState<Tag[]>([]);
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('tags').select('*').order('name');
+      if (!cancelled && data) setTags(data as Tag[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return tags;
 }

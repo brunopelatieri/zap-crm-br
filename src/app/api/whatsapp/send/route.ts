@@ -10,6 +10,8 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message';
+import { claimConversation } from '@/lib/inbox/assignment';
+import { isUniqueViolation } from '@/lib/contacts/dedupe';
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -112,15 +114,21 @@ export async function POST(request: Request) {
     // contact so a business-initiated template send (Contact detail view)
     // reuses the shared send core below.
     let conversationId: string | null = null;
+    // Dono atual da thread, se houver. Decide se este envio REIVINDICA a
+    // conversa (está na fila) ou apenas escreve nela (já é minha, ou sou
+    // admin respondendo na de outro agente).
+    let currentAssignee: string | null = null;
 
     if (conversationIdInput) {
       const { data, error: convError } = await supabase
         .from('conversations')
-        .select('id')
+        .select('id, assigned_agent_id')
         .eq('id', conversationIdInput)
         .eq('account_id', accountId)
         .single();
 
+      // Sob a RLS da 039, a conversa de outro agente é invisível — este
+      // 404 é a resposta fail-closed correta, e genérica de propósito.
       if (convError || !data) {
         return NextResponse.json(
           { error: 'Conversation not found' },
@@ -128,6 +136,7 @@ export async function POST(request: Request) {
         );
       }
       conversationId = data.id;
+      currentAssignee = data.assigned_agent_id ?? null;
     } else {
       // contact_id path: verify the contact is in this account first so a
       // caller can't open a conversation against someone else's contact.
@@ -151,13 +160,14 @@ export async function POST(request: Request) {
         user.id,
         contact_id
       );
-      if (!resolved) {
+      if (!resolved.ok) {
         return NextResponse.json(
-          { error: 'Failed to open a conversation for this contact' },
-          { status: 500 }
+          { error: resolved.error },
+          { status: resolved.status }
         );
       }
-      conversationId = resolved;
+      conversationId = resolved.id;
+      currentAssignee = resolved.assignedAgentId;
     }
 
     if (!conversationId) {
@@ -165,6 +175,26 @@ export async function POST(request: Request) {
         { error: 'Conversation not found' },
         { status: 404 }
       );
+    }
+
+    // "Quem responde, assume."
+    //
+    // A ORDEM AQUI É IRREVERSÍVEL: reivindicar ANTES de falar com a Meta.
+    // Invertida, o agente que perde a corrida já entregou a mensagem ao
+    // cliente numa conversa que pertence a outro — e o WhatsApp não
+    // desfaz entrega. Por isso o 409 aborta sem nunca chamar a Meta.
+    //
+    // Só reivindica quando a thread está na fila. Se já é minha, o claim
+    // seria um no-op; se é de outro agente — situação visível apenas para
+    // admin/owner — responder NÃO deve roubar a thread de quem atende.
+    if (currentAssignee === null) {
+      const claim = await claimConversation(supabase, conversationId);
+      if (!claim.ok) {
+        return NextResponse.json(
+          { error: claim.error, code: claim.code },
+          { status: claim.status }
+        );
+      }
     }
 
     // Delegate to the shared send core (validates, sends to Meta with
@@ -184,6 +214,9 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
+        // Autoria: este é o caminho com usuário logado. A API pública
+        // (/api/v1/messages) omite e grava null — lá não há humano.
+        senderId: user.id,
       });
 
       return NextResponse.json({
@@ -211,9 +244,13 @@ export async function POST(request: Request) {
 
 type SendSupabase = Awaited<ReturnType<typeof createClient>>;
 
+type FindOrCreateResult =
+  | { ok: true; id: string; assignedAgentId: string | null }
+  | { ok: false; status: number; error: string };
+
 /**
- * Return the contact's conversation id in this account, creating one if
- * it doesn't exist yet. Mirrors the webhook's find-or-create so an
+ * Return the contact's conversation in this account, creating one if it
+ * doesn't exist yet. Mirrors the webhook's find-or-create so an
  * inbound-then-outbound (or outbound-first) sequence converges on a single
  * thread per contact. Runs under the caller's RLS — the conversations_insert
  * policy requires account agent membership, which the caller already is.
@@ -223,15 +260,21 @@ async function findOrCreateConversation(
   accountId: string,
   userId: string,
   contactId: string
-): Promise<string | null> {
+): Promise<FindOrCreateResult> {
   const { data: existing } = await supabase
     .from('conversations')
-    .select('id')
+    .select('id, assigned_agent_id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
     .maybeSingle();
 
-  if (existing) return existing.id;
+  if (existing) {
+    return {
+      ok: true,
+      id: existing.id,
+      assignedAgentId: existing.assigned_agent_id ?? null,
+    };
+  }
 
   const { data: created, error } = await supabase
     .from('conversations')
@@ -239,17 +282,45 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: userId,
       contact_id: contactId,
+      // Nasce já atribuída a quem iniciou: enviar a partir do Contato é,
+      // por definição, alguém assumindo o atendimento. Poupa o
+      // round-trip do claim logo em seguida — e a política
+      // `conversations_insert` (039) aceita `= auth.uid()`.
+      assigned_agent_id: userId,
     })
-    .select('id')
+    .select('id, assigned_agent_id')
     .single();
 
   if (error) {
+    // Duas causas, e distinguir importa:
+    //   a) perdemos uma corrida — outro envio criou a thread agora;
+    //   b) a conversa JÁ EXISTE mas pertence a outro agente, e a RLS da
+    //      039 a escondeu do SELECT acima.
+    // Nos dois casos o índice único de (account_id, contact_id) da
+    // migração 036 rejeita o INSERT. Antes disto, (b) virava um 500
+    // opaco ("Failed to open a conversation") — um erro de servidor
+    // para o que na verdade é "este contato já está sendo atendido".
+    if (isUniqueViolation(error)) {
+      return {
+        ok: false,
+        status: 409,
+        error: 'This contact is already being handled by another agent',
+      };
+    }
     console.error(
       'Error creating conversation for contact send:',
       error.message
     );
-    return null;
+    return {
+      ok: false,
+      status: 500,
+      error: 'Failed to open a conversation for this contact',
+    };
   }
 
-  return created.id;
+  return {
+    ok: true,
+    id: created.id,
+    assignedAgentId: created.assigned_agent_id ?? null,
+  };
 }

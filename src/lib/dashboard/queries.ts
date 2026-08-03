@@ -18,68 +18,76 @@ import type {
 } from './types';
 
 // ------------------------------------------------------------
-// All client-side aggregation. RLS scopes every query to the
-// signed-in user automatically, so we never pass user_id explicitly
-// here. Perf is acceptable for the current scale (low thousands of
-// messages) — if a tenant's dataset outgrows this, we'd migrate the
-// heavy aggregations to SQL RPCs. Noted in the PR.
+// Agregação no cliente. A RLS escopa cada query — MAS, desde a
+// migração 039, `conversations` e `messages` são visíveis POR LINHA:
+// um agente só enxerga as conversas atribuídas a ele mais a fila.
+//
+// Isso quebraria silenciosamente todo número desta tela. Não com um
+// erro — com um valor MENOR: "Conversas ativas" viraria "as minhas",
+// o gráfico de tempo de resposta ficaria vazio para um agente recém-
+// chegado, e admin e agente veriam totais diferentes na mesma tela
+// sem nada indicando o porquê. É o pior modo de falha possível,
+// porque parece funcionar.
+//
+// Por isso tudo o que toca `conversations` / `messages` passa pelas
+// RPCs `dashboard_*` (039): SECURITY DEFINER, escopadas por
+// `account_id` e com guarda de `is_account_member` — o dashboard
+// continua sendo da CONTA para todos os papéis. Daí o parâmetro
+// `accountId` que estas funções agora exigem.
+//
+// `contacts`, `deals` e `pipeline_stages` seguem em queries diretas:
+// suas políticas continuam planas por conta e não foram tocadas.
+//
+// Toda a lógica de bucket por dia LOCAL continua aqui, em TS. Mover
+// datas para o SQL trocaria um problema conhecido por um de fuso.
 // ------------------------------------------------------------
 
 type DB = SupabaseClient;
 
 // --- 1. Metric cards ---------------------------------------------------
 
-export async function loadMetrics(db: DB): Promise<MetricsBundle> {
+/** Uma linha de `dashboard_counts` (039). */
+interface DashboardCountsRow {
+  open_conversations: number;
+  new_conversations_today: number;
+  new_conversations_yesterday: number;
+  agent_messages_today: number;
+  agent_messages_yesterday: number;
+}
+
+export async function loadMetrics(
+  db: DB,
+  accountId: string
+): Promise<MetricsBundle> {
   const todayStart = startOfLocalDay().toISOString();
   const yesterdayStart = daysAgoStart(1).toISOString();
 
-  const [
-    openConvCur,
-    newConvToday,
-    newConvYesterday,
-    newContactsToday,
-    newContactsYesterday,
-    openDeals,
-    messagesToday,
-    messagesYesterday,
-  ] = await Promise.all([
-    db
-      .from('conversations')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'open'),
-    db
-      .from('conversations')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'open')
-      .gte('created_at', todayStart),
-    db
-      .from('conversations')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'open')
-      .gte('created_at', yesterdayStart)
-      .lt('created_at', todayStart),
-    db
-      .from('contacts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', todayStart),
-    db
-      .from('contacts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', yesterdayStart)
-      .lt('created_at', todayStart),
-    db.from('deals').select('value, status').eq('status', 'open'),
-    db
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('sender_type', 'agent')
-      .gte('created_at', todayStart),
-    db
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('sender_type', 'agent')
-      .gte('created_at', yesterdayStart)
-      .lt('created_at', todayStart),
-  ]);
+  const [counts, newContactsToday, newContactsYesterday, openDeals] =
+    await Promise.all([
+      // As cinco contagens que tocam conversations/messages numa RPC só
+      // — quatro round-trips a menos que a versão anterior, de quebra.
+      db.rpc('dashboard_counts', {
+        p_account_id: accountId,
+        p_today_start: todayStart,
+        p_yesterday_start: yesterdayStart,
+      }),
+      db
+        .from('contacts')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', todayStart),
+      db
+        .from('contacts')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', yesterdayStart)
+        .lt('created_at', todayStart),
+      db.from('deals').select('value, status').eq('status', 'open'),
+    ]);
+
+  if (counts.error) throw counts.error;
+
+  // `RETURNS TABLE` chega como array de uma linha. Ausência só ocorre
+  // se a guarda de conta rejeitar — que já teria lançado acima.
+  const c = (counts.data as DashboardCountsRow[] | null)?.[0];
 
   const openDealsRows = (openDeals.data ?? []) as { value: number | null }[];
   const openDealsValue = openDealsRows.reduce(
@@ -89,11 +97,13 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
 
   return {
     activeConversations: {
-      current: openConvCur.count ?? 0,
+      current: c?.open_conversations ?? 0,
       // "vs yesterday" on a current-state count has no clean answer
       // without snapshots — we show the delta in NEW open conversations
       // today vs yesterday. That's the business-meaningful daily signal.
-      previous: (newConvToday.count ?? 0) - (newConvYesterday.count ?? 0),
+      previous:
+        (c?.new_conversations_today ?? 0) -
+        (c?.new_conversations_yesterday ?? 0),
     },
     newContactsToday: {
       current: newContactsToday.count ?? 0,
@@ -102,8 +112,8 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     openDealsValue,
     openDealsCount: openDealsRows.length,
     messagesSentToday: {
-      current: messagesToday.count ?? 0,
-      previous: messagesYesterday.count ?? 0,
+      current: c?.agent_messages_today ?? 0,
+      previous: c?.agent_messages_yesterday ?? 0,
     },
   };
 }
@@ -112,14 +122,14 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
 
 export async function loadConversationsSeries(
   db: DB,
+  accountId: string,
   rangeDays: number
 ): Promise<ConversationsSeriesPoint[]> {
   const start = daysAgoStart(rangeDays - 1).toISOString();
-  const { data, error } = await db
-    .from('messages')
-    .select('created_at, sender_type')
-    .gte('created_at', start)
-    .order('created_at', { ascending: true });
+  const { data, error } = await db.rpc('dashboard_message_series', {
+    p_account_id: accountId,
+    p_start: start,
+  });
   if (error) throw error;
 
   const keys = lastNDayKeys(rangeDays);
@@ -193,19 +203,23 @@ export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
 
 // --- 4. Response time by day of week ----------------------------------
 
-export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
+export async function loadResponseTime(
+  db: DB,
+  accountId: string
+): Promise<ResponseTimeSummary> {
   // Pull the last 14 days of messages in one shot, then walk per
   // conversation to find each "first inbound" → "first subsequent
   // outbound" pair. 14 days gives us both "this week" + "last week"
   // with enough overlap if the user opens the dashboard late on a
   // Monday.
   const fourteenDaysAgo = daysAgoStart(13).toISOString();
-  const { data, error } = await db
-    .from('messages')
-    .select('conversation_id, sender_type, created_at')
-    .gte('created_at', fourteenDaysAgo)
-    .order('conversation_id', { ascending: true })
-    .order('created_at', { ascending: true });
+  // A RPC já devolve ordenado por (conversation_id, created_at) — a
+  // ordenação faz parte do contrato dela, porque o pareamento abaixo
+  // percorre as linhas em sequência e depende disso.
+  const { data, error } = await db.rpc('dashboard_response_samples', {
+    p_account_id: accountId,
+    p_start: fourteenDaysAgo,
+  });
   if (error) throw error;
 
   const rows = (data ?? []) as {
@@ -291,20 +305,23 @@ export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
 
 export async function loadActivity(
   db: DB,
+  accountId: string,
   limit = 20
 ): Promise<ActivityItem[]> {
   // Pull ~10 from each source (plenty of headroom after merge-sort),
   // then interleave by timestamp. The individual per-table limits
   // keep the payload small; the final limit is enforced after sort.
   const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
-    db
-      .from('messages')
-      .select(
-        'id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone))'
-      )
-      .eq('sender_type', 'customer')
-      .order('created_at', { ascending: false })
-      .limit(10),
+    // Via RPC, e não só por causa da RLS: o embed do PostgREST
+    // (`conversations(contact_id, contacts(...))`) é um LEFT JOIN, então
+    // uma conversa invisível não removeria a mensagem do feed — ela
+    // apareceria como "Unknown", com link para uma thread que o usuário
+    // não consegue abrir. A RPC faz o join do lado do servidor e só
+    // devolve o que é da conta.
+    db.rpc('dashboard_recent_inbound', {
+      p_account_id: accountId,
+      p_limit: 10,
+    }),
     db
       .from('contacts')
       .select('id, name, phone, created_at')
@@ -331,37 +348,17 @@ export async function loadActivity(
 
   const items: ActivityItem[] = [];
 
-  // PostgREST returns nested selections as arrays by default, even when
-  // the foreign key is 1:1. We normalise by taking [0] on each level.
-  for (const m of (msgs.data ?? []) as unknown as Array<{
+  // A RPC devolve o contato já achatado, então o desembrulho em dois
+  // níveis de array que o embed do PostgREST exigia deixou de existir.
+  for (const m of (msgs.data ?? []) as Array<{
     id: string;
     content_text: string | null;
     created_at: string;
     conversation_id: string;
-    conversations:
-      | {
-          contact_id: string | null;
-          contacts:
-            | { name: string | null; phone: string }[]
-            | { name: string | null; phone: string }
-            | null;
-        }[]
-      | {
-          contact_id: string | null;
-          contacts:
-            | { name: string | null; phone: string }[]
-            | { name: string | null; phone: string }
-            | null;
-        }
-      | null;
+    contact_name: string | null;
+    contact_phone: string | null;
   }>) {
-    const conv = Array.isArray(m.conversations)
-      ? m.conversations[0]
-      : m.conversations;
-    const contact = Array.isArray(conv?.contacts)
-      ? conv?.contacts[0]
-      : conv?.contacts;
-    const who = contact?.name || contact?.phone || 'Unknown';
+    const who = m.contact_name || m.contact_phone || 'Unknown';
     items.push({
       id: `msg-${m.id}`,
       kind: 'message',

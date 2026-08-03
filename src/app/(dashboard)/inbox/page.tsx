@@ -4,10 +4,12 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
+import { CONVERSATION_SELECT, normalizeConversation } from '@/lib/inbox/conversations';
 import {
-  CONVERSATION_SELECT,
-  normalizeConversation,
-} from '@/lib/inbox/conversations';
+  matchesConversationTab,
+  type ConversationTabId,
+  type TabId,
+} from '@/lib/inbox/tabs';
 import type {
   Conversation,
   Message,
@@ -15,8 +17,16 @@ import type {
   ConversationStatus,
   Tag,
 } from '@/types';
+import { useAuth } from '@/hooks/use-auth';
 import { useRealtime } from '@/hooks/use-realtime';
-import { ConversationList } from '@/components/inbox/conversation-list';
+import { useInboxTabs } from '@/hooks/use-inbox-tabs';
+import { useConversationFeed } from '@/hooks/use-conversation-feed';
+import {
+  ConversationList,
+  useInboxTagDefinitions,
+} from '@/components/inbox/conversation-list';
+import { InboxTabs } from '@/components/inbox/inbox-tabs';
+import { ContactsDirectory } from '@/components/inbox/contacts-directory';
 import { MessageThread } from '@/components/inbox/message-thread';
 import { ContactSidebar } from '@/components/inbox/contact-sidebar';
 import { TagPickerProvider } from '@/components/inbox/tag-picker/tag-picker-context';
@@ -28,18 +38,51 @@ import { cn } from '@/lib/utils';
 // across reloads and sessions (device-scoped, like the theme prefs).
 const CONTACT_PANEL_STORAGE_KEY = 'wacrm:inbox:contact-panel-open';
 
+/**
+ * Insere/atualiza `fresh` num array de conversas por `id`, preservando
+ * o `contact` já em cache quando `fresh` não traz um — payloads de
+ * realtime e o retorno das RPCs de atribuição nunca carregam o embed
+ * de contato.
+ */
+function upsertConversation(
+  list: Conversation[],
+  fresh: Conversation
+): Conversation[] {
+  const idx = list.findIndex((c) => c.id === fresh.id);
+  if (idx === -1) return [fresh, ...list];
+  const copy = list.slice();
+  copy[idx] = { ...fresh, contact: fresh.contact ?? copy[idx].contact };
+  return copy;
+}
+
 export default function InboxPage() {
   const t = useTranslations('Inbox.page');
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
   /**
    * `?c=<id>` deep-link support. Used when landing here from the
-   * dashboard's recent-conversations list so the right thread opens
-   * automatically instead of showing the empty center panel.
+   * dashboard's recent-conversations list, a notification, or a
+   * teammate's shared link so the right thread opens automatically
+   * instead of showing the empty center panel.
    */
   const deepLinkConvId = searchParams.get('c');
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const {
+    activeTab,
+    filters,
+    setSearch,
+    setStatusFilter,
+    toggleTag,
+    setSelectedCompany,
+    clearContactFilters,
+    visitedTabs,
+  } = useInboxTabs();
+
+  const tags = useInboxTagDefinitions();
+
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
@@ -48,13 +91,15 @@ export default function InboxPage() {
     null
   );
   /**
-   * Bumped whenever we want children (ConversationList, MessageThread)
-   * to refetch from the DB — used as a safety net against missed
-   * realtime events. Bumped on WS reconnect and on tab visibility →
-   * visible. The initial mount fetches don't depend on this; they fire
-   * once on conversationId-change as usual.
+   * Bumped whenever we want children to refetch from the DB — used as
+   * a safety net against missed realtime events. Bumped on WS
+   * reconnect and on tab visibility → visible. Drives both
+   * conversation feeds' refetch AND the active-conversation
+   * reconciliation-by-absence effect below.
    */
   const [resyncToken, setResyncToken] = useState(0);
+  /** Id da conversa em processo de reivindicação (fila → minha). */
+  const [claimingId, setClaimingId] = useState<string | null>(null);
 
   /**
    * Whether the desktop contact sidebar (tags / deals / notes) is shown.
@@ -86,87 +131,96 @@ export default function InboxPage() {
     });
   }, []);
 
+  // Os dois feeds conversacionais. "Lazy": só buscam depois que a
+  // respectiva aba foi visitada ao menos uma vez (`visitedTabs`).
+  const chatFeed = useConversationFeed({
+    tab: 'chat',
+    userId,
+    enabled: visitedTabs.has('chat'),
+    resyncToken,
+  });
+  const openFeed = useConversationFeed({
+    tab: 'open',
+    userId,
+    enabled: visitedTabs.has('open'),
+    resyncToken,
+  });
+
+  const readFeed = useCallback(
+    (tab: ConversationTabId): Conversation[] =>
+      tab === 'chat' ? chatFeed.conversations : openFeed.conversations,
+    [chatFeed.conversations, openFeed.conversations]
+  );
+
+  // `setConversations` de um `useState` é referencialmente estável —
+  // depender só dele (não do objeto `chatFeed`/`openFeed` inteiro, que
+  // é recriado a cada render do hook) mantém `patchFeed` estável entre
+  // renders, o que por sua vez estabiliza tudo que depende dela.
+  const patchFeed = useCallback(
+    (
+      tab: ConversationTabId,
+      updater: (prev: Conversation[]) => Conversation[]
+    ) => {
+      if (tab === 'chat') chatFeed.setConversations(updater);
+      else openFeed.setConversations(updater);
+    },
+    [chatFeed.setConversations, openFeed.setConversations]
+  );
+
+  // Bookkeeping: em qual aba cada conversa mora AGORA. Derivado
+  // reativamente dos dois arrays via os dois efeitos abaixo — nunca
+  // escrito à mão nos handlers. Existe porque o roteamento de eventos
+  // de `messages` (que só carregam `conversation_id`) precisa saber
+  // SINCRONAMENTE qual feed patchear, sem esperar o próximo render.
+  // Mesmo motivo do antigo `knownConvIdsRef` (issue #105/#106):
+  // um `let` lido dentro do mesmo tick de um `setState` funcional lê o
+  // valor ANTERIOR, porque o updater roda na reconciliação, depois do
+  // corpo síncrono do handler.
+  const convTabMapRef = useRef<Map<string, ConversationTabId>>(new Map());
+  useEffect(() => {
+    const ids = new Set(chatFeed.conversations.map((c) => c.id));
+    for (const c of chatFeed.conversations) convTabMapRef.current.set(c.id, 'chat');
+    for (const [id, tab] of convTabMapRef.current) {
+      if (tab === 'chat' && !ids.has(id)) convTabMapRef.current.delete(id);
+    }
+  }, [chatFeed.conversations]);
+  useEffect(() => {
+    const ids = new Set(openFeed.conversations.map((c) => c.id));
+    for (const c of openFeed.conversations) convTabMapRef.current.set(c.id, 'open');
+    for (const [id, tab] of convTabMapRef.current) {
+      if (tab === 'open' && !ids.has(id)) convTabMapRef.current.delete(id);
+    }
+  }, [openFeed.conversations]);
+
+  // Espelha `activeConversation` num ref para ser lido dentro de
+  // closures assíncronas (resync, deep-link, handlers de realtime) sem
+  // precisar declará-lo como dependência — senão cada troca de
+  // conversa recriaria esses callbacks/efeitos à toa. Mutado em
+  // efeito, não durante o render (regra de refs do React 19); os
+  // leitores só acessam `.current` depois de um await, quando o render
+  // que atualizou o ref já rodou.
+  const activeConversationRef = useRef<Conversation | null>(null);
+  useEffect(() => {
+    activeConversationRef.current = activeConversation;
+  });
+
+  // Idem para `searchParams` — o efeito de reconciliação por ausência
+  // só deve rodar em cima de `resyncToken`, não a cada mudança de URL.
+  const searchParamsRef = useRef(searchParams);
+  useEffect(() => {
+    searchParamsRef.current = searchParams;
+  });
+
   // Fire the deep-link auto-select exactly once per URL — subsequent
   // list refreshes (realtime, manual refetch) must not snap the user
   // back to the deep-linked conversation if they've already clicked
   // elsewhere.
   const autoSelectedForDeepLinkRef = useRef<string | null>(null);
 
-  // Tracks conversations whose hydrate fetch is currently in flight. The
-  // conv-INSERT and the first-message-INSERT events both call into
-  // hydrateConversation; the dedupe here keeps it at one refetch per
-  // new conversation even when both events arrive within milliseconds.
+  // Tracks conversations whose hydrate fetch is currently in flight —
+  // dedupe para não disparar duas buscas pelo mesmo id quando o
+  // conv-INSERT e o first-message-INSERT chegam a poucos ms um do outro.
   const hydratingConvIdsRef = useRef<Set<string>>(new Set());
-
-  /**
-   * Synchronous mirror of the conversation ids currently in `conversations`
-   * state. Event handlers need to know "do we already have this conv?"
-   * without waiting for a setState updater to run — updaters fire during
-   * reconciliation, *after* the synchronous handler code returns, so a
-   * `let foundInList = false; setState(p => { foundInList = ...; return ... })`
-   * flag reads as `false` in the same tick (this exact bug shipped in #105
-   * and caused #106: every incoming message and every status flip fired a
-   * redundant DB hydrate, swamping the supabase client and starving the
-   * realtime channel). The ref is kept in sync via the effect below.
-   */
-  const knownConvIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const next = new Set<string>();
-    for (const c of conversations) next.add(c.id);
-    knownConvIdsRef.current = next;
-  }, [conversations]);
-
-  // Pull the conversation row with its `contact` joined and merge it
-  // into state. Needed because Supabase Realtime payloads only carry the
-  // row's own columns — a brand-new conversation arrives without a
-  // contact, which surfaced as "Unknown" names, empty avatars, and
-  // (when the conv-INSERT event was delayed past the message-INSERT)
-  // conversations stuck on "No messages yet" until the user reloaded.
-  // Also self-heals if a realtime event was missed: callers can invoke
-  // this whenever they reference a conversation id they don't recognise.
-  const hydrateConversation = useCallback(async (convId: string) => {
-    if (hydratingConvIdsRef.current.has(convId)) return;
-    hydratingConvIdsRef.current.add(convId);
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('conversations')
-        .select(CONVERSATION_SELECT)
-        .eq('id', convId)
-        .maybeSingle();
-      if (error) {
-        // Supabase errors have non-enumerable properties — log fields
-        // explicitly so the console message isn't just `{}`.
-        console.error('Failed to hydrate conversation:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        return;
-      }
-      if (!data) return;
-      const fetched = normalizeConversation(data);
-      setConversations((prev) => {
-        const existing = prev.find((c) => c.id === fetched.id);
-        if (existing) {
-          // Already in state — keep its fields (a realtime UPDATE may
-          // have landed while the fetch was in flight and patched
-          // last_message_text / unread_count to fresher values than
-          // the row we just read). Only backfill `contact`, which the
-          // realtime payloads never carry.
-          return prev.map((c) =>
-            c.id === fetched.id
-              ? { ...c, contact: c.contact ?? fetched.contact }
-              : c
-          );
-        }
-        return [fetched, ...prev];
-      });
-    } finally {
-      hydratingConvIdsRef.current.delete(convId);
-    }
-  }, []);
 
   // Check WhatsApp connection status on mount
   useEffect(() => {
@@ -175,20 +229,13 @@ export default function InboxPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      const user = session?.user;
+      const authUser = session?.user;
+      if (!authUser) return;
 
-      if (!user) return;
-
-      // whatsapp_config is one-row-per-account post-multi-user, so
-      // the previous `.eq('user_id', user.id)` would miss the row
-      // for any teammate who didn't personally save the config —
-      // the "WhatsApp not connected" banner would show in the
-      // shared inbox even though the admin had it configured.
-      // Resolve account_id via the profile and query by that.
       const { data: profile } = await supabase
         .from('profiles')
         .select('account_id')
-        .eq('user_id', user.id)
+        .eq('user_id', authUser.id)
         .maybeSingle();
       const accountId = profile?.account_id as string | undefined;
       if (!accountId) {
@@ -208,6 +255,136 @@ export default function InboxPage() {
     checkConnection();
   }, []);
 
+  // Fetch por id, compartilhado por três necessidades: hidratar uma
+  // conversa desconhecida referenciada por um evento realtime, resolver
+  // o deep-link `?c=`, e reconciliar por ausência a conversa ativa a
+  // cada resync. Um fetch direto — não depende de nenhum feed já ter
+  // carregado, o que importa especialmente para o deep-link: um admin
+  // abrindo, via notificação, uma conversa atribuída a OUTRO agente não
+  // aparece nem em "Chat" nem em "Open" dele (ver a nota sobre D7 no
+  // resumo desta implementação), mas continua acessível por id.
+  const fetchConversationById = useCallback(
+    async (id: string): Promise<Conversation | null> => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('conversations')
+        .select(CONVERSATION_SELECT)
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[inbox] failed to fetch conversation by id:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
+        return null;
+      }
+      if (!data) return null;
+      return normalizeConversation(data);
+    },
+    []
+  );
+
+  const tabOfConversation = useCallback(
+    (conv: Conversation): ConversationTabId | null => {
+      if (!userId) return null;
+      if (matchesConversationTab('chat', conv.assigned_agent_id, userId))
+        return 'chat';
+      if (matchesConversationTab('open', conv.assigned_agent_id, userId))
+        return 'open';
+      return null;
+    },
+    [userId]
+  );
+
+  // Hidrata uma conversa desconhecida (evento realtime referenciando um
+  // id que nenhum feed conhece ainda) e a mescla no cache certo — se a
+  // aba correspondente já tiver sido visitada. Também atualiza
+  // `activeConversation` se for ela.
+  const hydrateConversation = useCallback(
+    async (convId: string) => {
+      if (hydratingConvIdsRef.current.has(convId)) return;
+      hydratingConvIdsRef.current.add(convId);
+      try {
+        const fetched = await fetchConversationById(convId);
+        if (!fetched) return;
+
+        const tab = tabOfConversation(fetched);
+        if (tab && visitedTabs.has(tab)) {
+          patchFeed(tab, (prev) => upsertConversation(prev, fetched));
+        }
+
+        setActiveConversation((prev) =>
+          prev && prev.id === fetched.id
+            ? { ...fetched, contact: fetched.contact ?? prev.contact }
+            : prev
+        );
+      } finally {
+        hydratingConvIdsRef.current.delete(convId);
+      }
+    },
+    [fetchConversationById, tabOfConversation, visitedTabs, patchFeed]
+  );
+
+  // Abre uma conversa — seleção manual na lista, resolução de
+  // deep-link, ou o resultado de uma reivindicação bem-sucedida.
+  const openConversation = useCallback(
+    (conv: Conversation) => {
+      setActiveConversation(conv);
+      setActiveContact(conv.contact ?? null);
+      setMessages([]);
+      autoSelectedForDeepLinkRef.current = conv.id;
+      // Optimistically clear the unread badge for this conv in
+      // whichever feed holds it. The server-side reset is fired by the
+      // unread-reset effect inside MessageThread (which reads
+      // activeConversation.unread_count, not the list copy — so we
+      // deliberately leave `conv` itself untouched here to keep that
+      // effect firing), and the realtime UPDATE that comes back will
+      // sync to 0 again as a no-op.
+      if (conv.unread_count > 0) {
+        const tab = tabOfConversation(conv);
+        if (tab) {
+          patchFeed(tab, (prev) =>
+            prev.map((c) => (c.id === conv.id ? { ...c, unread_count: 0 } : c))
+          );
+        }
+      }
+    },
+    [tabOfConversation, patchFeed]
+  );
+
+  // Resolve o deep-link `?c=`. Roda uma vez por valor de URL via o ref
+  // — realtime refreshes dos feeds não devem repetir a auto-seleção
+  // depois que o usuário já navegou para outro lugar.
+  useEffect(() => {
+    if (!deepLinkConvId) return;
+    if (autoSelectedForDeepLinkRef.current === deepLinkConvId) return;
+    if (activeConversationRef.current?.id === deepLinkConvId) {
+      autoSelectedForDeepLinkRef.current = deepLinkConvId;
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const fresh = await fetchConversationById(deepLinkConvId);
+      if (cancelled) return;
+      autoSelectedForDeepLinkRef.current = deepLinkConvId;
+      if (!fresh) {
+        // Genérico de propósito (F-11 do SPEC): nunca "sem permissão",
+        // que confirmaria a existência do recurso a quem sondar ids.
+        toast.error(t('conversationNotFound'));
+        return;
+      }
+      openConversation(fresh);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deepLinkConvId, fetchConversationById, openConversation, t]);
+
   // Handle realtime message events
   const handleMessageEvent = useCallback(
     (event: { eventType: string; new: Message; old: Partial<Message> }) => {
@@ -216,13 +393,11 @@ export default function InboxPage() {
       if (event.eventType === 'INSERT') {
         // Add to messages if it belongs to active conversation
         if (
-          activeConversation &&
-          newMsg.conversation_id === activeConversation.id
+          activeConversationRef.current &&
+          newMsg.conversation_id === activeConversationRef.current.id
         ) {
           setMessages((prev) => {
-            // Avoid duplicates
             if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Replace optimistic message if it exists
             const withoutOptimistic = prev.filter(
               (m) => !m.id.startsWith('temp-')
             );
@@ -230,45 +405,41 @@ export default function InboxPage() {
           });
         }
 
-        // Update conversation list preview. We need to know *synchronously*
-        // whether the conv is already in state to decide between patching
-        // the preview and triggering a hydrate — see the comment on
-        // knownConvIdsRef for why a closure flag inside the updater would
-        // always read false here.
-        if (knownConvIdsRef.current.has(newMsg.conversation_id)) {
-          setConversations((prev) =>
+        // Update conversation list preview in whichever feed currently
+        // holds this conversation. `convTabMapRef` is what makes this
+        // synchronous — see the comment where it's declared.
+        const tab = convTabMapRef.current.get(newMsg.conversation_id);
+        const isActive =
+          activeConversationRef.current?.id === newMsg.conversation_id;
+        if (tab) {
+          patchFeed(tab, (prev) =>
             prev.map((c) =>
               c.id === newMsg.conversation_id
                 ? {
                     ...c,
                     last_message_text: newMsg.content_text ?? '',
                     last_message_at: newMsg.created_at,
-                    unread_count:
-                      activeConversation?.id === newMsg.conversation_id
-                        ? 0
-                        : c.unread_count + 1,
+                    unread_count: isActive ? 0 : c.unread_count + 1,
                   }
                 : c
             )
           );
         } else {
           // First time we're seeing this conv: the conv-INSERT event
-          // hasn't landed yet, or was missed. Hydrate from the DB so
-          // the row surfaces with its `contact` joined; the conv-UPDATE
-          // event the webhook emits right after the message INSERT will
-          // converge state when it arrives.
+          // hasn't landed yet, was missed, or its tab isn't visited
+          // yet. Hydrate from the DB — the eventual visit to the right
+          // tab will also pick it up via its own fresh fetch.
           hydrateConversation(newMsg.conversation_id);
         }
       }
 
       if (event.eventType === 'UPDATE') {
-        // Update message status
         setMessages((prev) =>
           prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m))
         );
       }
     },
-    [activeConversation, hydrateConversation]
+    [patchFeed, hydrateConversation]
   );
 
   // Handle realtime conversation events
@@ -279,56 +450,66 @@ export default function InboxPage() {
       old: Partial<Conversation>;
     }) => {
       const conv = event.new;
+      const targetTab = tabOfConversation(conv);
+      const previousTab = convTabMapRef.current.get(conv.id) ?? null;
 
       if (event.eventType === 'INSERT') {
-        // Prepend immediately for snappy UX so the new conv shows in the
-        // list right away, then hydrate to fill in the `contact` join
-        // (realtime payloads never include joins). Skip both if we
-        // already have the row — that shouldn't happen normally, but
-        // out-of-order delivery would have us prepending a duplicate.
-        if (!knownConvIdsRef.current.has(conv.id)) {
-          setConversations((prev) => {
-            if (prev.some((c) => c.id === conv.id)) return prev;
-            return [conv, ...prev];
-          });
+        // A conversa nova pertence à fila (webhook) OU já nasce minha
+        // (envio a partir de um Contato, Fase 2) — `tabOfConversation`
+        // resolve os dois casos. Para outro agente vista por um admin,
+        // `targetTab` é null e a linha não entra em nenhum feed daqui
+        // (consistente com "Chat" ser sempre por-agente, nunca "todas
+        // as atribuídas", inclusive para admin).
+        if (targetTab && visitedTabs.has(targetTab)) {
+          patchFeed(targetTab, (prev) =>
+            prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev]
+          );
+          // O payload de realtime nunca traz o embed `contact` — hidrata
+          // para preenchê-lo, como o código anterior já fazia.
           hydrateConversation(conv.id);
         }
       }
 
       if (event.eventType === 'UPDATE') {
-        if (knownConvIdsRef.current.has(conv.id)) {
-          // If this UPDATE is for the conv the user is currently viewing,
-          // suppress the incoming unread_count — the user is reading it
-          // RIGHT NOW, so any positive value would just flicker the badge
-          // back on for the ~100ms it takes for the reset effect's server
-          // UPDATE to round-trip. Non-active convs take the value as-is.
-          const isActive = activeConversation?.id === conv.id;
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === conv.id
-                ? {
-                    ...c,
-                    ...conv,
-                    unread_count: isActive ? 0 : conv.unread_count,
-                  }
-                : c
-            )
+        // A atribuição mudou de aba — sai de onde estava.
+        if (previousTab && previousTab !== targetTab) {
+          patchFeed(previousTab, (prev) =>
+            prev.filter((c) => c.id !== conv.id)
           );
-        } else {
-          // UPDATE arrived before the INSERT (or after a missed INSERT)
-          // — fetch the row so it surfaces with its contact joined. The
-          // patch contained in `conv` will already be reflected in what
-          // the hydrate fetch returns.
-          hydrateConversation(conv.id);
         }
 
-        // Update active conversation if it changed
-        if (activeConversation && conv.id === activeConversation.id) {
+        if (targetTab && visitedTabs.has(targetTab)) {
+          const isActive = activeConversationRef.current?.id === conv.id;
+          const wasPresent = readFeed(targetTab).some((c) => c.id === conv.id);
+          patchFeed(targetTab, (prev) => {
+            const idx = prev.findIndex((c) => c.id === conv.id);
+            if (idx === -1) {
+              return [
+                { ...conv, unread_count: isActive ? 0 : conv.unread_count },
+                ...prev,
+              ];
+            }
+            const copy = prev.slice();
+            copy[idx] = {
+              ...copy[idx],
+              ...conv,
+              unread_count: isActive ? 0 : conv.unread_count,
+            };
+            return copy;
+          });
+          // Entrou nesta aba agora (mudou de aba, ou é a primeira vez
+          // que aparece aqui) — falta o `contact`, hidrata.
+          if (previousTab !== targetTab || !wasPresent) {
+            hydrateConversation(conv.id);
+          }
+        }
+
+        if (activeConversationRef.current?.id === conv.id) {
           setActiveConversation((prev) => (prev ? { ...prev, ...conv } : prev));
         }
       }
     },
-    [activeConversation, hydrateConversation]
+    [tabOfConversation, visitedTabs, patchFeed, readFeed, hydrateConversation]
   );
 
   // Subscribe to realtime. The `isConnected` flag below feeds the
@@ -345,7 +526,7 @@ export default function InboxPage() {
   /**
    * Bump `resyncToken` whenever the realtime channel transitions from
    * disconnected → connected *after* the initial connect. The initial
-   * connect is covered by the children's on-mount fetches; only later
+   * connect is covered by each feed's on-mount fetch; only later
    * reconnects need a manual refetch to fill the gap.
    *
    * Tracked via a `was-connected` ref rather than a count so that React
@@ -356,7 +537,6 @@ export default function InboxPage() {
   const initialConnectDoneRef = useRef(false);
   useEffect(() => {
     if (isConnected && !wasConnectedRef.current) {
-      // false → true transition
       if (initialConnectDoneRef.current) {
         setResyncToken((n) => n + 1);
       } else {
@@ -370,7 +550,8 @@ export default function InboxPage() {
    * Refetch when the tab regains focus. Background tabs may have their
    * WS throttled by the browser even without a full disconnect, so a
    * visibilitychange → visible is a reliable signal that we may have
-   * missed events. Cheap to fire; the children dedupe on their own.
+   * missed events. Cheap to fire; the feeds + the reconciliation effect
+   * below dedupe on their own.
    */
   useEffect(() => {
     const onVisibility = () => {
@@ -386,112 +567,101 @@ export default function InboxPage() {
 
   /**
    * Manual refresh trigger for the thread-header refresh button.
-   * Bumps the same resyncToken the reconnect / visibility paths use,
-   * so it goes through the existing dedupe & refetch plumbing — no
-   * separate code path to keep in sync.
+   * Bumps the same resyncToken the reconnect / visibility paths use.
    */
   const handleManualRefresh = useCallback(() => {
     setResyncToken((n) => n + 1);
   }, []);
 
-  const handleConversationsLoaded = useCallback(
-    (loaded: Conversation[]) => {
-      setConversations(loaded);
-      // Resolve a pending deep-link here rather than in an effect — this
-      // is an event handler, so the setState calls below are allowed by
-      // react-hooks/set-state-in-effect. Runs once per ?c=<id> URL value
-      // via the ref, so realtime refreshes of the list can't snap the
-      // user back to the deep-linked thread after they've navigated.
-      if (
-        deepLinkConvId &&
-        autoSelectedForDeepLinkRef.current !== deepLinkConvId &&
-        loaded.length > 0
-      ) {
-        autoSelectedForDeepLinkRef.current = deepLinkConvId;
-        // If the deep-linked conversation is already the active one
-        // (e.g. because the user clicked it in the list and we
-        // router.replace()'d the URL, which made the ConversationList
-        // refetch and land us back here), do NOT re-apply it. Doing so
-        // would setMessages([]) on a thread whose messages have
-        // already been loaded by MessageThread — and because
-        // conversationId didn't change, MessageThread wouldn't
-        // refetch. The thread would read "No messages yet" until a
-        // full page reload rehydrated state from scratch.
-        if (activeConversation?.id === deepLinkConvId) return;
-        const match = loaded.find((c) => c.id === deepLinkConvId);
-        if (match) {
-          setActiveConversation(match);
-          setActiveContact(match.contact ?? null);
-          setMessages([]);
-          // Mirror the optimistic unread reset that handleSelectConversation
-          // does — the user just deep-linked into this conv, treat that the
-          // same as a click. Leaves activeConversation.unread_count alone so
-          // the MessageThread reset effect still fires the server UPDATE.
-          if (match.unread_count > 0) {
-            setConversations((prev) =>
-              prev.map((c) =>
-                c.id === match.id ? { ...c, unread_count: 0 } : c
-              )
-            );
-          }
-        }
+  /**
+   * Reconciliação por ausência (F-04 do SPEC): revogação de acesso é
+   * SILÊNCIO, não evento — se um admin reatribui a conversa ativa para
+   * outro agente, a política de UPDATE já não deixa o UPDATE chegar ao
+   * assinante realtime deste usuário, então nenhum evento avisa. A
+   * cada resync, refaz o fetch direto da conversa ATIVA (por ref, não
+   * por dependência — não queremos refazer isto a cada troca de
+   * conversa, só nos gatilhos de resync):
+   *   - sumiu (fetch retorna null) → não é mais visível; limpa a tela.
+   *   - mudou mas continua visível → sincroniza os campos.
+   */
+  useEffect(() => {
+    const current = activeConversationRef.current;
+    if (!current) return;
+
+    let cancelled = false;
+    (async () => {
+      const fresh = await fetchConversationById(current.id);
+      if (cancelled) return;
+
+      if (!fresh) {
+        setActiveConversation(null);
+        setActiveContact(null);
+        setMessages([]);
+        autoSelectedForDeepLinkRef.current = null;
+        toast.error(t('conversationNoLongerAvailable'));
+        const params = new URLSearchParams(searchParamsRef.current.toString());
+        params.delete('c');
+        const qs = params.toString();
+        router.replace(qs ? `/inbox?${qs}` : '/inbox', { scroll: false });
+        return;
       }
+
+      setActiveConversation((prev) =>
+        prev ? { ...fresh, contact: fresh.contact ?? prev.contact } : fresh
+      );
+      setActiveContact((prev) => fresh.contact ?? prev);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Depende SÓ de `resyncToken` de propósito — `activeConversation` é
+    // lido via ref para este efeito não refazer o fetch a cada seleção
+    // de conversa (só nos gatilhos de resync: reconexão/visibilidade).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resyncToken, fetchConversationById, router, t]);
+
+  const handleTabChange = useCallback(
+    (tab: TabId) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', tab);
+      // Trocar de aba não fecha a conversa aberta — o thread permanece
+      // montado (evita reproduzir o bug de #411-419 do histórico: um
+      // `setActiveConversation(null)` aqui zeraria `messages` e a
+      // próxima visita ao Chat exigiria um refetch completo).
+      router.replace(`/inbox?${params.toString()}`, { scroll: false });
     },
-    [deepLinkConvId, activeConversation?.id]
+    [searchParams, router]
   );
 
   const handleSelectConversation = useCallback(
     (conv: Conversation) => {
       // Re-clicking the already-active conversation would clear the
-      // messages array, but the fetch effect in MessageThread only re-runs
-      // when conversationId changes — so messages would stay empty until
-      // the user navigated away and back. Bail out early instead.
-      if (activeConversation?.id === conv.id) return;
-      setActiveConversation(conv);
-      setActiveContact(conv.contact ?? null);
-      setMessages([]);
-      // Optimistically clear the unread badge for this conv. The
-      // server-side reset is fired by the unread-reset effect inside
-      // MessageThread (which reads activeConversation.unread_count, not
-      // the list copy — so we deliberately leave that intact below to
-      // keep the effect firing), and the realtime UPDATE that comes
-      // back will sync to 0 again as a no-op. Zeroing the list copy
-      // here means the user sees the badge disappear the instant they
-      // click instead of waiting for the round-trip — and it persists
-      // even if the realtime UPDATE is dropped.
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conv.id && c.unread_count > 0 ? { ...c, unread_count: 0 } : c
-        )
-      );
-      // Record the selection on the deep-link ref BEFORE we change the
-      // URL. The router.replace below flips `deepLinkConvId`, which can
-      // in turn cause ConversationList to refetch and eventually call
-      // handleConversationsLoaded again. Without this line, the ref
-      // still points at the previous value, the auto-select block
-      // sees `ref !== deepLinkConvId`, fires a second time, and
-      // clobbers the messages MessageThread just fetched.
-      autoSelectedForDeepLinkRef.current = conv.id;
-      // Reflect the selection in the URL so a refresh lands the user
-      // back in the same thread, and so copy-paste links work. Use
-      // replace() to avoid polluting browser history with every click.
-      router.replace(`/inbox?c=${conv.id}`, { scroll: false });
+      // messages array without a matching refetch (MessageThread only
+      // refetches when conversationId changes) — bail out early.
+      if (activeConversationRef.current?.id === conv.id) return;
+      openConversation(conv);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('c', conv.id);
+      router.replace(`/inbox?${params.toString()}`, { scroll: false });
     },
-    [activeConversation?.id, router]
+    [openConversation, searchParams, router]
   );
 
   // Mobile "back" — deselect the conversation so the list pane comes
-  // back. Also clears the ?c= param so a refresh lands on the list
-  // instead of re-opening the thread the user just backed out of.
+  // back. Also clears the ?c= param (preserving ?tab=) so a refresh
+  // lands on the list instead of re-opening the thread the user just
+  // backed out of.
   const handleCloseConversation = useCallback(() => {
     setActiveConversation(null);
     setActiveContact(null);
     setMessages([]);
-    // Clearing the ref lets the deep-link auto-selector fire again if
-    // the user later visits /inbox?c=<same-id> — desirable UX.
     autoSelectedForDeepLinkRef.current = null;
-    router.replace('/inbox', { scroll: false });
-  }, [router]);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('c');
+    const qs = params.toString();
+    router.replace(qs ? `/inbox?${qs}` : '/inbox', { scroll: false });
+  }, [searchParams, router]);
 
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
     setMessages(loaded);
@@ -515,34 +685,156 @@ export default function InboxPage() {
 
   const handleStatusChange = useCallback(
     (conversationId: string, status: ConversationStatus) => {
-      setConversations((prev) =>
-        prev.map((c) => (c.id === conversationId ? { ...c, status } : c))
-      );
-      if (activeConversation?.id === conversationId) {
-        setActiveConversation((prev) => (prev ? { ...prev, status } : prev));
+      const tab = convTabMapRef.current.get(conversationId);
+      if (tab) {
+        patchFeed(tab, (prev) =>
+          prev.map((c) => (c.id === conversationId ? { ...c, status } : c))
+        );
       }
+      setActiveConversation((prev) =>
+        prev && prev.id === conversationId ? { ...prev, status } : prev
+      );
     },
-    [activeConversation]
+    [patchFeed]
+  );
+
+  /**
+   * Move uma conversa entre os dois feeds quando a atribuição muda —
+   * usado tanto pelo `onAssignChange` do MessageThread/AiThreadBanner
+   * (dropdown de atribuir, take-over da IA) quanto pelo sucesso de uma
+   * reivindicação. `patchedRow`, quando informado, é a linha JÁ FRESCA
+   * vinda do servidor (ex.: o retorno do RPC de claim); sem ele, a
+   * função procura a linha em qualquer lugar que já a tenha (o feed de
+   * origem, ou a conversa ativa) para não fabricar uma linha parcial.
+   */
+  const moveConversationAssignment = useCallback(
+    (
+      conversationId: string,
+      assignedAgentId: string | null,
+      patchedRow?: Conversation
+    ) => {
+      const previousTab = convTabMapRef.current.get(conversationId) ?? null;
+      const newTab: ConversationTabId | null = !userId
+        ? null
+        : matchesConversationTab('chat', assignedAgentId, userId)
+          ? 'chat'
+          : matchesConversationTab('open', assignedAgentId, userId)
+            ? 'open'
+            : null;
+
+      const existingRow =
+        patchedRow ??
+        (previousTab ? readFeed(previousTab) : []).find(
+          (c) => c.id === conversationId
+        ) ??
+        (activeConversationRef.current?.id === conversationId
+          ? activeConversationRef.current
+          : null);
+
+      if (previousTab && previousTab !== newTab) {
+        patchFeed(previousTab, (prev) =>
+          prev.filter((c) => c.id !== conversationId)
+        );
+      }
+
+      if (newTab && visitedTabs.has(newTab)) {
+        if (previousTab === newTab) {
+          patchFeed(newTab, (prev) =>
+            prev.map((c) =>
+              c.id === conversationId
+                ? { ...c, assigned_agent_id: assignedAgentId }
+                : c
+            )
+          );
+        } else if (existingRow) {
+          const fresh = { ...existingRow, assigned_agent_id: assignedAgentId };
+          patchFeed(newTab, (prev) => upsertConversation(prev, fresh));
+        }
+        // Sem `existingRow`: não fabricamos uma linha parcial que
+        // quebraria a renderização — a próxima visita a esta aba faz
+        // um fetch fresco que já inclui a conversa.
+      }
+
+      setActiveConversation((prev) =>
+        prev && prev.id === conversationId
+          ? { ...prev, assigned_agent_id: assignedAgentId }
+          : prev
+      );
+    },
+    [userId, visitedTabs, readFeed, patchFeed]
   );
 
   const handleAssignChange = useCallback(
     (conversationId: string, assignedAgentId: string | null) => {
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? { ...c, assigned_agent_id: assignedAgentId ?? undefined }
-            : c
-        )
-      );
-      if (activeConversation?.id === conversationId) {
-        setActiveConversation((prev) =>
-          prev
-            ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
-            : prev
+      moveConversationAssignment(conversationId, assignedAgentId);
+    },
+    [moveConversationAssignment]
+  );
+
+  /**
+   * Reivindica uma conversa da fila (aba "Open") a partir do item da
+   * lista. Chama o RPC atômico `claim_conversation` (via
+   * /api/inbox/conversations/[id]/claim) — nunca um `.update()` direto,
+   * que reintroduziria a corrida que o RPC existe para prevenir (F-02
+   * do SPEC): dois agentes clicando a mesma conversa no mesmo instante
+   * só têm UM vencedor, garantido pelo banco via
+   * `WHERE assigned_agent_id IS NULL`.
+   */
+  const handleClaim = useCallback(
+    async (conv: Conversation) => {
+      if (claimingId) return; // um de cada vez
+      setClaimingId(conv.id);
+      try {
+        const res = await fetch(
+          `/api/inbox/conversations/${conv.id}/claim`,
+          { method: 'POST' }
         );
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          if (json?.code === 'CONVERSATION_ALREADY_CLAIMED') {
+            toast.error(t('claimedByAnother'));
+            // Sob a RLS, uma conversa agora atribuída a outro some do
+            // meu ponto de vista de qualquer forma — remove já, sem
+            // esperar o próximo resync.
+            patchFeed('open', (prev) => prev.filter((c) => c.id !== conv.id));
+          } else {
+            toast.error(json?.error || t('claimFailed'));
+          }
+          return;
+        }
+
+        // O RPC devolve a linha CRUA de `conversations` (sem embed de
+        // contato) — anexa o `contact` que a lista já tinha em cache.
+        const claimedRaw = json.conversation as Conversation;
+        const claimed: Conversation = { ...claimedRaw, contact: conv.contact };
+
+        moveConversationAssignment(
+          conv.id,
+          claimed.assigned_agent_id ?? null,
+          claimed
+        );
+        openConversation(claimed);
+
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('tab', 'chat');
+        params.set('c', claimed.id);
+        router.replace(`/inbox?${params.toString()}`, { scroll: false });
+      } catch {
+        toast.error(t('networkError'));
+      } finally {
+        setClaimingId(null);
       }
     },
-    [activeConversation]
+    [
+      claimingId,
+      patchFeed,
+      moveConversationAssignment,
+      openConversation,
+      searchParams,
+      router,
+      t,
+    ]
   );
 
   /**
@@ -550,10 +842,9 @@ export default function InboxPage() {
    * estado da página. Precisa atingir DOIS lugares, e esquecer o
    * primeiro é o bug mais fácil de introduzir aqui:
    *
-   *   1. `conversations[].contact.tags` — é o que
-   *      `matchesContactFilters` lê para o filtro por etiqueta da
-   *      lista. Sem atualizar, uma conversa não entra nem sai da
-   *      lista filtrada até um refetch.
+   *   1. `contact.tags` nos DOIS feeds — é o que `matchesContactFilters`
+   *      lê para o filtro por etiqueta da lista. Sem atualizar, uma
+   *      conversa não entra nem sai da lista filtrada até um refetch.
    *   2. `activeContact.tags` — o que a ContactSidebar renderiza.
    *
    * O `map` casa por `contact.id` e não para no primeiro acerto de
@@ -561,19 +852,20 @@ export default function InboxPage() {
    * (encerradas persistem depois do dedupe da migração 036).
    */
   const handleContactTagsChanged = useCallback(
-    (contactId: string, tags: Tag[]) => {
-      setConversations((prev) =>
-        prev.map((c) =>
+    (contactId: string, tagsList: Tag[]) => {
+      const patch = (list: Conversation[]) =>
+        list.map((c) =>
           c.contact?.id === contactId
-            ? { ...c, contact: { ...c.contact, tags } }
+            ? { ...c, contact: { ...c.contact, tags: tagsList } }
             : c
-        )
-      );
+        );
+      chatFeed.setConversations(patch);
+      openFeed.setConversations(patch);
       setActiveContact((prev) =>
-        prev?.id === contactId ? { ...prev, tags } : prev
+        prev?.id === contactId ? { ...prev, tags: tagsList } : prev
       );
     },
-    []
+    [chatFeed.setConversations, openFeed.setConversations]
   );
 
   // On mobile (<lg) we show a SINGLE pane — either the list or the
@@ -594,74 +886,99 @@ export default function InboxPage() {
         </div>
       )}
 
-      {/* O picker de etiquetas é montado UMA vez aqui, envolvendo os
-          dois painéis que o acionam. Ver o cabeçalho de
-          tag-picker-context.tsx para o porquê de não ficar dentro de
-          cada trigger. */}
-      <TagPickerProvider onTagsChanged={handleContactTagsChanged}>
+      {/* Barra de abas — sempre visível, independente do que está
+          renderizado abaixo, para trocar de aba nunca depender de
+          "voltar" primeiro. */}
+      <InboxTabs activeTab={activeTab} onChange={handleTabChange} />
+
+      {activeTab === 'contacts' ? (
         <div className="flex flex-1 overflow-hidden">
-          {/* Left panel: Conversation list.
-            Hidden on mobile when a conversation is selected so the
-            thread can occupy the full width. Always visible on lg+. */}
-          <div
-            className={cn(
-              'flex h-full flex-1 lg:flex-none',
-              hasActiveConv ? 'hidden lg:flex' : 'flex'
-            )}
-          >
-            <ConversationList
-              activeConversationId={activeConversation?.id ?? null}
-              onSelect={handleSelectConversation}
-              conversations={conversations}
-              onConversationsLoaded={handleConversationsLoaded}
-              resyncToken={resyncToken}
-            />
-          </div>
-
-          {/* Center panel: Message thread.
-            Hidden on mobile when no conversation is selected so the
-            list can occupy the full width. Always visible on lg+
-            (shows its own empty-state if no thread is picked yet).
-
-            `min-w-0` is load-bearing: without it, a single wide piece
-            of content inside the thread (long quote preview, very
-            long URL in a message body) forces the flex child past
-            its share and pushes the contact-sidebar panel off-screen
-            on the right. Issue #165. */}
-          <div
-            className={cn(
-              'flex h-full min-w-0 flex-1 lg:flex',
-              hasActiveConv ? 'flex' : 'hidden lg:flex'
-            )}
-          >
-            <MessageThread
-              conversation={activeConversation}
-              contact={activeContact}
-              messages={messages}
-              onMessagesLoaded={handleMessagesLoaded}
-              onNewMessage={handleNewMessage}
-              onUpdateMessage={handleUpdateMessage}
-              onStatusChange={handleStatusChange}
-              onAssignChange={handleAssignChange}
-              onBack={handleCloseConversation}
-              resyncToken={resyncToken}
-              onRefresh={handleManualRefresh}
-              contactPanelOpen={contactPanelOpen}
-              onToggleContactPanel={handleToggleContactPanel}
-            />
-          </div>
-
-          {/* Right panel: Contact sidebar — desktop only, and only when the
-            agent hasn't collapsed it via the thread-header toggle (#258).
-            On mobile it's always hidden (the `lg:block` below), so the
-            toggle — which is itself desktop-only — never affects it. */}
-          {contactPanelOpen && (
-            <div className="hidden lg:block">
-              <ContactSidebar contact={activeContact} />
-            </div>
-          )}
+          <ContactsDirectory />
         </div>
-      </TagPickerProvider>
+      ) : (
+        // `activeTab` está narrowed para ConversationTabId aqui — TabId
+        // é 'chat' | 'open' | 'contacts', e o branch acima cobriu 'contacts'.
+        <TagPickerProvider onTagsChanged={handleContactTagsChanged}>
+          <div className="flex flex-1 overflow-hidden">
+            {/* Left panel: Conversation list.
+              Hidden on mobile when a conversation is selected so the
+              thread can occupy the full width. Always visible on lg+. */}
+            <div
+              className={cn(
+                'flex h-full flex-1 lg:flex-none',
+                hasActiveConv ? 'hidden lg:flex' : 'flex'
+              )}
+            >
+              <ConversationList
+                tab={activeTab}
+                activeConversationId={activeConversation?.id ?? null}
+                onSelect={handleSelectConversation}
+                conversations={
+                  activeTab === 'chat'
+                    ? chatFeed.conversations
+                    : openFeed.conversations
+                }
+                loading={
+                  activeTab === 'chat' ? chatFeed.loading : openFeed.loading
+                }
+                tags={tags}
+                filters={filters[activeTab]}
+                onSearchChange={(v) => setSearch(activeTab, v)}
+                onStatusFilterChange={(v) => setStatusFilter(activeTab, v)}
+                onToggleTag={(id) => toggleTag(activeTab, id)}
+                onSelectCompany={(c) => setSelectedCompany(activeTab, c)}
+                onClearFilters={() => clearContactFilters(activeTab)}
+                showStatusFilter={activeTab === 'open'}
+                onClaim={activeTab === 'open' ? handleClaim : undefined}
+                claimingId={claimingId}
+              />
+            </div>
+
+            {/* Center panel: Message thread.
+              Hidden on mobile when no conversation is selected so the
+              list can occupy the full width. Always visible on lg+
+              (shows its own empty-state if no thread is picked yet).
+
+              `min-w-0` is load-bearing: without it, a single wide piece
+              of content inside the thread (long quote preview, very
+              long URL in a message body) forces the flex child past
+              its share and pushes the contact-sidebar panel off-screen
+              on the right. Issue #165. */}
+            <div
+              className={cn(
+                'flex h-full min-w-0 flex-1 lg:flex',
+                hasActiveConv ? 'flex' : 'hidden lg:flex'
+              )}
+            >
+              <MessageThread
+                conversation={activeConversation}
+                contact={activeContact}
+                messages={messages}
+                onMessagesLoaded={handleMessagesLoaded}
+                onNewMessage={handleNewMessage}
+                onUpdateMessage={handleUpdateMessage}
+                onStatusChange={handleStatusChange}
+                onAssignChange={handleAssignChange}
+                onBack={handleCloseConversation}
+                resyncToken={resyncToken}
+                onRefresh={handleManualRefresh}
+                contactPanelOpen={contactPanelOpen}
+                onToggleContactPanel={handleToggleContactPanel}
+              />
+            </div>
+
+            {/* Right panel: Contact sidebar — desktop only, and only when the
+              agent hasn't collapsed it via the thread-header toggle (#258).
+              On mobile it's always hidden (the `lg:block` below), so the
+              toggle — which is itself desktop-only — never affects it. */}
+            {contactPanelOpen && (
+              <div className="hidden lg:block">
+                <ContactSidebar contact={activeContact} />
+              </div>
+            )}
+          </div>
+        </TagPickerProvider>
+      )}
     </div>
   );
 }

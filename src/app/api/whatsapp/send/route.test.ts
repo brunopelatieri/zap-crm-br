@@ -10,6 +10,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Records of what the route wrote, so we can assert the right rows landed.
 const conversationInserts: Array<Record<string, unknown>> = [];
 const messageInserts: Array<Record<string, unknown>> = [];
+// RPCs chamadas, na ordem. Desde a migração 039 o envio reivindica a
+// conversa (`claim_conversation`) antes de falar com a Meta.
+const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+// Quando setado, `claim_conversation` falha com este erro — modela o
+// agente que perde a corrida para outro.
+let claimError: { message: string } | null = null;
 
 // Toggles for the per-test scenario.
 let existingConversation: Record<string, unknown> | null = null;
@@ -126,6 +132,22 @@ function makeSupabaseMock() {
       })),
     },
     from: vi.fn((table: string) => builder(table)),
+    rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args });
+      if (fn === 'claim_conversation') {
+        if (claimError) return { data: null, error: claimError };
+        return {
+          data: {
+            id: args.p_conversation_id,
+            account_id: 'acct-1',
+            contact_id: 'contact-1',
+            assigned_agent_id: 'user-1',
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    }),
   };
 }
 
@@ -187,6 +209,8 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
   beforeEach(() => {
     conversationInserts.length = 0;
     messageInserts.length = 0;
+    rpcCalls.length = 0;
+    claimError = null;
     existingConversation = null;
     createdConversation = null;
     contactRow = CONTACT;
@@ -248,6 +272,81 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     expect(messageInserts[0]).toMatchObject({
       conversation_id: 'conv-existing',
     });
+  });
+
+  // -------------------------------------------------------------------
+  // Atribuição (migração 039). "Quem responde, assume."
+  // -------------------------------------------------------------------
+
+  it('reivindica a conversa da fila antes de enviar', async () => {
+    existingConversation = {
+      id: 'conv-existing',
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      contact: CONTACT,
+      assigned_agent_id: null,
+    };
+
+    const res = await postContactTemplate();
+    expect(res.status).toBe(200);
+
+    expect(rpcCalls).toContainEqual({
+      fn: 'claim_conversation',
+      args: { p_conversation_id: 'conv-existing' },
+    });
+  });
+
+  it('não rouba a conversa já atribuída a outro agente (admin respondendo)', async () => {
+    existingConversation = {
+      id: 'conv-existing',
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      contact: CONTACT,
+      assigned_agent_id: 'outro-agente',
+    };
+
+    const res = await postContactTemplate();
+    expect(res.status).toBe(200);
+
+    // Uma conversa com dono só é visível para admin/owner. Responder
+    // nela é legítimo; tomá-la de quem atende, não.
+    expect(rpcCalls.filter((c) => c.fn === 'claim_conversation')).toHaveLength(
+      0
+    );
+    expect(sendTemplateMessage).toHaveBeenCalledTimes(1);
+  });
+
+  // O teste mais importante deste arquivo. A ordem claim → Meta é
+  // IRREVERSÍVEL se invertida: o WhatsApp não desfaz entrega, então um
+  // agente que perde a corrida depois de enviar já falou com o cliente
+  // numa conversa que pertence a outra pessoa.
+  it('aborta com 409 e NÃO chama a Meta quando outro agente vence a corrida', async () => {
+    existingConversation = {
+      id: 'conv-existing',
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      contact: CONTACT,
+      assigned_agent_id: null,
+    };
+    claimError = { message: 'CONVERSATION_ALREADY_CLAIMED' };
+
+    const res = await postContactTemplate();
+    const json = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(json.code).toBe('CONVERSATION_ALREADY_CLAIMED');
+
+    // O ponto do teste: nada saiu para o cliente, nada foi gravado.
+    expect(sendTemplateMessage).not.toHaveBeenCalled();
+    expect(messageInserts).toHaveLength(0);
+  });
+
+  it('grava a autoria em sender_id', async () => {
+    // A coluna existe desde a 001 e nunca foi preenchida por este
+    // caminho — sem ela a autoria da resposta é irrecuperável.
+    const res = await postContactTemplate();
+    expect(res.status).toBe(200);
+    expect(messageInserts[0]).toMatchObject({ sender_id: 'user-1' });
   });
 
   it('404s when the contact is not in the caller account', async () => {

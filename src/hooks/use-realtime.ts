@@ -8,6 +8,22 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 interface RealtimeEvent<T> {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE';
   new: T;
+  /**
+   * O que o Supabase manda para o lado "antes" do evento. Passado
+   * adiante sem cortar nada — mas `Partial<T>` não é modéstia de tipo,
+   * é a verdade: `conversations` roda com `REPLICA IDENTITY DEFAULT`
+   * (o padrão), então em um `UPDATE` o Postgres só envia a CHAVE
+   * PRIMÁRIA aqui, não a linha inteira. `old.id` está sempre presente;
+   * `old.assigned_agent_id` (ou qualquer outra coluna) NÃO está,
+   * mesmo que a policy deixe o chamador ler a linha.
+   *
+   * Por isso o roteamento de aba do Inbox (`inbox/page.tsx`) nunca lê
+   * `old.assigned_agent_id` para decidir de onde uma conversa saiu —
+   * ele compara o `new` contra o que o PRÓPRIO cliente já tinha em
+   * cache. Só `notifications` tem `REPLICA IDENTITY FULL`
+   * (027_notifications.sql:31); estender isso a `conversations` daria
+   * `old` completo, mas é mudança de banco — fora do escopo aqui.
+   */
   old: Partial<T>;
 }
 
