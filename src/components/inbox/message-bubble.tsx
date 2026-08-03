@@ -29,6 +29,8 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /** Agent/bot name (outgoing) or contact name (incoming), shown atop the bubble. */
+  senderName?: string;
 }
 
 function StatusIcon({ status }: { status: Message['status'] }) {
@@ -290,6 +292,7 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  senderName,
 }: MessageBubbleProps) {
   const t = useTranslations('Inbox.bubble');
 
@@ -304,11 +307,25 @@ export function MessageBubble({
       <div
         className={cn(
           'relative rounded-2xl px-3 py-2',
+          // Outgoing bubbles use a fixed pale-green fill (not the themed
+          // `--primary`) so agent messages are always visually distinct
+          // from the accent color. Text/timestamp/badge below are all
+          // dark neutrals chosen for contrast against that light fill.
           isAgent
-            ? 'bg-primary text-primary-foreground rounded-br-md'
+            ? 'bg-[#E1F7C9] text-neutral-900 rounded-br-md'
             : 'bg-muted text-foreground rounded-bl-md'
         )}
       >
+        {senderName && (
+          <p
+            className={cn(
+              'mb-0.5 truncate text-xs font-semibold',
+              isAgent ? 'text-neutral-900/70' : 'text-foreground/70'
+            )}
+          >
+            {senderName}
+          </p>
+        )}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}
@@ -329,7 +346,12 @@ export function MessageBubble({
               glance. */}
           {message.ai_generated && (
             <span
-              className="bg-primary-foreground/20 text-primary-foreground inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] leading-none font-semibold tracking-wide uppercase"
+              className={cn(
+                'inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] leading-none font-semibold tracking-wide uppercase',
+                isAgent
+                  ? 'bg-neutral-900/10 text-neutral-900'
+                  : 'bg-primary-foreground/20 text-primary-foreground'
+              )}
               title={t('aiBadgeTitle')}
             >
               <Sparkles className="h-2.5 w-2.5" />
@@ -339,11 +361,11 @@ export function MessageBubble({
           <span
             className={cn(
               'text-[10px]',
-              // Outbound bubbles sit on the primary fill, so the
+              // Outbound bubbles sit on the fixed pale-green fill, so the
               // timestamp must read against that (not the neutral
               // foreground) — otherwise it goes low-contrast in light
               // mode. Inbound bubbles use the muted surface.
-              isAgent ? 'text-primary-foreground/70' : 'text-muted-foreground'
+              isAgent ? 'text-neutral-900/60' : 'text-muted-foreground'
             )}
           >
             {time}

@@ -178,6 +178,7 @@ export function MessageThread({
   const t = useTranslations('Inbox.messageThread');
   const tTimer = useTranslations('Inbox.sessionTimer');
   const tQuote = useTranslations('Inbox.replyQuote');
+  const tBubble = useTranslations('Inbox.bubble');
 
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -778,6 +779,27 @@ export function MessageThread({
     [contactDisplayName]
   );
 
+  // Name shown atop each bubble: for agent sends, the conversation's
+  // assigned agent (not "you", regardless of who is signed in — the
+  // conversation ownership is what identifies the sender to the
+  // customer), the automation label for bot sends, or the contact's
+  // name for inbound messages.
+  const senderNameFor = useCallback(
+    (m: Message): string => {
+      if (m.sender_type === 'bot') return tBubble('bot');
+      if (m.sender_type === 'agent') {
+        const assigned = profiles.find(
+          (p) => p.user_id === conversation?.assigned_agent_id
+        );
+        if (assigned?.full_name) return assigned.full_name;
+        const sender = profiles.find((p) => p.user_id === m.sender_id);
+        return sender?.full_name || t('assigned');
+      }
+      return contactDisplayName || tBubble('customerFallback');
+    },
+    [profiles, conversation?.assigned_agent_id, contactDisplayName, tBubble, t]
+  );
+
   const handleStartReply = useCallback(
     (msg: Message) => {
       setReplyTo({
@@ -1174,6 +1196,7 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          senderName={senderNameFor(msg)}
                         />
                       </MessageActions>
                     );
