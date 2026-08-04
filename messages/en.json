@@ -207,18 +207,27 @@
       "conversationNoLongerAvailable": "This conversation is no longer available",
       "claimedByAnother": "This conversation has just been taken by another agent",
       "claimFailed": "Couldn't claim this conversation",
-      "networkError": "Couldn't connect to the server"
+      "networkError": "Couldn't connect to the server",
+      "viewingOthersInbox": "Viewing {name}'s conversations",
+      "backToMine": "Back to my conversations",
+      "viewerChatEmpty": "Conversations assigned to you appear here. Your role (Viewer) doesn't receive assignments."
     },
     "tabs": {
       "tablistLabel": "Inbox views",
       "chat": "Chat",
       "open": "Open",
-      "contacts": "Contacts"
+      "contacts": "Contacts",
+      "viewAsMe": "My conversations",
+      "viewAsAriaLabel": "View as",
+      "viewAsLoadingMembers": "Loading teammates…",
+      "viewAsNoTeammates": "No teammates on this account",
+      "viewAsUnknownMember": "Agent"
     },
     "contactsDirectory": {
       "title": "Contacts",
       "subtitleAll": "Every contact in the account",
-      "subtitleMine": "Contacts from conversations assigned to you",
+      "subtitleMine": "Contacts from your conversations",
+      "viewAllContactsHint": "View every contact in the account",
       "searchPlaceholder": "Search by name, phone or email...",
       "loadError": "Failed to load contacts",
       "noneMatch": "No contacts match your search",
@@ -247,6 +256,7 @@
       "claimConversationShort": "Claim conversation"
     },
     "messageThread": {
+      "assignedElsewhereWarning": "This conversation belongs to {name}. Sending a message will assign it to you.",
       "backToConversations": "Back to conversations",
       "hideContactPanel": "Hide contact panel",
       "showContactPanel": "Show contact panel",

@@ -50,7 +50,14 @@ export const TAB_DEFINITIONS: readonly TabDefinition[] = [
  * Descreve o filtro extra a aplicar numa query de `conversations` para
  * a aba pedida. A tenência (`account_id`) e a visibilidade por
  * atribuição continuam sendo aplicadas pela RLS — isto só decide entre
- * `assigned_agent_id = eu` (Chat) e `assigned_agent_id IS NULL` (Open).
+ * `assigned_agent_id = <alvo>` (Chat) e `assigned_agent_id IS NULL`
+ * (Open).
+ *
+ * "Alvo" (`viewAsUserId`), não "eu": desde a SPEC 042 (D7), a aba Chat
+ * de um admin/owner pode mostrar a carteira de OUTRO agente via o
+ * seletor "ver como" — o predicado é o mesmo `eq`, só muda quem entra
+ * no lado direito. Para o caso comum (ninguém sendo observado), o
+ * chamador passa o próprio `user.id` como alvo.
  */
 // União discriminada por `op` (não `{ value: string | null }` solto) para
 // que o chamador narrowe sem cast: `predicate.op === 'eq'` já garante
@@ -61,17 +68,17 @@ export type ConversationTabPredicate =
 
 export function conversationTabPredicate(
   tab: ConversationTabId,
-  userId: string
+  viewAsUserId: string
 ): ConversationTabPredicate {
   return tab === 'chat'
-    ? { column: 'assigned_agent_id', op: 'eq', value: userId }
+    ? { column: 'assigned_agent_id', op: 'eq', value: viewAsUserId }
     : { column: 'assigned_agent_id', op: 'is', value: null };
 }
 
 /**
  * Espelho client-side do predicado acima — decide se uma conversa
  * (já em mãos, vinda de um fetch ou de um evento realtime) pertence à
- * aba `tab` para o usuário `userId`. Usado para rotear eventos
+ * aba `tab` para o alvo `viewAsUserId`. Usado para rotear eventos
  * realtime para o cache certo sem precisar de um refetch.
  *
  * Precisa ficar em sincronia com `conversationTabPredicate` — os dois
@@ -81,8 +88,8 @@ export function conversationTabPredicate(
 export function matchesConversationTab(
   tab: ConversationTabId,
   assignedAgentId: string | null | undefined,
-  userId: string
+  viewAsUserId: string
 ): boolean {
   const assigned = assignedAgentId ?? null;
-  return tab === 'chat' ? assigned === userId : assigned === null;
+  return tab === 'chat' ? assigned === viewAsUserId : assigned === null;
 }

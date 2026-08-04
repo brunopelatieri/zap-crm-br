@@ -106,3 +106,28 @@ describe('matchesConversationTab', () => {
     );
   });
 });
+
+describe('viewAs — "ver como" de outro alvo (SPEC 042, D7)', () => {
+  // O predicado não distingue "eu" de "o agente que o admin está
+  // observando" — os dois são só o segundo argumento. Estes testes
+  // travam que um alvo QUALQUER (não a sessão) funciona igual.
+  it('conversationTabPredicate aceita qualquer alvo, não só a sessão', () => {
+    expect(conversationTabPredicate('chat', 'agent-observado')).toEqual({
+      column: 'assigned_agent_id',
+      op: 'eq',
+      value: 'agent-observado',
+    });
+  });
+
+  it('matchesConversationTab casa pelo alvo observado, não pela sessão', () => {
+    expect(matchesConversationTab('chat', 'agent-observado', 'agent-observado')).toBe(
+      true
+    );
+    // A sessão de quem está observando NUNCA entra na comparação — só o
+    // alvo importa. Um admin (user-admin) observando outro agente não
+    // deve ver suas PRÓPRIAS conversas na aba Chat enquanto observa.
+    expect(matchesConversationTab('chat', 'user-admin', 'agent-observado')).toBe(
+      false
+    );
+  });
+});

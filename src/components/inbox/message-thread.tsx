@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useCan } from '@/hooks/use-can';
+import { useAccountMembers } from '@/hooks/use-account-members';
 import { usePresence } from '@/hooks/use-presence';
 import { PresenceDot } from '@/components/presence/presence-dot';
 import { presenceLabel } from '@/lib/presence';
@@ -15,7 +16,6 @@ import type {
   Contact,
   ConversationStatus,
   MessageTemplate,
-  Profile,
   InteractiveMessagePayload,
 } from '@/types';
 import {
@@ -28,6 +28,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  AlertTriangle,
 } from 'lucide-react';
 import { format, isToday, isYesterday, differenceInHours } from 'date-fns';
 import { useTranslations } from 'next-intl';
@@ -189,11 +190,16 @@ export function MessageThread({
   // `reassign_conversation` (`ONLY_ADMIN_CAN_REASSIGN_TO_OTHERS`), só
   // que aqui evita renderizar uma opção que o servidor recusaria.
   const canReassignToOthers = useCan('reassign-conversation');
+  // Só quem PODE mandar mensagem corre o risco de assumir uma conversa
+  // sem querer (F-07 da SPEC original: o primeiro envio reivindica a
+  // conversa automaticamente) — usado pelo aviso de "está vendo a
+  // carteira de outro agente" logo abaixo (SPEC 042, D7 §5).
+  const canSend = useCan('send-messages');
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const { members: profiles } = useAccountMembers();
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
@@ -218,29 +224,6 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
-
-  // Profiles are bounded by RLS to rows the current user is allowed to
-  // see — today that's just the current user, but the dropdown keeps the
-  // shape ready for shared-team workspaces without a refactor.
-  useEffect(() => {
-    let cancelled = false;
-    const supabase = createClient();
-    supabase
-      .from('profiles')
-      .select('*')
-      .order('full_name')
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          console.error('Failed to fetch profiles:', error);
-          return;
-        }
-        setProfiles((data as Profile[]) ?? []);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
@@ -1328,6 +1311,26 @@ export function MessageThread({
           </div>
         )}
       </div>
+
+      {/* Aviso de assunção implícita (SPEC 042, D7 §5). Aparece sempre
+          que a thread ABERTA pertence a OUTRO agente — não só quando
+          chegou aqui pelo seletor "ver como": um admin também pode
+          abrir a conversa de um colega por deep-link ou notificação
+          (ver o comentário sobre D7 em `inbox/page.tsx`), e o risco é
+          o mesmo nos dois casos. F-07 da SPEC original faz o primeiro
+          ENVIO reivindicar a conversa automaticamente no servidor — sem
+          este aviso, um admin "só dando uma olhada" rouba a conversa do
+          colega ao responder, sem perceber. */}
+      {assignedAgentId && assignedAgentId !== user?.id && canSend && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs sm:px-4">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <p className="text-amber-600 dark:text-amber-400">
+            {t('assignedElsewhereWarning', {
+              name: currentAssignee?.full_name ?? t('assigned'),
+            })}
+          </p>
+        </div>
+      )}
 
       {/* AI auto-reply banner — take over an active bot, or resume it
           after a handoff. Renders nothing unless the account has

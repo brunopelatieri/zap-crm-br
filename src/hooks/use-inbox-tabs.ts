@@ -9,6 +9,7 @@ import {
   type ConversationTabId,
   type TabId,
 } from '@/lib/inbox/tabs';
+import { isUuid } from '@/lib/api/uuid';
 import type { ConversationStatus } from '@/types';
 
 export type InboxStatusFilter = ConversationStatus | 'all' | 'unread';
@@ -34,6 +35,23 @@ export interface UseInboxTabsResult {
    */
   activeTab: TabId;
   /**
+   * Alvo do seletor "ver como" (SPEC 042, D7) — o `user_id` do agente
+   * cuja carteira a aba "Chat" está mostrando, ou `null` quando é a
+   * própria sessão (o caso comum). Derivado de `?viewAs=` na URL pelo
+   * mesmo motivo que `?tab=` está lá: refresh estável e link
+   * compartilhável — um admin manda ao colega "olha a fila do Fulano".
+   *
+   * Só admin/owner podem de fato produzir este valor pela UI (o
+   * seletor só renderiza sob `useCan('view-all-conversations')`), mas
+   * o hook não impõe isso — quem decide o que a URL pode pedir é a
+   * RLS: um agente comum forçando `?viewAs=<outro>` na barra de
+   * endereço simplesmente não recebe nenhuma linha (nem `assigned_agent_id
+   * = <outro>` nem `IS NULL` casam com o que a política deixa passar
+   * para ele). `inbox/page.tsx` também degrada defensivamente por UX,
+   * não por segurança — ver o comentário lá.
+   */
+  viewAsUserId: string | null;
+  /**
    * Filtros por aba conversacional (Chat/Open). Ficam em memória, não
    * na URL — trocar de aba preserva; recarregar a página reseta. Isso
    * é deliberado: a aba em si vale a pena persistir num link
@@ -57,6 +75,11 @@ export function useInboxTabs(): UseInboxTabsResult {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
   const activeTab: TabId = isTabId(tabParam) ? tabParam : DEFAULT_TAB;
+
+  const viewAsParam = searchParams.get('viewAs');
+  // Forma de UUID inválida (adulterado à mão, link truncado) degrada
+  // para "eu", nunca quebra — mesmo padrão de `isTabId` acima.
+  const viewAsUserId = isUuid(viewAsParam) ? viewAsParam : null;
 
   const [filters, setFilters] = useState<Record<ConversationTabId, TabFilters>>(
     () => ({
@@ -135,6 +158,7 @@ export function useInboxTabs(): UseInboxTabsResult {
 
   return {
     activeTab,
+    viewAsUserId,
     filters,
     setSearch,
     setStatusFilter,

@@ -18,6 +18,8 @@ import type {
   Tag,
 } from '@/types';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
+import { useAccountMembers } from '@/hooks/use-account-members';
 import { useRealtime } from '@/hooks/use-realtime';
 import { useInboxTabs } from '@/hooks/use-inbox-tabs';
 import { useConversationFeed } from '@/hooks/use-conversation-feed';
@@ -26,6 +28,7 @@ import {
   useInboxTagDefinitions,
 } from '@/components/inbox/conversation-list';
 import { InboxTabs } from '@/components/inbox/inbox-tabs';
+import { ViewAsSelector } from '@/components/inbox/view-as-selector';
 import { ContactsDirectory } from '@/components/inbox/contacts-directory';
 import { MessageThread } from '@/components/inbox/message-thread';
 import { ContactSidebar } from '@/components/inbox/contact-sidebar';
@@ -57,10 +60,14 @@ function upsertConversation(
 
 export default function InboxPage() {
   const t = useTranslations('Inbox.page');
+  const tTabs = useTranslations('Inbox.tabs');
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, isViewer } = useAuth();
   const userId = user?.id ?? null;
+  // D7 (SPEC 042): só admin/owner podem supervisionar a carteira de
+  // outro agente pelo seletor "ver como".
+  const canViewAll = useCan('view-all-conversations');
 
   /**
    * `?c=<id>` deep-link support. Used when landing here from the
@@ -72,6 +79,7 @@ export default function InboxPage() {
 
   const {
     activeTab,
+    viewAsUserId,
     filters,
     setSearch,
     setStatusFilter,
@@ -82,6 +90,21 @@ export default function InboxPage() {
   } = useInboxTabs();
 
   const tags = useInboxTagDefinitions();
+
+  // Alvo REAL do predicado `assigned_agent_id = <alvo>` da aba Chat
+  // (D7 da SPEC 042). `viewAsUserId` vem da URL e não é confiável por
+  // si só — degradar para a própria sessão quando `canViewAll` é falso
+  // é defesa em profundidade por UX, não por segurança: mesmo sem esta
+  // linha, um agente comum que forçasse `?viewAs=<outro>` na barra de
+  // endereço não receberia nenhuma linha (a RLS da 039 não devolve
+  // `assigned_agent_id = <outro>` para quem não é dono, admin ou
+  // owner). O motivo de degradar aqui mesmo assim é não deixar a UI de
+  // um agente comum, por acidente (link colado, aba duplicada),
+  // mostrar um estado "vendo a carteira de Fulano" vazio e confuso.
+  const chatTarget = (canViewAll ? viewAsUserId : null) ?? userId;
+
+  const { members: accountMembers, loading: accountMembersLoading } =
+    useAccountMembers(canViewAll);
 
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
@@ -133,9 +156,17 @@ export default function InboxPage() {
 
   // Os dois feeds conversacionais. "Lazy": só buscam depois que a
   // respectiva aba foi visitada ao menos uma vez (`visitedTabs`).
+  //
+  // O feed "chat" usa `chatTarget`, não `userId` diretamente — é a
+  // mesma dependência de sempre para o `useEffect` do hook, só que o
+  // valor pode ser o de OUTRO agente quando um admin está "vendo como"
+  // ele (D7). Trocar de alvo já dispara um refetch completo (o efeito
+  // do hook depende de `userId`/`chatTarget`), que SUBSTITUI o array —
+  // nunca mescla — então trocar e voltar nunca mistura carteiras de
+  // agentes diferentes na mesma lista.
   const chatFeed = useConversationFeed({
     tab: 'chat',
-    userId,
+    userId: chatTarget,
     enabled: visitedTabs.has('chat'),
     resyncToken,
   });
@@ -191,6 +222,19 @@ export default function InboxPage() {
       if (tab === 'open' && !ids.has(id)) convTabMapRef.current.delete(id);
     }
   }, [openFeed.conversations]);
+
+  // Ao trocar o alvo do "ver como" (D7), as entradas de 'chat' no mapa
+  // pertencem ao alvo ANTERIOR e estão prestes a ficar obsoletas. O
+  // efeito acima só as remove DEPOIS que `chatFeed.conversations`
+  // terminar de refazer o fetch — até lá, um evento de realtime que
+  // chegasse routearia por uma entrada do agente que deixamos de
+  // observar. Risco chamado explicitamente na SPEC 042 (§5): limpar
+  // aqui, de forma síncrona e imediata, fecha essa janela.
+  useEffect(() => {
+    for (const [id, tab] of convTabMapRef.current) {
+      if (tab === 'chat') convTabMapRef.current.delete(id);
+    }
+  }, [chatTarget]);
 
   // Espelha `activeConversation` num ref para ser lido dentro de
   // closures assíncronas (resync, deep-link, handlers de realtime) sem
@@ -270,8 +314,10 @@ export default function InboxPage() {
   // cada resync. Um fetch direto — não depende de nenhum feed já ter
   // carregado, o que importa especialmente para o deep-link: um admin
   // abrindo, via notificação, uma conversa atribuída a OUTRO agente não
-  // aparece nem em "Chat" nem em "Open" dele (ver a nota sobre D7 no
-  // resumo desta implementação), mas continua acessível por id.
+  // aparece nem em "Chat" nem em "Open" dele — a menos que ele também
+  // troque o seletor "ver como" para aquele agente (D7, SPEC 042) — mas
+  // a conversa continua acessível por id, e o banner de
+  // `message-thread.tsx` avisa que responder vai assumi-la.
   const fetchConversationById = useCallback(
     async (id: string): Promise<Conversation | null> => {
       const supabase = createClient();
@@ -298,14 +344,19 @@ export default function InboxPage() {
 
   const tabOfConversation = useCallback(
     (conv: Conversation): ConversationTabId | null => {
-      if (!userId) return null;
-      if (matchesConversationTab('chat', conv.assigned_agent_id, userId))
+      // `chatTarget`, não `userId`: quando um admin está "vendo como"
+      // outro agente (D7), uma conversa atribuída a ESSE agente é que
+      // pertence à aba "Chat" desta sessão — não as atribuídas ao
+      // admin. O predicado de 'open' não usa o alvo (é sempre "sem
+      // dono"), então esta troca não muda nada para a fila.
+      if (!chatTarget) return null;
+      if (matchesConversationTab('chat', conv.assigned_agent_id, chatTarget))
         return 'chat';
-      if (matchesConversationTab('open', conv.assigned_agent_id, userId))
+      if (matchesConversationTab('open', conv.assigned_agent_id, chatTarget))
         return 'open';
       return null;
     },
-    [userId]
+    [chatTarget]
   );
 
   // Hidrata uma conversa desconhecida (evento realtime referenciando um
@@ -662,6 +713,31 @@ export default function InboxPage() {
     [searchParams, router]
   );
 
+  /**
+   * Troca o alvo do seletor "ver como" (D7). `null` volta para a
+   * própria sessão — remove o parâmetro em vez de gravá-lo vazio, para
+   * `/inbox?tab=chat` continuar sendo a forma canônica de "minhas
+   * conversas" (sem isso, um link compartilhado com `viewAs=` vazio
+   * ficaria esteticamente diferente de um sem o parâmetro, embora
+   * signifiquem a mesma coisa).
+   *
+   * Mesma decisão de não fechar a conversa ativa que `handleTabChange`
+   * já toma — a thread permanece montada; só a lista à esquerda troca
+   * de carteira.
+   */
+  const handleViewAsChange = useCallback(
+    (targetUserId: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (targetUserId && targetUserId !== userId) {
+        params.set('viewAs', targetUserId);
+      } else {
+        params.delete('viewAs');
+      }
+      router.replace(`/inbox?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, userId]
+  );
+
   const handleSelectConversation = useCallback(
     (conv: Conversation) => {
       // Re-clicking the already-active conversation would clear the
@@ -742,11 +818,15 @@ export default function InboxPage() {
       patchedRow?: Conversation
     ) => {
       const previousTab = convTabMapRef.current.get(conversationId) ?? null;
-      const newTab: ConversationTabId | null = !userId
+      // `chatTarget`, pelo mesmo motivo de `tabOfConversation` acima —
+      // reatribuir uma conversa para alguém que não é o alvo observado
+      // a tira da aba Chat desta sessão, mesmo que o novo dono seja o
+      // próprio admin (ele está "vendo como" outra pessoa no momento).
+      const newTab: ConversationTabId | null = !chatTarget
         ? null
-        : matchesConversationTab('chat', assignedAgentId, userId)
+        : matchesConversationTab('chat', assignedAgentId, chatTarget)
           ? 'chat'
-          : matchesConversationTab('open', assignedAgentId, userId)
+          : matchesConversationTab('open', assignedAgentId, chatTarget)
             ? 'open'
             : null;
 
@@ -806,7 +886,7 @@ export default function InboxPage() {
         router.replace(`/inbox?${params.toString()}`, { scroll: false });
       }
     },
-    [userId, visitedTabs, readFeed, patchFeed, router]
+    [chatTarget, visitedTabs, readFeed, patchFeed, router]
   );
 
   const handleAssignChange = useCallback(
@@ -934,7 +1014,25 @@ export default function InboxPage() {
       {/* Barra de abas — sempre visível, independente do que está
           renderizado abaixo, para trocar de aba nunca depender de
           "voltar" primeiro. */}
-      <InboxTabs activeTab={activeTab} onChange={handleTabChange} />
+      <InboxTabs
+        activeTab={activeTab}
+        onChange={handleTabChange}
+        trailing={
+          // Seletor "ver como" (D7): só na aba Chat, só para quem pode
+          // supervisionar. `userId` sempre não-nulo aqui na prática (a
+          // página inteira depende de sessão), mas o guard evita passar
+          // `selfUserId=''` numa janela de hidratação improvável.
+          activeTab === 'chat' && canViewAll && userId ? (
+            <ViewAsSelector
+              members={accountMembers}
+              membersLoading={accountMembersLoading}
+              selfUserId={userId}
+              value={viewAsUserId}
+              onChange={handleViewAsChange}
+            />
+          ) : undefined
+        }
+      />
 
       {activeTab === 'contacts' ? (
         <div className="flex flex-1 overflow-hidden">
@@ -950,33 +1048,72 @@ export default function InboxPage() {
               thread can occupy the full width. Always visible on lg+. */}
             <div
               className={cn(
-                'flex h-full flex-1 lg:flex-none',
+                'flex h-full flex-1 flex-col lg:flex-none',
                 hasActiveConv ? 'hidden lg:flex' : 'flex'
               )}
             >
-              <ConversationList
-                tab={activeTab}
-                activeConversationId={activeConversation?.id ?? null}
-                onSelect={handleSelectConversation}
-                conversations={
-                  activeTab === 'chat'
-                    ? chatFeed.conversations
-                    : openFeed.conversations
-                }
-                loading={
-                  activeTab === 'chat' ? chatFeed.loading : openFeed.loading
-                }
-                tags={tags}
-                filters={filters[activeTab]}
-                onSearchChange={(v) => setSearch(activeTab, v)}
-                onStatusFilterChange={(v) => setStatusFilter(activeTab, v)}
-                onToggleTag={(id) => toggleTag(activeTab, id)}
-                onSelectCompany={(c) => setSelectedCompany(activeTab, c)}
-                onClearFilters={() => clearContactFilters(activeTab)}
-                showStatusFilter={activeTab === 'open'}
-                onClaim={activeTab === 'open' ? handleClaim : undefined}
-                claimingId={claimingId}
-              />
+              {/* "Vendo a carteira de {nome}" (D7). Só quando o admin
+                  está de fato observando outra pessoa — nunca aparece
+                  para o caso comum (viewAsUserId nulo ou igual à
+                  própria sessão), então a maioria dos usuários nunca vê
+                  esta faixa. */}
+              {activeTab === 'chat' && chatTarget && chatTarget !== userId && (
+                <div className="border-primary/20 bg-primary/5 flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
+                  <span className="text-foreground truncate">
+                    {t('viewingOthersInbox', {
+                      name:
+                        accountMembers.find((m) => m.user_id === chatTarget)
+                          ?.full_name ?? tTabs('viewAsUnknownMember'),
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleViewAsChange(null)}
+                    className="text-primary shrink-0 font-medium hover:underline"
+                  >
+                    {t('backToMine')}
+                  </button>
+                </div>
+              )}
+              {/* `min-h-0 flex-1`: `ConversationList` é `h-full` por
+                  dentro, o que só funciona porque este wrapper (e não o
+                  pai `flex-col`) lhe dá uma altura definida — sem ele, a
+                  lista somaria 100% da altura do pai POR CIMA da faixa
+                  "vendo a carteira de" acima, transbordando o painel. */}
+              <div className="min-h-0 flex-1">
+                <ConversationList
+                  tab={activeTab}
+                  activeConversationId={activeConversation?.id ?? null}
+                  onSelect={handleSelectConversation}
+                  conversations={
+                    activeTab === 'chat'
+                      ? chatFeed.conversations
+                      : openFeed.conversations
+                  }
+                  loading={
+                    activeTab === 'chat' ? chatFeed.loading : openFeed.loading
+                  }
+                  tags={tags}
+                  filters={filters[activeTab]}
+                  onSearchChange={(v) => setSearch(activeTab, v)}
+                  onStatusFilterChange={(v) => setStatusFilter(activeTab, v)}
+                  onToggleTag={(id) => toggleTag(activeTab, id)}
+                  onSelectCompany={(c) => setSelectedCompany(activeTab, c)}
+                  onClearFilters={() => clearContactFilters(activeTab)}
+                  showStatusFilter={activeTab === 'open'}
+                  onClaim={activeTab === 'open' ? handleClaim : undefined}
+                  claimingId={claimingId}
+                  emptyMessageOverride={
+                    // D5 (SPEC 042): o `viewer` nunca é atribuído a nada
+                    // (não pode responder, não pode reivindicar) — a aba
+                    // Chat dele fica sempre vazia, e sem isto o vazio é
+                    // indistinguível de um erro de carregamento.
+                    activeTab === 'chat' && isViewer
+                      ? t('viewerChatEmpty')
+                      : undefined
+                  }
+                />
+              </div>
             </div>
 
             {/* Center panel: Message thread.

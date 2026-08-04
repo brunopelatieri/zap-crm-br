@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useCan } from '@/hooks/use-can';
@@ -19,20 +20,41 @@ const PAGE_SIZE = 25;
  * directory list featuring a search bar", sem filtro de etiquetas —
  * isso já existe na página /contacts completa).
  *
- * Visibilidade (decisão D2 do plano): derivada das conversas, não uma
- * coluna nova em `contacts`.
+ * ## D2 FECHADA (SPEC 042): o filtro do agente é ERGONOMIA, não isolamento
+ *
+ * `contacts_select` é e continua sendo `is_account_member(account_id)`
+ * ([017:386](../../../supabase/migrations/017_account_sharing.sql#L386))
+ * — qualquer membro da conta lê a base inteira de contatos pela RLS. O
+ * filtro abaixo (resolver `contact_id` das conversas do agente e
+ * restringir `contacts` por `.in('id', ...)`) NÃO é controle de acesso:
+ * um agente com a `anon key` que já está no bundle obtém a base inteira
+ * com uma chamada direta ao PostgREST. Isso é sabido e aceito — a
+ * decisão está registrada em detalhe na
+ * [SPEC 042, §2](../../../docs/spec-042-supervisao-e-escopo-de-contatos.md#2-d2--f-42-b--o-isolamento-de-contatos-é-cosmético-e-a-tela-diz-o-contrário).
+ *
+ * Por quê endurecer NÃO compensa: contato é um ATIVO DA CONTA, não do
+ * agente — um contato recém-criado, ainda sem conversa, precisa
+ * continuar visível para quem o criou. Restringir por RLS quebraria
+ * esse fluxo, mudaria o `total_count` do RPC `filter_contacts_by_tags`
+ * (025) e exigiria retestar toda a paginação de `/contacts`. Nenhum
+ * conteúdo de conversa vaza aqui — só nome/telefone/empresa, que já é
+ * de conta.
+ *
+ * Então o filtro por agente existe só para PRIORIZAR: "mostre primeiro
+ * quem é meu" (o texto da UI reflete isso — ver `subtitleMine` — e não
+ * afirma isolamento nenhum). Ambos os papéis continuam podendo abrir
+ * `/contacts` e ver a base inteira.
+ *
  *   - admin/owner (`canViewAllConversations`) → todos os contatos da
  *     conta, igual à página /contacts.
- *   - agent → só contatos com pelo menos uma conversa ATRIBUÍDA A ELE.
- *     `contacts` não tem RLS restrita por atribuição (não carrega
- *     conteúdo de conversa — Fase 1 deliberadamente não mexeu nela),
- *     então essa restrição é aplicada aqui: resolve os `contact_id`
- *     das minhas conversas primeiro, depois filtra `contacts` por
+ *   - agent → contatos com pelo menos uma conversa ATRIBUÍDA A ELE
+ *     (ergonomia, não segurança — ver acima). Resolve os `contact_id`
+ *     das conversas dele primeiro, depois filtra `contacts` por
  *     `.in('id', ...)`. O índice único (account_id, contact_id) da
  *     migração 036 garante no máximo uma conversa por contato+conta,
- *     então este conjunto é do tamanho da minha carteira, não da base
- *     inteira — mesmo trade-off de escala que `lib/dashboard/queries.ts`
- *     já documenta para o resto do app.
+ *     então este conjunto é do tamanho da carteira do agente, não da
+ *     base inteira — mesmo trade-off de escala que
+ *     `lib/dashboard/queries.ts` já documenta para o resto do app.
  */
 export function ContactsDirectory() {
   const t = useTranslations('Inbox.contactsDirectory');
@@ -152,6 +174,17 @@ export function ContactsDirectory() {
           <p className="text-muted-foreground text-sm">
             {canViewAll ? t('subtitleAll') : t('subtitleMine')}
           </p>
+          {/* D2 (SPEC 042): o texto acima é ergonomia, não promessa de
+              isolamento — este link deixa explícito que a base inteira
+              de contatos da conta continua acessível. */}
+          {!canViewAll && (
+            <Link
+              href="/contacts"
+              className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+            >
+              {t('viewAllContactsHint')}
+            </Link>
+          )}
         </div>
         <div className="relative max-w-sm">
           <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />

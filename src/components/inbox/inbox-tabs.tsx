@@ -8,6 +8,15 @@ import { TAB_DEFINITIONS, type TabId } from '@/lib/inbox/tabs';
 interface InboxTabsProps {
   activeTab: TabId;
   onChange: (tab: TabId) => void;
+  /**
+   * Slot opcional ao final da barra, alinhado à direita. Hoje só o
+   * seletor "ver como" da aba Chat (SPEC 042, D7) — fica aqui, e não
+   * dentro deste componente, porque `InboxTabs` é deliberadamente
+   * genérico (sem noção de papel de conta); quem decide SE o seletor
+   * aparece é o chamador (`inbox/page.tsx`, sob
+   * `useCan('view-all-conversations')`).
+   */
+  trailing?: React.ReactNode;
 }
 
 // Ícone por aba — mora aqui (não em lib/inbox/tabs.ts) porque tabs.ts
@@ -28,7 +37,7 @@ const TAB_ICONS: Record<TabId, typeof MessageCircle> = {
  * A 3ª aba (Contacts) é compacta — só o ícone — porque é a de uso mais
  * raro das três; o rótulo vira só `aria-label` + `title`.
  */
-export function InboxTabs({ activeTab, onChange }: InboxTabsProps) {
+export function InboxTabs({ activeTab, onChange, trailing }: InboxTabsProps) {
   const t = useTranslations('Inbox.tabs');
 
   return (
@@ -67,6 +76,7 @@ export function InboxTabs({ activeTab, onChange }: InboxTabsProps) {
           </button>
         );
       })}
+      {trailing && <div className="ml-auto flex items-center">{trailing}</div>}
     </div>
   );
 }

@@ -207,18 +207,27 @@
       "conversationNoLongerAvailable": "Esta conversa não está mais disponível",
       "claimedByAnother": "Esta conversa acabou de ser atendida por outro agente",
       "claimFailed": "Não foi possível assumir esta conversa",
-      "networkError": "Não foi possível conectar ao servidor"
+      "networkError": "Não foi possível conectar ao servidor",
+      "viewingOthersInbox": "Vendo a carteira de {name}",
+      "backToMine": "Voltar às minhas conversas",
+      "viewerChatEmpty": "Conversas atribuídas a você aparecem aqui. Seu papel (Leitor) não recebe atribuições."
     },
     "tabs": {
       "tablistLabel": "Visões do Inbox",
       "chat": "Chat",
       "open": "Fila",
-      "contacts": "Contatos"
+      "contacts": "Contatos",
+      "viewAsMe": "Minhas conversas",
+      "viewAsAriaLabel": "Ver como",
+      "viewAsLoadingMembers": "Carregando colegas…",
+      "viewAsNoTeammates": "Nenhum colega nesta conta",
+      "viewAsUnknownMember": "Agente"
     },
     "contactsDirectory": {
       "title": "Contatos",
       "subtitleAll": "Todos os contatos da conta",
-      "subtitleMine": "Contatos das conversas atribuídas a você",
+      "subtitleMine": "Contatos das suas conversas",
+      "viewAllContactsHint": "Ver todos os contatos da conta",
       "searchPlaceholder": "Buscar por nome, telefone ou e-mail...",
       "loadError": "Falha ao carregar contatos",
       "noneMatch": "Nenhum contato corresponde à busca",
@@ -247,6 +256,7 @@
       "claimConversationShort": "Assumir conversa"
     },
     "messageThread": {
+      "assignedElsewhereWarning": "Esta conversa é de {name}. Enviar uma mensagem vai atribuí-la a você.",
       "backToConversations": "Voltar às conversas",
       "hideContactPanel": "Ocultar painel de contato",
       "showContactPanel": "Mostrar painel de contato",

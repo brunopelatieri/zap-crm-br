@@ -11,7 +11,19 @@ import type { Conversation } from '@/types';
 
 interface UseConversationFeedOptions {
   tab: ConversationTabId;
-  /** `null` enquanto a sessão ainda resolve — o fetch aguarda. */
+  /**
+   * `null` enquanto a sessão ainda resolve — o fetch aguarda.
+   *
+   * Para a aba "chat", NÃO é necessariamente a sessão: é o ALVO do
+   * predicado `assigned_agent_id = <alvo>`. Desde a SPEC 042 (D7), um
+   * admin/owner pode "ver como" outro agente — o chamador
+   * (`inbox/page.tsx`) resolve isso e passa o alvo efetivo aqui. Este
+   * hook não sabe (nem precisa saber) se é a própria sessão ou alguém
+   * observado: trocar o valor É o mecanismo de invalidação de cache —
+   * ele já está no array de dependências do efeito abaixo, então um
+   * novo alvo dispara um refetch completo (substituindo, nunca
+   * mesclando) automaticamente.
+   */
   userId: string | null;
   /**
    * Só busca quando `true`. As abas "Chat" e "Open" são lazy: a aba
@@ -56,6 +68,10 @@ interface UseConversationFeedResult {
  * O pai (`inbox/page.tsx`) chama este hook DUAS VEZES, uma por aba
  * conversacional, e é quem faz o roteamento de eventos realtime entre
  * as duas instâncias — este hook não sabe da outra aba.
+ *
+ * Também não sabe que a instância "chat" pode estar mostrando a
+ * carteira de outro agente (seletor "ver como", SPEC 042/D7) — para
+ * este hook, `userId` é só "o alvo do predicado", ver a doc do campo.
  */
 export function useConversationFeed({
   tab,

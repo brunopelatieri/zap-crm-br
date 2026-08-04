@@ -68,6 +68,14 @@ interface ConversationListProps {
   onClaim?: (conversation: Conversation) => void;
   /** Id da conversa em processo de reivindicação — bloqueia o botão e mostra o spinner nela. */
   claimingId?: string | null;
+  /**
+   * Substitui o texto padrão de "sem conversas" quando a lista está
+   * vazia (após filtros/busca). Hoje só o `viewer` na aba Chat usa isto
+   * (SPEC 042, D5): ele nunca é atribuído a nada, então a aba fica
+   * SEMPRE vazia, e sem um texto explicativo esse vazio é indistinguível
+   * de um erro de carregamento.
+   */
+  emptyMessageOverride?: string;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -97,6 +105,7 @@ export function ConversationList({
   showStatusFilter,
   onClaim,
   claimingId,
+  emptyMessageOverride,
 }: ConversationListProps) {
   const t = useTranslations('Inbox.conversationList');
   const { open: openTagPicker } = useTagPicker();
@@ -385,7 +394,7 @@ export function ConversationList({
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <p className="text-muted-foreground text-sm">
-              {t('noConversations')}
+              {emptyMessageOverride ?? t('noConversations')}
             </p>
           </div>
         ) : (
