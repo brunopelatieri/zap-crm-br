@@ -1100,7 +1100,7 @@ export default function InboxPage() {
                   onToggleTag={(id) => toggleTag(activeTab, id)}
                   onSelectCompany={(c) => setSelectedCompany(activeTab, c)}
                   onClearFilters={() => clearContactFilters(activeTab)}
-                  showStatusFilter={activeTab === 'open'}
+                  showStatusFilter
                   onClaim={activeTab === 'open' ? handleClaim : undefined}
                   claimingId={claimingId}
                   emptyMessageOverride={

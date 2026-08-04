@@ -14,6 +14,12 @@ import {
   X,
   UserPlus,
   Loader2,
+  MessagesSquare,
+  MessageCircleDashed,
+  MessageCircleMore,
+  MessageCircleWarning,
+  MessageCircleCheck,
+  type LucideIcon,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useTranslations } from 'next-intl';
@@ -55,9 +61,9 @@ interface ConversationListProps {
   onSelectCompany: (company: string | null) => void;
   onClearFilters: () => void;
   /**
-   * Dropdown de status/não-lidas. Só faz sentido dentro da fila (aba
-   * "Open") — a aba "Chat" mostra as MINHAS conversas em qualquer
-   * status, sem esse recorte adicional.
+   * Linha de botões de status/não-lidas. Hoje sempre `true` nas duas
+   * abas (Chat e Open) — mantido como prop porque um futuro modo sem
+   * esse recorte (ex.: uma aba de busca global) pode querer omiti-la.
    */
   showStatusFilter: boolean;
   /**
@@ -110,13 +116,43 @@ export function ConversationList({
   const t = useTranslations('Inbox.conversationList');
   const { open: openTagPicker } = useTagPicker();
 
-  const FILTER_OPTIONS: { label: string; value: InboxStatusFilter }[] = useMemo(
+  const FILTER_OPTIONS: {
+    label: string;
+    title: string;
+    value: InboxStatusFilter;
+    icon: LucideIcon;
+  }[] = useMemo(
     () => [
-      { label: t('filterAll'), value: 'all' },
-      { label: t('filterUnread'), value: 'unread' },
-      { label: t('filterOpen'), value: 'open' },
-      { label: t('filterPending'), value: 'pending' },
-      { label: t('filterClosed'), value: 'closed' },
+      {
+        label: t('filterAll'),
+        title: t('filterAllTitle'),
+        value: 'all',
+        icon: MessagesSquare,
+      },
+      {
+        label: t('filterUnread'),
+        title: t('filterUnreadTitle'),
+        value: 'unread',
+        icon: MessageCircleDashed,
+      },
+      {
+        label: t('filterOpen'),
+        title: t('filterOpenTitle'),
+        value: 'open',
+        icon: MessageCircleMore,
+      },
+      {
+        label: t('filterPending'),
+        title: t('filterPendingTitle'),
+        value: 'pending',
+        icon: MessageCircleWarning,
+      },
+      {
+        label: t('filterClosed'),
+        title: t('filterClosedTitle'),
+        value: 'closed',
+        icon: MessageCircleCheck,
+      },
     ],
     [t]
   );
@@ -141,18 +177,13 @@ export function ConversationList({
     return m;
   }, [tags]);
 
-  const filtered = useMemo(() => {
+  // Busca + etiquetas/empresa aplicados, mas SEM o recorte de status —
+  // é a base sobre a qual os contadores "(00)" de cada botão de status
+  // são calculados, para que troquem com a busca/etiquetas mas não
+  // fiquem presos ao botão de status atualmente selecionado.
+  const contactAndSearchFiltered = useMemo(() => {
     let result = conversations;
 
-    if (showStatusFilter) {
-      if (statusFilter === 'unread') {
-        result = result.filter((c) => c.unread_count > 0);
-      } else if (statusFilter !== 'all') {
-        result = result.filter((c) => c.status === statusFilter);
-      }
-    }
-
-    // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
       result = result.filter((c) =>
         matchesContactFilters(c, {
@@ -173,14 +204,34 @@ export function ConversationList({
     }
 
     return result;
-  }, [
-    conversations,
-    showStatusFilter,
-    statusFilter,
-    search,
-    selectedTagIds,
-    selectedCompany,
-  ]);
+  }, [conversations, search, selectedTagIds, selectedCompany]);
+
+  const statusCounts = useMemo(
+    () => ({
+      all: contactAndSearchFiltered.length,
+      unread: contactAndSearchFiltered.filter((c) => c.unread_count > 0).length,
+      open: contactAndSearchFiltered.filter((c) => c.status === 'open').length,
+      pending: contactAndSearchFiltered.filter((c) => c.status === 'pending')
+        .length,
+      closed: contactAndSearchFiltered.filter((c) => c.status === 'closed')
+        .length,
+    }),
+    [contactAndSearchFiltered]
+  );
+
+  const filtered = useMemo(() => {
+    let result = contactAndSearchFiltered;
+
+    if (showStatusFilter) {
+      if (statusFilter === 'unread') {
+        result = result.filter((c) => c.unread_count > 0);
+      } else if (statusFilter !== 'all') {
+        result = result.filter((c) => c.status === statusFilter);
+      }
+    }
+
+    return result;
+  }, [contactAndSearchFiltered, showStatusFilter, statusFilter]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -198,8 +249,6 @@ export function ConversationList({
 
   const hasContactFilters =
     selectedTagIds.length > 0 || selectedCompany !== null;
-
-  const activeFilter = FILTER_OPTIONS.find((o) => o.value === statusFilter);
 
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
@@ -219,34 +268,6 @@ export function ConversationList({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          {showStatusFilter && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs">
-                {activeFilter?.label ?? t('filterAll')}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="border-border bg-popover"
-              >
-                {FILTER_OPTIONS.map((opt) => (
-                  <DropdownMenuItem
-                    key={opt.value}
-                    onClick={() => onStatusFilterChange(opt.value)}
-                    className={cn(
-                      'text-sm',
-                      statusFilter === opt.value
-                        ? 'text-primary'
-                        : 'text-popover-foreground'
-                    )}
-                  >
-                    {opt.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
           {tags.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -337,6 +358,35 @@ export function ConversationList({
             </DropdownMenu>
           )}
         </div>
+
+        {showStatusFilter && (
+          <div className="flex w-full flex-wrap items-center gap-1">
+            {FILTER_OPTIONS.map((opt) => {
+              const Icon = opt.icon;
+              const count = statusCounts[opt.value];
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  title={opt.title}
+                  onClick={() => onStatusFilterChange(opt.value)}
+                  className={cn(
+                    'inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md border px-1.5 text-xs whitespace-nowrap',
+                    statusFilter === opt.value
+                      ? 'border-primary/50 bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{opt.label}</span>
+                  <span className="tabular-nums opacity-70">
+                    ({String(count).padStart(2, '0')})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {hasContactFilters && (
           <div className="flex flex-wrap items-center gap-1">
