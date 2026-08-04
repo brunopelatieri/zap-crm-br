@@ -825,7 +825,7 @@ export function MessageComposer({
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
       {!draft && !recording && (
-        <p className="text-muted-foreground mt-1 pl-[5.5rem] text-[10px]">
+        <p className="text-muted-foreground mt-1 text-[10px]">
           {t('draftHint')}
         </p>
       )}
