@@ -235,7 +235,7 @@ export function MessageThread({
       .find((m) => m.sender_type === 'customer');
 
     if (!lastCustomerMsg)
-      return { expired: true, remaining: 'No customer messages' };
+      return { expired: true, remaining: 'Sem mensagem' };
 
     const hoursSince = differenceInHours(
       new Date(),

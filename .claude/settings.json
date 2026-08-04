@@ -37,7 +37,8 @@
       "Bash(python -c ' *)",
       "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit 2>&1 | Select-Object -First 60; Write-Output \"TSC=$LASTEXITCODE\")",
       "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx next build 2>&1 | Select-String -Pattern \"Failed to compile|Error|Compiled successfully|Type error\" ; Write-Output \"BUILD=$LASTEXITCODE\")",
-      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx eslint src --ext .ts,.tsx 2>&1 | Select-Object -Last 4)"
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx eslint src --ext .ts,.tsx 2>&1 | Select-Object -Last 4)",
+      "PowerShell(cd \"e:\\\\Documentos\\\\0004_GitHub\\\\zap-crm-br\"; npx tsc --noEmit; Write-Output \"TSC=$LASTEXITCODE\"; npx vitest run 2>&1 | Select-Object -Last 8)"
     ]
   }
 }

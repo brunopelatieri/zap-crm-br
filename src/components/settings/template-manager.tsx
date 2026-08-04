@@ -86,7 +86,7 @@ interface TemplateFormData {
 const emptyForm: TemplateFormData = {
   name: '',
   category: 'Marketing',
-  language: 'en_US',
+  language: 'pt_BR',
   header_format: 'none',
   header_content: '',
   header_media_url: '',

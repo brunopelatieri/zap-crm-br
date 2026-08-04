@@ -84,9 +84,11 @@ export function useInboxTabs(): UseInboxTabsResult {
   const [filters, setFilters] = useState<Record<ConversationTabId, TabFilters>>(
     () => ({
       chat: emptyFilters('all'),
-      // Mantém o default histórico do filtro único (antes das abas, o
-      // dropdown de status começava em "Abertas").
-      open: emptyFilters('open'),
+      // A fila abre mostrando TODAS as conversas (abertas, pendentes e
+      // encerradas), não só "Abertas" — o agente decide o recorte pelo
+      // próprio dropdown depois. Historicamente (antes das abas) o
+      // filtro único começava em 'open'; mudado a pedido do usuário.
+      open: emptyFilters('all'),
     })
   );
 
