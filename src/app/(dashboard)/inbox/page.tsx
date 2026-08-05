@@ -4,7 +4,10 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
-import { CONVERSATION_SELECT, normalizeConversation } from '@/lib/inbox/conversations';
+import {
+  CONVERSATION_SELECT,
+  normalizeConversation,
+} from '@/lib/inbox/conversations';
 import {
   matchesConversationTab,
   type ConversationTabId,
@@ -33,6 +36,7 @@ import { ContactsDirectory } from '@/components/inbox/contacts-directory';
 import { MessageThread } from '@/components/inbox/message-thread';
 import { ContactSidebar } from '@/components/inbox/contact-sidebar';
 import { TagPickerProvider } from '@/components/inbox/tag-picker/tag-picker-context';
+import { DealPickerProvider } from '@/components/inbox/deal-picker/deal-picker-context';
 import { toast } from 'sonner';
 import { WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -210,14 +214,16 @@ export default function InboxPage() {
   const convTabMapRef = useRef<Map<string, ConversationTabId>>(new Map());
   useEffect(() => {
     const ids = new Set(chatFeed.conversations.map((c) => c.id));
-    for (const c of chatFeed.conversations) convTabMapRef.current.set(c.id, 'chat');
+    for (const c of chatFeed.conversations)
+      convTabMapRef.current.set(c.id, 'chat');
     for (const [id, tab] of convTabMapRef.current) {
       if (tab === 'chat' && !ids.has(id)) convTabMapRef.current.delete(id);
     }
   }, [chatFeed.conversations]);
   useEffect(() => {
     const ids = new Set(openFeed.conversations.map((c) => c.id));
-    for (const c of openFeed.conversations) convTabMapRef.current.set(c.id, 'open');
+    for (const c of openFeed.conversations)
+      convTabMapRef.current.set(c.id, 'open');
     for (const [id, tab] of convTabMapRef.current) {
       if (tab === 'open' && !ids.has(id)) convTabMapRef.current.delete(id);
     }
@@ -582,13 +588,22 @@ export default function InboxPage() {
           activeConversationRef.current?.id === conv.id &&
           activeTabRef.current !== targetTab
         ) {
-          const params = new URLSearchParams(searchParamsRef.current.toString());
+          const params = new URLSearchParams(
+            searchParamsRef.current.toString()
+          );
           params.set('tab', targetTab);
           router.replace(`/inbox?${params.toString()}`, { scroll: false });
         }
       }
     },
-    [tabOfConversation, visitedTabs, patchFeed, readFeed, hydrateConversation, router]
+    [
+      tabOfConversation,
+      visitedTabs,
+      patchFeed,
+      readFeed,
+      hydrateConversation,
+      router,
+    ]
   );
 
   // Subscribe to realtime. The `isConnected` flag below feeds the
@@ -910,10 +925,9 @@ export default function InboxPage() {
       if (claimingId) return; // um de cada vez
       setClaimingId(conv.id);
       try {
-        const res = await fetch(
-          `/api/inbox/conversations/${conv.id}/claim`,
-          { method: 'POST' }
-        );
+        const res = await fetch(`/api/inbox/conversations/${conv.id}/claim`, {
+          method: 'POST',
+        });
         const json = await res.json().catch(() => ({}));
 
         if (!res.ok) {
@@ -1042,81 +1056,88 @@ export default function InboxPage() {
         // `activeTab` está narrowed para ConversationTabId aqui — TabId
         // é 'chat' | 'open' | 'contacts', e o branch acima cobriu 'contacts'.
         <TagPickerProvider onTagsChanged={handleContactTagsChanged}>
-          <div className="flex flex-1 overflow-hidden">
-            {/* Left panel: Conversation list.
+          {/* Sem prop de callback: nenhum estado desta página depende
+              de `deals`. Quem precisa do negócio criado é o trigger —
+              a ContactSidebar, única dona dessa lista — e ele passa o
+              seu próprio callback em `open(contact, { onCreated })`. */}
+          <DealPickerProvider>
+            <div className="flex flex-1 overflow-hidden">
+              {/* Left panel: Conversation list.
               Hidden on mobile when a conversation is selected so the
               thread can occupy the full width. Always visible on lg+. */}
-            <div
-              className={cn(
-                'flex h-full flex-1 flex-col lg:flex-none',
-                hasActiveConv ? 'hidden lg:flex' : 'flex'
-              )}
-            >
-              {/* "Vendo a carteira de {nome}" (D7). Só quando o admin
+              <div
+                className={cn(
+                  'flex h-full flex-1 flex-col lg:flex-none',
+                  hasActiveConv ? 'hidden lg:flex' : 'flex'
+                )}
+              >
+                {/* "Vendo a carteira de {nome}" (D7). Só quando o admin
                   está de fato observando outra pessoa — nunca aparece
                   para o caso comum (viewAsUserId nulo ou igual à
                   própria sessão), então a maioria dos usuários nunca vê
                   esta faixa. */}
-              {activeTab === 'chat' && chatTarget && chatTarget !== userId && (
-                <div className="border-primary/20 bg-primary/5 flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
-                  <span className="text-foreground truncate">
-                    {t('viewingOthersInbox', {
-                      name:
-                        accountMembers.find((m) => m.user_id === chatTarget)
-                          ?.full_name ?? tTabs('viewAsUnknownMember'),
-                    })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleViewAsChange(null)}
-                    className="text-primary shrink-0 font-medium hover:underline"
-                  >
-                    {t('backToMine')}
-                  </button>
-                </div>
-              )}
-              {/* `min-h-0 flex-1`: `ConversationList` é `h-full` por
+                {activeTab === 'chat' &&
+                  chatTarget &&
+                  chatTarget !== userId && (
+                    <div className="border-primary/20 bg-primary/5 flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
+                      <span className="text-foreground truncate">
+                        {t('viewingOthersInbox', {
+                          name:
+                            accountMembers.find((m) => m.user_id === chatTarget)
+                              ?.full_name ?? tTabs('viewAsUnknownMember'),
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleViewAsChange(null)}
+                        className="text-primary shrink-0 font-medium hover:underline"
+                      >
+                        {t('backToMine')}
+                      </button>
+                    </div>
+                  )}
+                {/* `min-h-0 flex-1`: `ConversationList` é `h-full` por
                   dentro, o que só funciona porque este wrapper (e não o
                   pai `flex-col`) lhe dá uma altura definida — sem ele, a
                   lista somaria 100% da altura do pai POR CIMA da faixa
                   "vendo a carteira de" acima, transbordando o painel. */}
-              <div className="min-h-0 flex-1">
-                <ConversationList
-                  tab={activeTab}
-                  activeConversationId={activeConversation?.id ?? null}
-                  onSelect={handleSelectConversation}
-                  conversations={
-                    activeTab === 'chat'
-                      ? chatFeed.conversations
-                      : openFeed.conversations
-                  }
-                  loading={
-                    activeTab === 'chat' ? chatFeed.loading : openFeed.loading
-                  }
-                  tags={tags}
-                  filters={filters[activeTab]}
-                  onSearchChange={(v) => setSearch(activeTab, v)}
-                  onStatusFilterChange={(v) => setStatusFilter(activeTab, v)}
-                  onToggleTag={(id) => toggleTag(activeTab, id)}
-                  onSelectCompany={(c) => setSelectedCompany(activeTab, c)}
-                  onClearFilters={() => clearContactFilters(activeTab)}
-                  showStatusFilter
-                  onClaim={activeTab === 'open' ? handleClaim : undefined}
-                  claimingId={claimingId}
-                  emptyMessageOverride={
-                    // D5 (SPEC 042): o `viewer` nunca é atribuído a nada
-                    // (não pode responder, não pode reivindicar) — a aba
-                    // Chat dele fica sempre vazia, e sem isto o vazio é
-                    // indistinguível de um erro de carregamento.
-                    activeTab === 'chat' && isViewer
-                      ? t('viewerChatEmpty')
-                      : undefined
-                  }
-                />
+                <div className="min-h-0 flex-1">
+                  <ConversationList
+                    tab={activeTab}
+                    activeConversationId={activeConversation?.id ?? null}
+                    onSelect={handleSelectConversation}
+                    conversations={
+                      activeTab === 'chat'
+                        ? chatFeed.conversations
+                        : openFeed.conversations
+                    }
+                    loading={
+                      activeTab === 'chat' ? chatFeed.loading : openFeed.loading
+                    }
+                    tags={tags}
+                    filters={filters[activeTab]}
+                    onSearchChange={(v) => setSearch(activeTab, v)}
+                    onStatusFilterChange={(v) => setStatusFilter(activeTab, v)}
+                    onToggleTag={(id) => toggleTag(activeTab, id)}
+                    onSelectCompany={(c) => setSelectedCompany(activeTab, c)}
+                    onClearFilters={() => clearContactFilters(activeTab)}
+                    showStatusFilter
+                    onClaim={activeTab === 'open' ? handleClaim : undefined}
+                    claimingId={claimingId}
+                    emptyMessageOverride={
+                      // D5 (SPEC 042): o `viewer` nunca é atribuído a nada
+                      // (não pode responder, não pode reivindicar) — a aba
+                      // Chat dele fica sempre vazia, e sem isto o vazio é
+                      // indistinguível de um erro de carregamento.
+                      activeTab === 'chat' && isViewer
+                        ? t('viewerChatEmpty')
+                        : undefined
+                    }
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Center panel: Message thread.
+              {/* Center panel: Message thread.
               Hidden on mobile when no conversation is selected so the
               list can occupy the full width. Always visible on lg+
               (shows its own empty-state if no thread is picked yet).
@@ -1126,39 +1147,40 @@ export default function InboxPage() {
               long URL in a message body) forces the flex child past
               its share and pushes the contact-sidebar panel off-screen
               on the right. Issue #165. */}
-            <div
-              className={cn(
-                'flex h-full min-w-0 flex-1 lg:flex',
-                hasActiveConv ? 'flex' : 'hidden lg:flex'
-              )}
-            >
-              <MessageThread
-                conversation={activeConversation}
-                contact={activeContact}
-                messages={messages}
-                onMessagesLoaded={handleMessagesLoaded}
-                onNewMessage={handleNewMessage}
-                onUpdateMessage={handleUpdateMessage}
-                onStatusChange={handleStatusChange}
-                onAssignChange={handleAssignChange}
-                onBack={handleCloseConversation}
-                resyncToken={resyncToken}
-                onRefresh={handleManualRefresh}
-                contactPanelOpen={contactPanelOpen}
-                onToggleContactPanel={handleToggleContactPanel}
-              />
-            </div>
+              <div
+                className={cn(
+                  'flex h-full min-w-0 flex-1 lg:flex',
+                  hasActiveConv ? 'flex' : 'hidden lg:flex'
+                )}
+              >
+                <MessageThread
+                  conversation={activeConversation}
+                  contact={activeContact}
+                  messages={messages}
+                  onMessagesLoaded={handleMessagesLoaded}
+                  onNewMessage={handleNewMessage}
+                  onUpdateMessage={handleUpdateMessage}
+                  onStatusChange={handleStatusChange}
+                  onAssignChange={handleAssignChange}
+                  onBack={handleCloseConversation}
+                  resyncToken={resyncToken}
+                  onRefresh={handleManualRefresh}
+                  contactPanelOpen={contactPanelOpen}
+                  onToggleContactPanel={handleToggleContactPanel}
+                />
+              </div>
 
-            {/* Right panel: Contact sidebar — desktop only, and only when the
+              {/* Right panel: Contact sidebar — desktop only, and only when the
               agent hasn't collapsed it via the thread-header toggle (#258).
               On mobile it's always hidden (the `lg:block` below), so the
               toggle — which is itself desktop-only — never affects it. */}
-            {contactPanelOpen && (
-              <div className="hidden h-full lg:block">
-                <ContactSidebar contact={activeContact} />
-              </div>
-            )}
-          </div>
+              {contactPanelOpen && (
+                <div className="hidden h-full lg:block">
+                  <ContactSidebar contact={activeContact} />
+                </div>
+              )}
+            </div>
+          </DealPickerProvider>
         </TagPickerProvider>
       )}
     </div>

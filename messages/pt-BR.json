@@ -390,7 +390,8 @@
       "noTags": "Nenhuma etiqueta",
       "noDeals": "Nenhum negócio",
       "addNotePlaceholder": "Adicionar uma nota...",
-      "manageTags": "Gerenciar etiquetas"
+      "manageTags": "Gerenciar etiquetas",
+      "newDeal": "Novo negócio"
     },
     "tagPicker": {
       "title": "Etiquetas de {name}",
@@ -407,6 +408,20 @@
       "failedToAssign": "Falha ao atribuir etiqueta",
       "failedToRemove": "Falha ao remover etiqueta",
       "failedToCreate": "Falha ao criar etiqueta"
+    },
+    "dealPicker": {
+      "title": "Novo negócio — {name}",
+      "description": "O negócio será vinculado a este contato.",
+      "pipeline": "Funil",
+      "selectPipeline": "Selecione um funil",
+      "selectStage": "Selecione uma etapa",
+      "moreOptions": "Mais opções",
+      "noPipelines": "Nenhum funil configurado nesta conta.",
+      "noStages": "Este funil ainda não tem etapas.",
+      "goToPipelines": "Configurar funis",
+      "failedToLoad": "Falha ao carregar os funis",
+      "stageGone": "A etapa escolhida não existe mais. Selecione outra.",
+      "onlyAgentsCanCreate": "Você não tem permissão para criar negócios."
     },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",
@@ -677,8 +692,8 @@
       "notes": "Notas",
       "notesPlaceholder": "Adicionar notas...",
       "status": "Status",
-      "markAsWon": "Marcar como ganho",
-      "markAsLost": "Marcar como perdido",
+      "markAsWon": "Ganho",
+      "markAsLost": "Perdido",
       "reopenDeal": "Reabrir negócio",
       "cancel": "Cancelar",
       "saving": "Salvando...",

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { CURRENCIES } from '@/lib/currency';
+import { createDeal } from '@/lib/pipelines/deals';
 import type {
   Contact,
   Conversation,
@@ -179,10 +180,7 @@ export function DealForm({
         .maybeSingle();
       if (cancelled) return;
       if (error) {
-        console.error(
-          '[deal-form] conversation lookup failed:',
-          error.message
-        );
+        console.error('[deal-form] conversation lookup failed:', error.message);
         setConversationLink({ state: 'error' });
         return;
       }
@@ -241,13 +239,21 @@ export function DealForm({
         setSaving(false);
         return;
       }
-      const { error } = await supabase.from('deals').insert({
-        ...payload,
-        user_id: user.id,
-        account_id: accountId,
-        status: 'open',
-      });
-      if (error) {
+      try {
+        await createDeal(supabase, {
+          userId: user.id,
+          accountId,
+          pipelineId,
+          stageId,
+          contactId,
+          title: payload.title,
+          value: payload.value,
+          currency: payload.currency,
+          assignedTo: payload.assigned_to,
+          notes: payload.notes,
+          expectedCloseDate: payload.expected_close_date,
+        });
+      } catch {
         toast.error(t('toastFailedCreate'));
         setSaving(false);
         return;

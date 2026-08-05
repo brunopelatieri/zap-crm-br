@@ -43,7 +43,10 @@
       "Bash(git checkout *)",
       "Bash(chromium-cli --session zapinbox)",
       "Bash(npx --no-install playwright --version)",
-      "Read(//c/Users/Bruno P Goulart/.cache/**)"
+      "Read(//c/Users/Bruno P Goulart/.cache/**)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(Object.keys\\(p.scripts\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(npm run *)",
+      "Bash(npm test *)"
     ]
   }
 }

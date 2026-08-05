@@ -390,7 +390,8 @@
       "noTags": "No tags",
       "noDeals": "No deals",
       "addNotePlaceholder": "Add a note...",
-      "manageTags": "Manage tags"
+      "manageTags": "Manage tags",
+      "newDeal": "New deal"
     },
     "tagPicker": {
       "title": "Tags for {name}",
@@ -407,6 +408,20 @@
       "failedToAssign": "Failed to assign tag",
       "failedToRemove": "Failed to remove tag",
       "failedToCreate": "Failed to create tag"
+    },
+    "dealPicker": {
+      "title": "New deal — {name}",
+      "description": "The deal will be linked to this contact.",
+      "pipeline": "Pipeline",
+      "selectPipeline": "Select a pipeline",
+      "selectStage": "Select a stage",
+      "moreOptions": "More options",
+      "noPipelines": "No pipelines set up in this account.",
+      "noStages": "This pipeline has no stages yet.",
+      "goToPipelines": "Set up pipelines",
+      "failedToLoad": "Failed to load pipelines",
+      "stageGone": "The selected stage no longer exists. Pick another.",
+      "onlyAgentsCanCreate": "You don't have permission to create deals."
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",

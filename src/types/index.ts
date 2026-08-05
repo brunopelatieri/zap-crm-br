@@ -396,6 +396,8 @@ export interface MessageTemplate {
 export interface Pipeline {
   id: string;
   user_id: string;
+  /** Chave de tenancy — NOT NULL desde a migração 017. */
+  account_id: string;
   name: string;
   created_at: string;
 }
@@ -414,6 +416,8 @@ export type DealStatus = 'open' | 'won' | 'lost';
 export interface Deal {
   id: string;
   user_id: string;
+  /** Chave de tenancy — NOT NULL desde a migração 017. */
+  account_id: string;
   pipeline_id: string;
   stage_id: string;
   /**

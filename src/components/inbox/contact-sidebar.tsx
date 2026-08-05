@@ -21,6 +21,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { useTagPicker } from '@/components/inbox/tag-picker/tag-picker-context';
+import { useDealPicker } from '@/components/inbox/deal-picker/deal-picker-context';
+import { canSendMessages } from '@/lib/auth/roles';
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -29,9 +31,11 @@ interface ContactSidebarProps {
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations('Inbox.sidebar');
   const tThread = useTranslations('Inbox.messageThread');
+  const tDealPicker = useTranslations('Inbox.dealPicker');
 
-  const { accountId } = useAuth();
+  const { accountId, accountRole } = useAuth();
   const { open: openTagPicker } = useTagPicker();
+  const { open: openDealPicker } = useDealPicker();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -45,6 +49,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   // efeito colateral, isso também elimina uma query por troca de
   // conversa.
   const tags = contact?.tags ?? [];
+
+  // A política `deals_insert` (migração 017) exige agent+ — ao
+  // contrário das etiquetas, cujo catálogo é admin+. Negócio é dado
+  // operacional; funil é configuração de conta.
+  const canCreateDeal = accountRole ? canSendMessages(accountRole) : false;
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -75,6 +84,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  // Único destino da criação: esta lista é local, não vive no estado
+  // da página (deals não está em CONVERSATION_SELECT nem alimenta
+  // filtro nenhum da lista de conversas). A ordem espelha a query de
+  // `fetchContactData` — `created_at desc`, o mais novo no topo.
+  const handleDealCreated = useCallback((deal: Deal) => {
+    setDeals((prev) => [deal, ...prev]);
+  }, []);
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -228,6 +245,38 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase">
               <DollarSign className="h-3 w-3" />
               {tSidebar('deals')}
+              {/* Não usa <GatedButton>: aquele componente monta o
+                  tooltip a partir de um template em inglês
+                  hard-coded ("Read-only — your role can't …"), o que
+                  violaria o requisito de i18n desta entrega. Aqui
+                  aplicamos a mesma técnica dele — o `title` vai no
+                  <span> e não no <button>, porque navegadores não
+                  disparam mouseover em controle desabilitado — com a
+                  string vinda do dicionário. Mesmo caminho já usado
+                  no tag-picker-dialog. */}
+              <span
+                className={cn(
+                  'ml-auto inline-flex',
+                  !canCreateDeal && 'cursor-not-allowed'
+                )}
+                title={
+                  canCreateDeal
+                    ? tSidebar('newDeal')
+                    : tDealPicker('onlyAgentsCanCreate')
+                }
+              >
+                <button
+                  type="button"
+                  disabled={!canCreateDeal}
+                  onClick={() =>
+                    openDealPicker(contact, { onCreated: handleDealCreated })
+                  }
+                  aria-label={tSidebar('newDeal')}
+                  className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-5 w-5 items-center justify-center rounded transition-colors disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              </span>
             </div>
             <div className="mt-2 space-y-2">
               {deals.length === 0 ? (
