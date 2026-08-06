@@ -68,7 +68,12 @@
       "Bash(perl -0pi -e 's/  if \\\\\\(hasCard\\\\\\(to, conversationId\\\\\\)\\\\\\) return state;\\\\n//' src/lib/inbox/assignment-board.ts)",
       "Bash(cp /tmp/ab-backup.ts src/lib/inbox/assignment-board.ts)",
       "Bash(perl -0pi -e 's/  if \\\\\\(!hasCard\\\\\\(tgt, conversationId\\\\\\)\\\\\\) return state;\\\\n//' src/lib/inbox/assignment-board.ts)",
-      "Bash(rm /tmp/ab-backup.ts)"
+      "Bash(rm /tmp/ab-backup.ts)",
+      "mcp__rs__get_project_url",
+      "mcp__rs__list_tables",
+      "mcp__rs__list_migrations",
+      "mcp__rs__apply_migration",
+      "mcp__rs__get_advisors"
     ],
     "additionalDirectories": [
       "e:\\Documentos\\0004_GitHub\\zap-crm-br\\.claude"

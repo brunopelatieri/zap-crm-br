@@ -14,6 +14,7 @@ import { Check, Inbox as InboxIcon, Layers, MoreVertical } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -163,29 +164,36 @@ export function ConversationCard({
                 {t('assignMenuOpen')}
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-border" />
-              <DropdownMenuLabel className="text-muted-foreground text-xs">
-                {t('assignMenuTitle')}
-              </DropdownMenuLabel>
-              {assignTargets.map((target) => {
-                const isCurrent = target.id === columnId;
-                return (
-                  <DropdownMenuItem
-                    key={target.id}
-                    disabled={isCurrent}
-                    onClick={() => onAssign(conversation.id, target.id)}
-                    className={cn(
-                      'text-sm',
-                      isCurrent ? 'text-primary' : 'text-popover-foreground'
-                    )}
-                  >
-                    {target.isQueue && (
-                      <InboxIcon className="mr-2 h-3 w-3 shrink-0" />
-                    )}
-                    <span className="flex-1 truncate">{target.label}</span>
-                    {isCurrent && <Check className="ml-2 h-3 w-3 shrink-0" />}
-                  </DropdownMenuItem>
-                );
-              })}
+              {/* DropdownMenuGroup (base-ui Menu.Group) é OBRIGATÓRIO: o
+                  DropdownMenuLabel abaixo é o Menu.GroupLabel do base-ui,
+                  que exige um Menu.Group ancestral e lança erro sem ele. */}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-muted-foreground text-xs">
+                  {t('assignMenuTitle')}
+                </DropdownMenuLabel>
+                {assignTargets.map((target) => {
+                  const isCurrent = target.id === columnId;
+                  return (
+                    <DropdownMenuItem
+                      key={target.id}
+                      disabled={isCurrent}
+                      onClick={() => onAssign(conversation.id, target.id)}
+                      className={cn(
+                        'text-sm',
+                        isCurrent ? 'text-primary' : 'text-popover-foreground'
+                      )}
+                    >
+                      {target.isQueue && (
+                        <InboxIcon className="mr-2 h-3 w-3 shrink-0" />
+                      )}
+                      <span className="flex-1 truncate">{target.label}</span>
+                      {isCurrent && (
+                        <Check className="ml-2 h-3 w-3 shrink-0" />
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
