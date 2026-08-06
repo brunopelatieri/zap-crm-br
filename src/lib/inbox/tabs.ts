@@ -1,5 +1,6 @@
 // ============================================================
-// Predicados e definições das 3 abas do Inbox (Chat / Open / Contacts).
+// Predicados e definições das 4 abas do Inbox (Chat / Open / Board /
+// Contacts).
 //
 // Módulo puro — sem React, sem Supabase — para poder ser testado
 // isoladamente (src/lib/inbox/tabs.test.ts) e importado tanto pelos
@@ -9,17 +10,29 @@
 // migração 039 (`can_access_conversation`, `conversations_select`). O
 // que está aqui só decide QUAL FATIA das linhas que o servidor já
 // deixaria o chamador ver deve ser pedida/mostrada em cada aba —
-// filtrar no cliente nunca substitui a policy do banco.
+// filtrar no cliente nunca substitui a policy do banco. `minRole` em
+// `TabDefinition` (a aba "Board", SPEC 043) segue a mesma regra: existe
+// só para não oferecer uma aba que a RLS deixaria vazia, nunca como
+// fronteira de segurança.
 // ============================================================
 
-export type ConversationTabId = 'chat' | 'open';
-export type TabId = ConversationTabId | 'contacts';
+import { hasMinRole, type AccountRole } from '@/lib/auth/roles';
 
-export const TAB_IDS: readonly TabId[] = ['chat', 'open', 'contacts'] as const;
+export type ConversationTabId = 'chat' | 'open';
+export type TabId = ConversationTabId | 'board' | 'contacts';
+
+export const TAB_IDS: readonly TabId[] = [
+  'chat',
+  'open',
+  'board',
+  'contacts',
+] as const;
 
 /** Type-narrow um valor desconhecido (ex.: `?tab=` da URL) para TabId. */
 export function isTabId(value: unknown): value is TabId {
-  return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value);
+  return (
+    typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
+  );
 }
 
 /** `tab` é uma das duas abas que listam conversas (não "contacts"). */
@@ -38,13 +51,55 @@ export interface TabDefinition {
   id: TabId;
   /** Chave sob `Inbox.tabs.*` — o rótulo/aria-label vive no i18n. */
   labelKey: string;
+  /**
+   * Papel mínimo para a aba SEQUER APARECER. Ausente = todos os
+   * membros. Não é controle de acesso (ver cabeçalho do arquivo) — é só
+   * o que decide o que renderizar/oferecer.
+   */
+  minRole?: AccountRole;
 }
 
 export const TAB_DEFINITIONS: readonly TabDefinition[] = [
   { id: 'chat', labelKey: 'chat' },
   { id: 'open', labelKey: 'open' },
+  // Quadro de atribuição (SPEC 043) — logo após "Fila". `admin+` porque
+  // a RLS de `conversations_select` (039) não deixa um `agent` ler a
+  // carteira dos colegas: a aba ficaria com colunas vazias sem erro.
+  { id: 'board', labelKey: 'board', minRole: 'admin' },
   { id: 'contacts', labelKey: 'contacts' },
 ];
+
+/** Definições visíveis a um papel — filtra por `minRole` (SPEC 043). */
+export function visibleTabDefinitions(
+  role: AccountRole | null
+): readonly TabDefinition[] {
+  return TAB_DEFINITIONS.filter(
+    (def) => !def.minRole || (role !== null && hasMinRole(role, def.minRole))
+  );
+}
+
+/**
+ * Resolve o valor de `?tab=` da URL para a aba a exibir, degradando
+ * uma aba que o papel atual não pode ver para `DEFAULT_TAB` (SPEC 043,
+ * §3.7). Devolve `null` enquanto o papel ainda está carregando — nesse
+ * meio-tempo o chamador deve segurar o render (esqueleto), não assumir
+ * `DEFAULT_TAB`: um admin com deep link para `?tab=board` não pode ver
+ * a "Fila" piscar antes do quadro, e a URL não pode ser reescrita no
+ * meio do caminho.
+ */
+export function resolveTab(
+  raw: string | null,
+  role: AccountRole | null,
+  profileLoading: boolean
+): TabId | null {
+  if (!isTabId(raw)) return DEFAULT_TAB;
+  if (profileLoading) return null;
+  const def = TAB_DEFINITIONS.find((d) => d.id === raw);
+  if (def?.minRole && (role === null || !hasMinRole(role, def.minRole))) {
+    return DEFAULT_TAB;
+  }
+  return raw;
+}
 
 /**
  * Descreve o filtro extra a aplicar numa query de `conversations` para

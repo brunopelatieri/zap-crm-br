@@ -46,7 +46,32 @@
       "Read(//c/Users/Bruno P Goulart/.cache/**)",
       "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(Object.keys\\(p.scripts\\).join\\('\\\\n'\\)\\)\")",
       "Bash(npm run *)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(xargs grep -liE \"claim_conversation|RLS|assigned_agent\")",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit=$?\")",
+      "mcp__claude_ai_Supabase__list_projects",
+      "Bash(cd \"e:/Documentos/0004_GitHub/zap-crm-br\" && rm .claude/mcp.json && git status --porcelain .gitignore .mcp.json .claude/mcp.json)",
+      "mcp__vn__get_project_url",
+      "mcp__vn__execute_sql",
+      "mcp__vn__get_advisors",
+      "mcp__vn__list_migrations",
+      "Bash(chromium-cli --help)",
+      "Bash(curl -s -o /dev/null -w \"PORT3000=%{http_code}\\\\n\" http://localhost:3000 --max-time 2)",
+      "Bash(tee /tmp/nextdev.log)",
+      "Bash(curl -s -o /dev/null -w \"PORT3000=%{http_code}\\\\n\" http://localhost:3000 --max-time 3)",
+      "Read(//c/Users/BRUNOP~1/AppData/Local/Temp/claude/e--Documentos-0004-GitHub-zap-crm-br/fd61a385-a9f7-4af0-aeb9-b9b1560fa151/tasks/**)",
+      "Bash(xargs grep -l \"Announcements\")",
+      "Bash(xargs grep -ln \"select\")",
+      "Bash(xargs cat)",
+      "Bash(cp src/lib/inbox/assignment-board.ts /tmp/ab-backup.ts)",
+      "Bash(perl -0pi -e 's/  if \\\\\\(hasCard\\\\\\(to, conversationId\\\\\\)\\\\\\) return state;\\\\n//' src/lib/inbox/assignment-board.ts)",
+      "Bash(cp /tmp/ab-backup.ts src/lib/inbox/assignment-board.ts)",
+      "Bash(perl -0pi -e 's/  if \\\\\\(!hasCard\\\\\\(tgt, conversationId\\\\\\)\\\\\\) return state;\\\\n//' src/lib/inbox/assignment-board.ts)",
+      "Bash(rm /tmp/ab-backup.ts)"
+    ],
+    "additionalDirectories": [
+      "e:\\Documentos\\0004_GitHub\\zap-crm-br\\.claude"
     ]
   }
 }

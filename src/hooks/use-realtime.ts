@@ -27,11 +27,31 @@ interface RealtimeEvent<T> {
   old: Partial<T>;
 }
 
+/** Tabelas que este hook sabe assinar. */
+export type RealtimeTable = 'messages' | 'conversations';
+
+const DEFAULT_TABLES: readonly RealtimeTable[] = ['messages', 'conversations'];
+
 interface UseRealtimeOptions {
   channelName: string;
   onMessageEvent?: (event: RealtimeEvent<Message>) => void;
   onConversationEvent?: (event: RealtimeEvent<Conversation>) => void;
   enabled?: boolean;
+  /**
+   * Quais tabelas assinar. Default: as duas (comportamento histórico).
+   *
+   * Existe porque uma assinatura de `messages` não é de graça: numa
+   * conta ativa, TODA mensagem que entra ou sai é empurrada pelo
+   * WebSocket para cada assinante. Um consumidor que só observa
+   * `conversations` — como o quadro de atribuição (SPEC 043) — pagava
+   * esse tráfego para descartá-lo no `onMessageRef.current?.()`, já que
+   * antes as duas assinaturas eram incondicionais.
+   *
+   * Pode ser passado inline (`tables={['conversations']}`): a
+   * dependência do efeito é a forma serializada do array, não a sua
+   * identidade, então um literal novo a cada render não resubscreve.
+   */
+  tables?: readonly RealtimeTable[];
 }
 
 export function useRealtime({
@@ -39,6 +59,7 @@ export function useRealtime({
   onMessageEvent,
   onConversationEvent,
   enabled = true,
+  tables = DEFAULT_TABLES,
 }: UseRealtimeOptions) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -55,14 +76,22 @@ export function useRealtime({
     onConversationRef.current = onConversationEvent;
   });
 
+  // Chave estável a partir do CONTEÚDO de `tables` — usada como
+  // dependência do efeito no lugar do array, para que um literal inline
+  // no chamador não conte como "mudou" a cada render e derrube/recrie o
+  // canal sem parar.
+  const tablesKey = [...tables].sort().join(',');
+
   useEffect(() => {
     if (!enabled) return;
 
+    const subscribed = new Set(tablesKey.split(',') as RealtimeTable[]);
     const supabase = createClient();
 
-    const channel = supabase
-      .channel(channelName)
-      .on(
+    let channel = supabase.channel(channelName);
+
+    if (subscribed.has('messages')) {
+      channel = channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'messages' },
         (payload) => {
@@ -72,8 +101,11 @@ export function useRealtime({
             old: payload.old as Partial<Message>,
           });
         }
-      )
-      .on(
+      );
+    }
+
+    if (subscribed.has('conversations')) {
+      channel = channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'conversations' },
         (payload) => {
@@ -84,10 +116,12 @@ export function useRealtime({
             old: payload.old as Partial<Conversation>,
           });
         }
-      )
-      .subscribe((status) => {
-        setIsConnected(status === 'SUBSCRIBED');
-      });
+      );
+    }
+
+    channel = channel.subscribe((status) => {
+      setIsConnected(status === 'SUBSCRIBED');
+    });
 
     channelRef.current = channel;
 
@@ -96,7 +130,7 @@ export function useRealtime({
       channelRef.current = null;
       setIsConnected(false);
     };
-  }, [channelName, enabled]);
+  }, [channelName, enabled, tablesKey]);
 
   const unsubscribe = useCallback(() => {
     if (channelRef.current) {

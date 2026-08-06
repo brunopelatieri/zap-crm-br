@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
-  DEFAULT_TAB,
   isConversationTab,
-  isTabId,
+  resolveTab,
   type ConversationTabId,
   type TabId,
 } from '@/lib/inbox/tabs';
 import { isUuid } from '@/lib/api/uuid';
+import type { AccountRole } from '@/lib/auth/roles';
 import type { ConversationStatus } from '@/types';
 
 export type InboxStatusFilter = ConversationStatus | 'all' | 'unread';
@@ -23,17 +23,29 @@ export interface TabFilters {
 }
 
 function emptyFilters(statusFilter: InboxStatusFilter = 'all'): TabFilters {
-  return { search: '', statusFilter, selectedTagIds: [], selectedCompany: null };
+  return {
+    search: '',
+    statusFilter,
+    selectedTagIds: [],
+    selectedCompany: null,
+  };
 }
 
 export interface UseInboxTabsResult {
   /**
-   * Aba ativa, derivada de `?tab=` na URL. A navegação em si (o
-   * `router.replace`) fica com `inbox/page.tsx` — este hook só lê,
-   * nunca escreve a URL, para não haver duas fontes de verdade
+   * Aba ativa, derivada de `?tab=` na URL e degradada pelo papel da
+   * conta via `resolveTab` (SPEC 043, §3.7) — uma aba `minRole` que o
+   * papel atual não alcança nunca chega aqui como tal. A navegação em
+   * si (o `router.replace`) fica com `inbox/page.tsx` — este hook só
+   * lê, nunca escreve a URL, para não haver duas fontes de verdade
    * disputando o mesmo `router.replace` (a página já é dona do `?c=`).
+   *
+   * `null` enquanto o papel da conta ainda está carregando —
+   * `resolveTab` devolve `null` nesse meio-tempo de propósito, para o
+   * chamador segurar o render em vez de mostrar/reescrever para
+   * `DEFAULT_TAB` e depois trocar de novo quando o papel resolver.
    */
-  activeTab: TabId;
+  activeTab: TabId | null;
   /**
    * Alvo do seletor "ver como" (SPEC 042, D7) — o `user_id` do agente
    * cuja carteira a aba "Chat" está mostrando, ou `null` quando é a
@@ -71,10 +83,20 @@ export interface UseInboxTabsResult {
   visitedTabs: ReadonlySet<ConversationTabId>;
 }
 
-export function useInboxTabs(): UseInboxTabsResult {
+export interface UseInboxTabsOptions {
+  /** Papel da conta do usuário logado — `null` enquanto carrega. */
+  accountRole: AccountRole | null;
+  /** Ver `AuthContextValue.profileLoading`. */
+  profileLoading: boolean;
+}
+
+export function useInboxTabs({
+  accountRole,
+  profileLoading,
+}: UseInboxTabsOptions): UseInboxTabsResult {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const activeTab: TabId = isTabId(tabParam) ? tabParam : DEFAULT_TAB;
+  const activeTab = resolveTab(tabParam, accountRole, profileLoading);
 
   const viewAsParam = searchParams.get('viewAs');
   // Forma de UUID inválida (adulterado à mão, link truncado) degrada
@@ -92,7 +114,10 @@ export function useInboxTabs(): UseInboxTabsResult {
   );
 
   const [visitedTabs, setVisitedTabs] = useState<Set<ConversationTabId>>(
-    () => new Set(isConversationTab(activeTab) ? [activeTab] : [])
+    () =>
+      new Set(
+        activeTab !== null && isConversationTab(activeTab) ? [activeTab] : []
+      )
   );
 
   // Marca a aba ativa como visitada. Roda em efeito (não durante o
@@ -100,7 +125,7 @@ export function useInboxTabs(): UseInboxTabsResult {
   // primeira visita a cada aba dispara exatamente um re-render extra,
   // que é o que liga o fetch preguiçoso do feed correspondente.
   useEffect(() => {
-    if (!isConversationTab(activeTab)) return;
+    if (activeTab === null || !isConversationTab(activeTab)) return;
     // Acumula histórico entre renders (quais abas já foram visitadas) —
     // não é uma derivação pura de `activeTab`, é memória ao longo do
     // tempo, então precisa mesmo de um efeito + setState.

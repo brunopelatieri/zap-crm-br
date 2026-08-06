@@ -7,6 +7,8 @@ import {
   isConversationTab,
   isTabId,
   matchesConversationTab,
+  resolveTab,
+  visibleTabDefinitions,
 } from './tabs';
 
 describe('isTabId', () => {
@@ -27,10 +29,11 @@ describe('isTabId', () => {
 });
 
 describe('isConversationTab', () => {
-  it('is true for chat and open, false for contacts', () => {
+  it('is true for chat and open, false for contacts and board', () => {
     expect(isConversationTab('chat')).toBe(true);
     expect(isConversationTab('open')).toBe(true);
     expect(isConversationTab('contacts')).toBe(false);
+    expect(isConversationTab('board')).toBe(false);
   });
 });
 
@@ -65,7 +68,7 @@ describe('conversationTabPredicate', () => {
 });
 
 describe('matchesConversationTab', () => {
-  it('chat matches only the caller\'s own assignment', () => {
+  it("chat matches only the caller's own assignment", () => {
     expect(matchesConversationTab('chat', 'user-1', 'user-1')).toBe(true);
     expect(matchesConversationTab('chat', 'user-2', 'user-1')).toBe(false);
     expect(matchesConversationTab('chat', null, 'user-1')).toBe(false);
@@ -120,14 +123,73 @@ describe('viewAs — "ver como" de outro alvo (SPEC 042, D7)', () => {
   });
 
   it('matchesConversationTab casa pelo alvo observado, não pela sessão', () => {
-    expect(matchesConversationTab('chat', 'agent-observado', 'agent-observado')).toBe(
-      true
-    );
+    expect(
+      matchesConversationTab('chat', 'agent-observado', 'agent-observado')
+    ).toBe(true);
     // A sessão de quem está observando NUNCA entra na comparação — só o
     // alvo importa. Um admin (user-admin) observando outro agente não
     // deve ver suas PRÓPRIAS conversas na aba Chat enquanto observa.
-    expect(matchesConversationTab('chat', 'user-admin', 'agent-observado')).toBe(
-      false
-    );
+    expect(
+      matchesConversationTab('chat', 'user-admin', 'agent-observado')
+    ).toBe(false);
+  });
+});
+
+describe('visibleTabDefinitions (SPEC 043)', () => {
+  it('owner e admin veem as 4 abas, incluindo "board"', () => {
+    expect(visibleTabDefinitions('owner').map((d) => d.id)).toEqual(TAB_IDS);
+    expect(visibleTabDefinitions('admin').map((d) => d.id)).toEqual(TAB_IDS);
+  });
+
+  it('agent e viewer não veem "board"', () => {
+    expect(visibleTabDefinitions('agent').map((d) => d.id)).toEqual([
+      'chat',
+      'open',
+      'contacts',
+    ]);
+    expect(visibleTabDefinitions('viewer').map((d) => d.id)).toEqual([
+      'chat',
+      'open',
+      'contacts',
+    ]);
+  });
+
+  it('role null (sessão ainda não resolvida) degrada como o papel menos privilegiado', () => {
+    expect(visibleTabDefinitions(null).map((d) => d.id)).toEqual([
+      'chat',
+      'open',
+      'contacts',
+    ]);
+  });
+});
+
+describe('resolveTab (SPEC 043, §3.7)', () => {
+  it('valor fora de TAB_IDS cai em DEFAULT_TAB, independente do papel', () => {
+    expect(resolveTab('bogus', 'owner', false)).toBe(DEFAULT_TAB);
+    expect(resolveTab(null, 'owner', false)).toBe(DEFAULT_TAB);
+    expect(resolveTab('bogus', null, false)).toBe(DEFAULT_TAB);
+  });
+
+  it('devolve null enquanto o papel ainda carrega, mesmo para uma aba válida sem minRole', () => {
+    expect(resolveTab('open', null, true)).toBeNull();
+    expect(resolveTab('board', null, true)).toBeNull();
+  });
+
+  it('agent com ?tab=board degrada para DEFAULT_TAB', () => {
+    expect(resolveTab('board', 'agent', false)).toBe(DEFAULT_TAB);
+  });
+
+  it('viewer com ?tab=board degrada para DEFAULT_TAB', () => {
+    expect(resolveTab('board', 'viewer', false)).toBe(DEFAULT_TAB);
+  });
+
+  it('admin e owner com ?tab=board recebem "board"', () => {
+    expect(resolveTab('board', 'admin', false)).toBe('board');
+    expect(resolveTab('board', 'owner', false)).toBe('board');
+  });
+
+  it('abas sem minRole passam para qualquer papel resolvido', () => {
+    expect(resolveTab('chat', 'viewer', false)).toBe('chat');
+    expect(resolveTab('contacts', 'agent', false)).toBe('contacts');
   });
 });
