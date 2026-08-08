@@ -167,6 +167,20 @@ export const RATE_LIMITS = {
    *  key past the provider's own rate limit. 60/min ≈ three busy agents
    *  drafting flat-out. */
   aiDraftAccount: { limit: 60, windowMs: 60_000 },
+  /** Meta messaging-limit (tier) lookup, per user. The route caches the
+   *  tier for 15 min in `whatsapp_config`, so a healthy client hits Meta
+   *  far less often than this — the budget exists to bound a component
+   *  stuck in a refresh loop, not to pace normal use. */
+  messagingLimit: { limit: 20, windowMs: 60_000 },
+  /** Google Sheets import, per user. Each call makes the server fetch an
+   *  external URL, so this is the tightest useful budget: enough to fix a
+   *  wrong link and retry a few times, not enough to make the CRM a
+   *  convenient request amplifier. */
+  audienceImport: { limit: 10, windowMs: 60_000 },
+  /** Audience staging (SPEC 044 §3.3), per user. One call per "Analisar
+   *  audiência" click — a few retries after a mistaken template pick is
+   *  normal; a tight budget here would punish that, not abuse. */
+  audienceStage: { limit: 15, windowMs: 60_000 },
   /** AI auto-reply generation, per account. The per-conversation cap
    *  (`auto_reply_max_per_conversation`) bounds one thread; this bounds
    *  the whole account across threads, so a burst of inbound from many
@@ -175,6 +189,12 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Broadcast test send (dry run, SPEC 044 §6.7), per user. Each call
+   *  sends up to 5 real WhatsApp messages, so the budget is closer to
+   *  `broadcast` than to `send` — enough to retest a personalization
+   *  fix a few times per minute, not enough to turn the button into a
+   *  cheap way to blast real numbers. */
+  broadcastTestSend: { limit: 10, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

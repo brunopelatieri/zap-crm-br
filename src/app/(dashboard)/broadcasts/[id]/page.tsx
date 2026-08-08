@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Broadcast, BroadcastRecipient, RecipientStatus } from '@/types';
@@ -36,82 +36,19 @@ import {
 import { toast } from 'sonner';
 import { getBroadcastStatus, getRecipientStatus } from '@/lib/broadcast-status';
 import { useTranslations } from 'next-intl';
-
-interface StatCardProps {
-  label: string;
-  value: number;
-  total: number;
-  icon: React.ReactNode;
-  color: string;
-}
-
-function StatCard({ label, value, total, icon, color }: StatCardProps) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-  return (
-    <div className="border-border bg-card rounded-xl border p-4">
-      <div className="flex items-center justify-between">
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${color}`}
-        >
-          {icon}
-        </div>
-        <span className="text-muted-foreground text-xs">{pct}%</span>
-      </div>
-      <p className="text-foreground mt-3 text-2xl font-bold">
-        {value.toLocaleString()}
-      </p>
-      <p className="text-muted-foreground text-xs">{label}</p>
-    </div>
-  );
-}
-
-interface FunnelStep {
-  label: string;
-  value: number;
-  color: string;
-}
+import { StatCard } from '@/components/broadcasts/stat-card';
+import {
+  FunnelChart,
+  type FunnelStep,
+} from '@/components/broadcasts/funnel-chart';
+import { VariantComparison } from '@/components/broadcasts/variant-comparison';
 
 /**
- * Pure-CSS funnel chart: decreasing-width rounded bars.
- * Width is relative to the largest step (typically Sent) so we
- * always render a full bar at the top and proportional tails.
+ * Cadência do polling enquanto o disparo roda no servidor. Igual à da
+ * lista (`/broadcasts`) — os contadores vêm do trigger agregador da
+ * migração 003, então só precisamos da foto mais recente.
  */
-function FunnelChart({ steps }: { steps: FunnelStep[] }) {
-  const max = Math.max(...steps.map((s) => s.value), 1);
-  return (
-    <div className="border-border bg-card rounded-xl border p-4">
-      <h3 className="text-foreground mb-4 text-sm font-medium">Funnel</h3>
-      <div className="space-y-2">
-        {steps.map((step) => {
-          const pctOfMax = Math.max(5, Math.round((step.value / max) * 100));
-          const pctOfSent =
-            steps[0].value > 0
-              ? Math.round((step.value / steps[0].value) * 100)
-              : 0;
-          return (
-            <div key={step.label} className="flex items-center gap-3">
-              <span className="text-muted-foreground w-20 shrink-0 text-xs">
-                {step.label}
-              </span>
-              <div className="bg-muted relative h-7 flex-1 rounded-full">
-                <div
-                  className={`h-7 rounded-full ${step.color} transition-[width] duration-500`}
-                  style={{ width: `${pctOfMax}%` }}
-                />
-                <span className="text-foreground absolute inset-0 flex items-center px-3 text-xs font-medium text-white">
-                  {step.value.toLocaleString()}
-                  <span className="text-muted-foreground/80 ml-2 text-white">
-                    ({pctOfSent}%)
-                  </span>
-                </span> 
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+const DETAIL_POLL_INTERVAL_MS = 5_000;
 
 const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
   'pending',
@@ -151,6 +88,8 @@ export default function BroadcastDetailPage() {
   const broadcastId = params.id as string;
 
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
+  /** O outro braço do teste A/B (§6.6), quando esta campanha é um. */
+  const [sibling, setSibling] = useState<Broadcast | null>(null);
   const [recipients, setRecipients] = useState<BroadcastRecipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,37 +99,103 @@ export default function BroadcastDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const supabase = createClient();
+  const fetchData = useCallback(async () => {
+    try {
+      const supabase = createClient();
 
-        const { data: bc, error: bcError } = await supabase
+      const { data: bc, error: bcError } = await supabase
+        .from('broadcasts')
+        .select('*')
+        .eq('id', broadcastId)
+        .single();
+
+      if (bcError) throw bcError;
+      setBroadcast(bc);
+
+      // Teste A/B (§6.6). A campanha aberta pode ser qualquer um dos dois
+      // braços: a variante A é apontada pelo irmão, a B aponta para ele.
+      // Entrar por qualquer uma das duas leva à mesma comparação — quem
+      // recebeu o link de uma variante não deveria precisar descobrir
+      // qual das duas é "a principal".
+      if (bc?.variant_label === 'A') {
+        const { data: variantB } = await supabase
           .from('broadcasts')
           .select('*')
-          .eq('id', broadcastId)
-          .single();
+          .eq('parent_broadcast_id', bc.id)
+          .maybeSingle();
+        setSibling(variantB ?? null);
+      } else if (bc?.variant_label === 'B' && bc.parent_broadcast_id) {
+        const { data: variantA } = await supabase
+          .from('broadcasts')
+          .select('*')
+          .eq('id', bc.parent_broadcast_id)
+          .maybeSingle();
+        setSibling(variantA ?? null);
+      } else {
+        setSibling(null);
+      }
 
-        if (bcError) throw bcError;
-        setBroadcast(bc);
+      const { data: recs, error: recsError } = await supabase
+        .from('broadcast_recipients')
+        .select('*, contact:contacts(*)')
+        .eq('broadcast_id', broadcastId)
+        .order('created_at', { ascending: false });
 
-        const { data: recs, error: recsError } = await supabase
-          .from('broadcast_recipients')
-          .select('*, contact:contacts(*)')
-          .eq('broadcast_id', broadcastId)
-          .order('created_at', { ascending: false });
+      if (recsError) throw recsError;
+      setRecipients(recs ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('notFound'));
+    } finally {
+      setLoading(false);
+    }
+    // `t` vem do next-intl e é estável dentro de um locale; incluí-lo na
+    // lista recriaria o callback a cada render e reiniciaria o polling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [broadcastId]);
 
-        if (recsError) throw recsError;
-        setRecipients(recs ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('notFound'));
-      } finally {
-        setLoading(false);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Polling enquanto o disparo está `sending`.
+  //
+  // Passou a ser necessário quando o envio migrou para o servidor (SPEC
+  // 044 §6.1): o wizard agora responde assim que as linhas existem e
+  // redireciona para cá com tudo em `pending`. Sem isto o usuário veria
+  // uma foto congelada de uma campanha que está andando. Espelha o
+  // padrão da lista (`/broadcasts`), inclusive a pausa em aba oculta.
+  const isSending = broadcast?.status === 'sending';
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    function startPolling() {
+      if (pollTimer.current) return;
+      pollTimer.current = setInterval(fetchData, DETAIL_POLL_INTERVAL_MS);
+    }
+    function stopPolling() {
+      if (!pollTimer.current) return;
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+    function handleVisibilityChange() {
+      if (!isSending) return;
+      if (document.visibilityState === 'hidden') {
+        stopPolling();
+      } else {
+        fetchData();
+        startPolling();
       }
     }
 
-    fetchData();
-  }, [broadcastId]);
+    if (isSending && document.visibilityState === 'visible') startPolling();
+    else stopPolling();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isSending, fetchData]);
 
   const filteredRecipients = useMemo(
     () =>
@@ -314,6 +319,13 @@ export default function BroadcastDetailPage() {
               >
                 {tStatus(status.label)}
               </span>
+              {broadcast.variant_label && (
+                <span className="border-primary/30 bg-primary/10 text-primary inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium">
+                  {t('abTest.variantLabel', {
+                    variant: broadcast.variant_label,
+                  })}
+                </span>
+              )}
             </div>
             <div className="text-muted-foreground mt-1 flex items-center gap-3 text-sm">
               <span>{t('template', { name: broadcast.template_name })}</span>
@@ -333,7 +345,14 @@ export default function BroadcastDetailPage() {
             funnel inconsistent. */}
         {confirmDelete ? (
           <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
-            <span className="text-red-300">{t('deletePrompt')}</span>
+            <span className="text-red-300">
+              {/* Apagar a variante A leva a B junto (FK em cascata da
+                  051). Dizer isso ANTES é a diferença entre uma escolha
+                  e uma surpresa. */}
+              {broadcast.variant_label === 'A' && sibling
+                ? t('abTest.deleteCascade')
+                : t('deletePrompt')}
+            </span>
             <Button
               variant="outline"
               size="sm"
@@ -417,7 +436,19 @@ export default function BroadcastDetailPage() {
         />
       </div>
 
-      <FunnelChart steps={funnelSteps} />
+      {/* Com os dois braços em mãos, a comparação SUBSTITUI o funil
+          único: ela já contém o funil desta campanha, e mostrar os dois
+          faria o mesmo número aparecer duas vezes na mesma tela. */}
+      {broadcast.variant_label && sibling ? (
+        <VariantComparison
+          variantA={broadcast.variant_label === 'A' ? broadcast : sibling}
+          variantB={broadcast.variant_label === 'A' ? sibling : broadcast}
+          currentId={broadcast.id}
+          onOpenVariant={(id) => router.push(`/broadcasts/${id}`)}
+        />
+      ) : (
+        <FunnelChart steps={funnelSteps} title={t('funnel')} />
+      )}
 
       {/* Recipients Table */}
       <div className="border-border bg-card rounded-xl border">

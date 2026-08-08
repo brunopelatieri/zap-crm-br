@@ -5,6 +5,7 @@ import {
   canDeleteAccount,
   canEditSettings,
   canManageMembers,
+  canOverrideCooldown,
   canSendMessages,
   canTransferOwnership,
   canViewOnly,
@@ -126,5 +127,12 @@ describe('capability predicates', () => {
     expect(canTransferOwnership('admin')).toBe(false);
     expect(canTransferOwnership('agent')).toBe(false);
     expect(canTransferOwnership('viewer')).toBe(false);
+  });
+
+  it('canOverrideCooldown: admin+ only', () => {
+    expect(canOverrideCooldown('owner')).toBe(true);
+    expect(canOverrideCooldown('admin')).toBe(true);
+    expect(canOverrideCooldown('agent')).toBe(false);
+    expect(canOverrideCooldown('viewer')).toBe(false);
   });
 });

@@ -93,6 +93,13 @@ Aparência → Idioma**; a escolha fica salva no navegador.
   etapas personalizáveis e totais em **Real (BRL)**.
 - **Disparos em massa** — templates aprovados pela Meta, funil de
   entrega e leitura, personalização de variáveis por destinatário.
+- **Teste A/B de templates** — 🆕 _recurso exclusivo do ZAP CRM BR,
+  ausente no [wacrm](https://github.com/ArnasDon/wacrm) original._ A
+  mesma audiência é dividida por sorteio entre dois templates aprovados
+  e os dois funis aparecem lado a lado, com teste de significância
+  estatística — sem declarar vencedor em amostra pequena, que é como a
+  maioria das ferramentas induz à decisão errada. Veja
+  [docs/teste-ab-disparos.md](./docs/teste-ab-disparos.md).
 - **Automações no-code** — gatilhos por mensagem recebida, novo
   contato, palavra-chave ou horário; ramificações, esperas, etiquetas
   e webhooks. Construtor visual com rótulos em português.
@@ -211,11 +218,122 @@ NEXT_PUBLIC_APP_LOCALE=pt-BR
 > localmente. Deploy na Hostinger dispara `npm run build` no servidor —
 > erros que passaram no `dev` podem derrubar o build remoto.
 
+### ⚠️ Configure a Site URL do Supabase antes de ir ao ar
+
+Por padrão, o Supabase usa a **Site URL** do projeto (**Authentication
+→ URL Configuration**) como destino do link de confirmação de e-mail e
+de redefinição de senha sempre que o código não passa um `redirectTo`
+explícito — é o caso do cadastro sem convite
+([src/app/(auth)/signup/page.tsx](<./src/app/(auth)/signup/page.tsx>)).
+Projetos novos do Supabase vêm com essa URL em `http://localhost:3000`;
+se você não trocar antes do deploy, o e-mail de confirmação em
+produção vai linkar para `localhost`, mesmo com o app publicado.
+
+No painel do Supabase, em **Authentication → URL Configuration**:
+
+- **Site URL** — troque para a URL de produção (ex.:
+  `https://crm.seudominio.com`).
+- **Redirect URLs** — adicione as rotas de callback do app (ex.:
+  `https://crm.seudominio.com/auth/callback`,
+  `https://crm.seudominio.com/join/*`).
+
+Isso é independente da variável `NEXT_PUBLIC_SITE_URL` do `.env` —
+aquela controla só links gerados pelo próprio app (convites, sitemap);
+a Site URL do Supabase é o que define o redirect padrão dos e-mails de
+autenticação.
+
 Guia com capturas (documentação original em inglês):
 **[wacrm.tech/docs/deployment-hostinger](https://wacrm.tech/docs/deployment-hostinger)**.
 
 > O ZAP CRM BR é MIT e roda em qualquer host Node.js (Vercel, Railway,
 > VPS). A Hostinger é recomendada, não obrigatória.
+
+---
+
+## Agendador cron
+
+**Necessário para tudo que roda sozinho:** disparos agendados, esperas
+em automações e limpeza de execuções de fluxo.
+
+Três funcionalidades do CRM **não têm quem as acorde**: elas esperam
+alguém bater numa rota de tempos em tempos. Sem esse agendador, nada
+quebra visivelmente — o recurso simplesmente nunca acontece, em
+silêncio. É a pegadinha operacional mais comum de quem sobe o projeto.
+
+| Rota                    | O que faz                                         | Sem o cron                                                   |
+| ----------------------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| `/api/broadcasts/cron`  | Dispara campanhas **agendadas** que venceram      | O disparo fica em "Agendado" para sempre e ninguém é avisado |
+| `/api/automations/cron` | Retoma automações paradas em passos de **espera** | A automação trava no "Wait" e não continua                   |
+| `/api/flows/cron`       | Encerra execuções de fluxo abandonadas            | Execuções velhas ficam penduradas                            |
+
+**Disparo imediato, inbox, contatos e funis não dependem do cron.** Se
+você ainda não usa agendamento nem passos de espera, isso pode esperar —
+mas configure antes de alguém clicar em "Agendar" pela primeira vez.
+
+### Como configurar
+
+Primeiro, gere um segredo e coloque-o nas variáveis de ambiente do seu
+deploy (hPanel, Vercel, `.env` do VPS — onde for):
+
+```bash
+openssl rand -hex 32
+```
+
+```env
+AUTOMATION_CRON_SECRET=o-valor-gerado-acima
+```
+
+Um segredo só protege as três rotas, que o esperam no cabeçalho
+`x-cron-secret`. **Sem essa variável no servidor, as três respondem
+`503`** — é uma trava proposital, para não existir cron "meio
+configurado" rodando em produção.
+
+Depois, escolha **um** agendador:
+
+**Opção A — Supabase Cron (recomendado).** Você já depende do Supabase;
+não precisa de mais um serviço no ar. Roda dentro do próprio banco, com
+`pg_cron` + `pg_net`, e guarda o segredo cifrado no
+[Vault](https://supabase.com/docs/guides/database/vault) em vez de
+deixá-lo legível no comando do job.
+
+Script pronto, comentado e idempotente:
+**[supabase/setup/cron-jobs.sql](./supabase/setup/cron-jobs.sql)** —
+cole no SQL Editor do painel, edite duas linhas (URL do app e segredo),
+rode. O arquivo traz também as consultas de conferência e o desfazer.
+
+> ⚠️ **Não é uma migração.** Ele não fica em `supabase/migrations/` de
+> propósito: migrações descrevem o schema e valem igual em todo fork,
+> enquanto um cron job carrega a URL do _seu_ deploy e o _seu_ segredo.
+> Rodado como migração, o fork de qualquer pessoa agendaria chamadas
+> para o seu domínio.
+
+**Opção B — serviço externo** (ex.: [cron-job.org](https://cron-job.org),
+gratuito). Crie três tarefas a cada 5 minutos, uma por rota, cada uma
+com o header `x-cron-secret`.
+
+**Opção C — `crontab` do seu VPS**, se você hospeda em servidor próprio:
+
+```
+*/5 * * * * curl -sS -H "x-cron-secret: SEU_SEGREDO" https://seu-dominio.com/api/broadcasts/cron
+*/5 * * * * curl -sS -H "x-cron-secret: SEU_SEGREDO" https://seu-dominio.com/api/automations/cron
+*/5 * * * * curl -sS -H "x-cron-secret: SEU_SEGREDO" https://seu-dominio.com/api/flows/cron
+```
+
+Cinco minutos é suficiente nas três: a granularidade do agendamento na
+interface é de minuto, e alguns minutos de atraso num disparo em massa
+não mudam nada.
+
+### Conferir que está funcionando
+
+```bash
+curl -i -H "x-cron-secret: SEU_SEGREDO" https://seu-dominio.com/api/broadcasts/cron
+```
+
+| Resposta                                       | Significa                                             |
+| ---------------------------------------------- | ----------------------------------------------------- |
+| `200` com `{"dispatched":0,"postponed":0,...}` | Funcionando (zero é normal se nada venceu agora)      |
+| `401`                                          | O segredo enviado não bate com o do servidor          |
+| `503`                                          | `AUTOMATION_CRON_SECRET` não está configurado no host |
 
 ---
 
@@ -261,6 +379,13 @@ URL** (não existe `/pt-br/dashboard`). O locale é resolvido por cookie
 **Neste repositório (português / ZAP CRM BR):**
 
 - [Comandos de desenvolvimento](./docs/comandos-desenvolvimento.md)
+- [Teste A/B de templates nos disparos](./docs/teste-ab-disparos.md) —
+  como dividir a audiência entre dois textos e ler o resultado sem se
+  enganar com amostra pequena.
+- [Agendador cron via Supabase](./supabase/setup/cron-jobs.sql) —
+  script pronto para o SQL Editor que agenda as três rotas de cron com o
+  segredo no Vault. Contexto e alternativas na seção
+  [Agendador cron](#agendador-cron).
 - [Relatório de implementação i18n](./docs/i18n-implementation-report.md)
 - [API pública (`/api/v1`)](./docs/public-api.md)
 - [Servidor MCP](./docs/mcp.md)

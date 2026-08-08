@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { assignTag, unassignTag } from '@/lib/tags';
+import { setContactOptIn } from '@/lib/contacts/consent';
+import { markWhatsappValid } from '@/lib/contacts/whatsapp-status';
 import { toast } from 'sonner';
 import type {
   Contact,
@@ -36,7 +38,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
+  Ban,
   Phone,
+  PhoneOff,
   Mail,
   Building2,
   Copy,
@@ -65,12 +69,16 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
+  const tConsent = useTranslations('Contacts.detailView.consent');
+  const tWhatsapp = useTranslations('Contacts.detailView.whatsappStatus');
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
+  const [savingConsent, setSavingConsent] = useState(false);
+  const [savingWhatsappStatus, setSavingWhatsappStatus] = useState(false);
 
   // Send template — lets the business initiate (or re-open) a conversation
   // with this contact by sending an approved template. The send route
@@ -245,6 +253,55 @@ export function ContactDetailView({
     setSavingDetails(false);
   }
 
+  /**
+   * Muda o consentimento de marketing (SPEC 044 §6.8).
+   *
+   * Vai pela RPC `set_contact_opt_in` e não por um UPDATE em `contacts`:
+   * é ela que grava o evento na trilha na mesma transação. Um UPDATE
+   * direto aqui mudaria o estado e deixaria a trilha sem o registro —
+   * exatamente o que precisa ser demonstrável depois.
+   */
+  async function updateConsent(status: 'opted_in' | 'opted_out') {
+    if (!contactId) return;
+    setSavingConsent(true);
+    try {
+      await setContactOptIn(supabase, {
+        contactId,
+        status,
+        source: 'manual',
+      });
+      toast.success(tConsent('saved'));
+      fetchContact();
+      onUpdated();
+    } catch (err) {
+      console.error('[contact-detail] consent update failed:', err);
+      toast.error(tConsent('saveFailed'));
+    } finally {
+      setSavingConsent(false);
+    }
+  }
+
+  /**
+   * Reativa um número marcado como morto (SPEC 044 §6.4). Diferente do
+   * consentimento, um UPDATE direto basta — não há exigência legal de
+   * trilha para esta coluna (ver o cabeçalho de `whatsapp-status.ts`).
+   */
+  async function reactivateWhatsapp() {
+    if (!contactId) return;
+    setSavingWhatsappStatus(true);
+    try {
+      await markWhatsappValid(supabase, contactId);
+      toast.success(tWhatsapp('saved'));
+      fetchContact();
+      onUpdated();
+    } catch (err) {
+      console.error('[contact-detail] whatsapp status update failed:', err);
+      toast.error(tWhatsapp('saveFailed'));
+    } finally {
+      setSavingWhatsappStatus(false);
+    }
+  }
+
   async function toggleTag(tagId: string) {
     if (!contactId) return;
     setSavingTags(true);
@@ -391,6 +448,17 @@ export function ContactDetailView({
       setSendingTemplate(false);
     }
   }
+
+  /**
+   * Consentimento atual (§6.8). Contato de antes da migração 048 vem sem
+   * a coluna preenchida na resposta; `unknown` é o valor de nascimento e
+   * significa "ninguém nunca perguntou" — não é o mesmo que `opted_in`.
+   */
+  const optInStatus = contact?.opt_in_status ?? 'unknown';
+
+  /** Número morto (SPEC 044 §6.4). `valid` é o default de nascimento —
+   *  ver o comentário da coluna na migração 049. */
+  const whatsappStatus = contact?.whatsapp_status ?? 'valid';
 
   function getInitials(name?: string | null) {
     if (!name) return '?';
@@ -572,6 +640,124 @@ export function ContactDetailView({
                       )}
                       {t('saveChangesBtn')}
                     </Button>
+
+                    {/* ── Consentimento de marketing (SPEC 044 §6.8) ──
+                        Fora do formulário e com botão próprio de
+                        propósito: consentimento não é um campo que se
+                        edita junto do telefone e salva no mesmo clique.
+                        Cada mudança grava um evento na trilha
+                        (`contact_consent_events`), e o "Salvar" acima nem
+                        toca nesta coluna. */}
+                    <div className="border-border/50 space-y-2 border-t pt-3">
+                      <Label className="text-muted-foreground text-xs">
+                        {tConsent('label')}
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
+                            optInStatus === 'opted_out'
+                              ? 'bg-amber-500/10 text-amber-300'
+                              : optInStatus === 'opted_in'
+                                ? 'bg-primary/10 text-primary'
+                                : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {optInStatus === 'opted_out' && (
+                            <Ban className="size-3" />
+                          )}
+                          {tConsent(`status.${optInStatus}`)}
+                        </span>
+                        {contact.opt_in_updated_at && (
+                          <span className="text-muted-foreground text-[11px]">
+                            {tConsent('since', {
+                              when: new Date(
+                                contact.opt_in_updated_at
+                              ).toLocaleDateString(),
+                              source: tConsent(
+                                `source.${contact.opt_in_source ?? 'manual'}`
+                              ),
+                            })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-muted-foreground text-xs">
+                        {optInStatus === 'opted_out'
+                          ? tConsent('optedOutHint')
+                          : tConsent('hint')}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {optInStatus !== 'opted_in' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={savingConsent}
+                            onClick={() => updateConsent('opted_in')}
+                            className="border-border text-muted-foreground"
+                          >
+                            {tConsent('markOptedIn')}
+                          </Button>
+                        )}
+                        {optInStatus !== 'opted_out' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={savingConsent}
+                            onClick={() => updateConsent('opted_out')}
+                            className="border-amber-500/30 text-amber-300"
+                          >
+                            <Ban className="size-3.5" />
+                            {tConsent('markOptedOut')}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Número morto (SPEC 044 §6.4) ──
+                        Só aparece quando o status não é o default: um
+                        contato `valid` não precisa de uma linha extra na
+                        tela dizendo "está tudo bem". */}
+                    {whatsappStatus === 'invalid' && (
+                      <div className="border-border/50 space-y-2 border-t pt-3">
+                        <Label className="text-muted-foreground text-xs">
+                          {tWhatsapp('label')}
+                        </Label>
+                        <div className="flex items-center gap-2">
+                          <span className="bg-amber-500/10 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-amber-300">
+                            <PhoneOff className="size-3" />
+                            {tWhatsapp('status.invalid')}
+                          </span>
+                          {contact.whatsapp_status_updated_at && (
+                            <span className="text-muted-foreground text-[11px]">
+                              {tWhatsapp('since', {
+                                when: new Date(
+                                  contact.whatsapp_status_updated_at
+                                ).toLocaleDateString(),
+                                reason: tWhatsapp(
+                                  `reason.${contact.whatsapp_status_reason ?? 'manual'}`
+                                ),
+                              })}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-muted-foreground text-xs">
+                          {tWhatsapp('hint')}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={savingWhatsappStatus}
+                          onClick={reactivateWhatsapp}
+                          className="border-border text-muted-foreground"
+                        >
+                          {savingWhatsappStatus ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Phone className="size-3.5" />
+                          )}
+                          {tWhatsapp('markValid')}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
 

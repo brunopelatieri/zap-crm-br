@@ -154,6 +154,21 @@ export function canBeAssignedConversations(role: AccountRole): boolean {
   return hasMinRole(role, 'agent');
 }
 
+/**
+ * Owner / admin: reincluir em massa contatos em cooldown na triagem de
+ * disparo (SPEC 044 §6.2).
+ *
+ * Cooldown é uma heurística de qualidade de número, não uma restrição
+ * legal como o opt-out — por isso a guarda vive só aqui (UI), não numa
+ * RLS/RPC: um agente ainda pode reselecionar uma linha individual pelo
+ * checkbox da tabela, igual já podia antes desta capacidade existir.
+ * Isto gate só a ação em massa, para que "trazer todo mundo de volta"
+ * seja uma decisão deliberada, não um clique.
+ */
+export function canOverrideCooldown(role: AccountRole): boolean {
+  return hasMinRole(role, 'admin');
+}
+
 /** Owner only: irreversible destructive operations. */
 export function canDeleteAccount(role: AccountRole): boolean {
   return role === 'owner';

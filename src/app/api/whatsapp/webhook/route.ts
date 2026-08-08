@@ -4,6 +4,9 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { setContactOptIn } from '@/lib/contacts/consent';
+import { detectOptOut } from '@/lib/contacts/opt-out';
+import { detectDeadNumberOnFailure } from '@/lib/contacts/whatsapp-status';
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature';
 import { proxyMediaUrl } from '@/lib/storage/media-url';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
@@ -105,6 +108,16 @@ interface WhatsAppWebhookEntry {
         status: string;
         timestamp: string;
         recipient_id: string;
+        /**
+         * Present on `status: 'failed'` events. `code` 131026 means the
+         * recipient isn't a WhatsApp user (SPEC 044 §6.4) — see
+         * `isInvalidWhatsappNumberError`.
+         */
+        errors?: Array<{
+          code: number;
+          title?: string;
+          message?: string;
+        }>;
       }>;
     };
     field: string;
@@ -382,6 +395,7 @@ async function handleStatusUpdate(status: {
   status: string;
   timestamp: string;
   recipient_id: string;
+  errors?: Array<{ code: number; title?: string; message?: string }>;
 }) {
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
@@ -409,7 +423,7 @@ async function handleStatusUpdate(status: {
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status')
+    .select('id, status, contact_id')
     .eq('whatsapp_message_id', status.id)
     .maybeSingle();
 
@@ -427,6 +441,20 @@ async function handleStatusUpdate(status: {
     if (status.status === 'delivered') update.delivered_at = tsIso;
     if (status.status === 'read') update.read_at = tsIso;
 
+    // Meta's async "message undeliverable" callback — the only place
+    // this error ever surfaces, since the send call itself already
+    // returned 200. Captured so the dead-number detection below (§6.4)
+    // has the same signal the synchronous send path gets from
+    // `throwMetaError`.
+    let errorMessage: string | null = null;
+    if (status.status === 'failed' && status.errors && status.errors[0]) {
+      const e = status.errors[0];
+      errorMessage = e.message
+        ? `(#${e.code}) ${e.title ?? ''}: ${e.message}`.trim()
+        : `(#${e.code}) ${e.title ?? 'Message undeliverable'}`;
+      update.error_message = errorMessage;
+    }
+
     const { error: recUpdateErr } = await supabaseAdmin()
       .from('broadcast_recipients')
       .update(update)
@@ -434,6 +462,12 @@ async function handleStatusUpdate(status: {
 
     if (recUpdateErr) {
       console.error('Error updating broadcast recipient status:', recUpdateErr);
+    } else if (status.status === 'failed' && recipient.contact_id) {
+      // Auto-limpeza de números mortos (§6.4) — best-effort.
+      await detectDeadNumberOnFailure(supabaseAdmin(), {
+        contactId: recipient.contact_id,
+        errorMessage,
+      });
     }
   }
 
@@ -756,6 +790,37 @@ async function processMessage(
   await flagBroadcastReplyIfAny(accountId, contactRecord.id);
 
   // ============================================================
+  // Opt-out por palavra-chave (SPEC 044 §6.8).
+  //
+  // "SAIR", "PARAR", "DESCADASTRAR" — se a mensagem INTEIRA é um pedido
+  // de descadastro, o contato vira `opted_out` e o pedido entra na
+  // trilha (`contact_consent_events`). A partir daí ele não entra em
+  // audiência de marketing nenhuma.
+  //
+  // Roda ANTES dos gatilhos de automação, e de propósito não os
+  // suprime: a §6.8 descreve a detecção como "plugável nas automações
+  // que já existem", e é por um `keyword_match` que o operador manda a
+  // confirmação de descadastro que quiser. O que muda é o estado — e o
+  // estado já estará gravado quando a automação rodar.
+  //
+  // Best-effort: uma falha aqui não pode impedir o 200 para a Meta.
+  // ============================================================
+  const optOutKeyword = detectOptOut(contentText ?? message.text?.body ?? '');
+  if (optOutKeyword) {
+    try {
+      await setContactOptIn(supabaseAdmin(), {
+        contactId: contactRecord.id,
+        status: 'opted_out',
+        source: 'inbound_keyword',
+        keyword: optOutKeyword,
+        whatsappMessageId: message.id,
+      });
+    } catch (err) {
+      console.error('[webhook] opt-out registration failed:', err);
+    }
+  }
+
+  // ============================================================
   // Flow runner dispatch.
   //
   // If the runner consumes the message (it either advanced an active
@@ -850,7 +915,17 @@ async function processMessage(
   // the account has enabled it. Awaited inside `after()` (same reason as
   // the webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+  // `optOutKeyword` entra na condição: responder "SAIR" com um texto
+  // gerado por LLM é o oposto do que a pessoa pediu, e a resposta
+  // consumiria uma mensagem em nome de quem acabou de sair da lista. Uma
+  // confirmação, se o operador quiser mandar, é trabalho de automação
+  // determinística — ver o bloco de opt-out acima.
+  if (
+    !flowConsumed &&
+    !interactiveReplyId &&
+    !optOutKeyword &&
+    inboundText.trim()
+  ) {
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,

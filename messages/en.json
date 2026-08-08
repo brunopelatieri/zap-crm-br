@@ -597,7 +597,45 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "consent": {
+        "label": "Marketing consent",
+        "status": {
+          "opted_in": "Opted in",
+          "opted_out": "Opted out",
+          "unknown": "Not declared"
+        },
+        "source": {
+          "inbound_keyword": "replied with a keyword",
+          "manual": "set by the team",
+          "import": "from an import",
+          "api": "via API",
+          "automation": "by an automation"
+        },
+        "since": "since {when} — {source}",
+        "hint": "Marketing broadcasts skip contacts who opted out. Every change is recorded in the audit trail.",
+        "optedOutHint": "This contact will not receive marketing broadcasts. Utility and authentication templates still reach them.",
+        "markOptedIn": "Mark as opted in",
+        "markOptedOut": "Mark as opted out",
+        "saved": "Consent updated.",
+        "saveFailed": "Could not update consent."
+      },
+      "whatsappStatus": {
+        "label": "WhatsApp number",
+        "status": {
+          "invalid": "Dead number"
+        },
+        "reason": {
+          "consecutive_failures": "2 failed deliveries in a row",
+          "meta_error": "Meta reported this number isn't on WhatsApp",
+          "manual": "set by the team"
+        },
+        "since": "since {when} — {reason}",
+        "hint": "Excluded from future broadcasts by default. Mark it valid again if you believe this was a mistake.",
+        "markValid": "Mark as valid again",
+        "saved": "WhatsApp status updated.",
+        "saveFailed": "Could not update WhatsApp status."
+      }
     },
     "importModal": {
       "title": "Import Contacts",
@@ -801,7 +839,8 @@
         "date": "Date"
       },
       "errorLoad": "Failed to load broadcasts",
-      "retry": "Retry"
+      "retry": "Retry",
+      "variant": "Variant {variant}"
     },
     "status": {
       "draft": "Draft",
@@ -852,7 +891,29 @@
         "failed": "Failed"
       },
       "toastFailedDelete": "Failed to delete: {error}",
-      "toastDeleted": "Broadcast deleted"
+      "toastDeleted": "Broadcast deleted",
+      "abTest": {
+        "title": "A/B test",
+        "subtitle": "The audience was split {percentA}% / {percentB}% between the two templates.",
+        "variantLabel": "Variant {variant}",
+        "currentCampaign": "current campaign",
+        "openVariant": "open this variant",
+        "armSize": "{total} recipients · {sent} messages sent",
+        "winner": "Variant {variant} won on {metric}",
+        "noWinner": "No significant difference",
+        "noWinnerHint": "The gap between the two arms is indistinguishable from chance (p ≥ 0.05).",
+        "smallSample": "Small sample",
+        "smallSampleHint": "With fewer than {minimum} messages sent per arm (the smaller one has {smallest}), no result here is reliable — the rates are shown, but they name no winner.",
+        "primary": "primary",
+        "points": "points",
+        "methodology": "Rates are computed over each arm’s sent messages. Significance from a two-sided, two-proportion z-test at 5%.",
+        "table": {
+          "metric": "Metric",
+          "difference": "Difference (B − A)",
+          "pValue": "p-value"
+        },
+        "deleteCascade": "Deleting variant A deletes the whole test, variant B included. Confirm?"
+      }
     },
     "new": {
       "title": "New Broadcast",
@@ -883,6 +944,7 @@
       "selectAudience": {
         "title": "Select Audience",
         "subtitle": "Choose who will receive this broadcast.",
+        "analyze": "Analyze audience",
         "method": {
           "all": "All Contacts",
           "tags": "Filter by Tags",
@@ -940,6 +1002,29 @@
           "name": "Name",
           "phone": "Phone",
           "email": "Email"
+        },
+        "headerMediaMissing": "A media URL is required to send this template.",
+        "headerMediaInvalid": "Enter a valid http(s) URL.",
+        "unmappedWarning": "Map every placeholder before continuing — still missing {keys}. Otherwise those placeholders ship to Meta as empty strings.",
+        "testSend": {
+          "button": "Send test",
+          "dialogTitle": "Send a test message",
+          "dialogSubtitle": "Send this template to up to {max} real contacts with the actual variable mapping, before sending to the whole audience.",
+          "searchPlaceholder": "Search contacts by name or phone…",
+          "noResults": "No contacts match.",
+          "selectedCount": "{count}/{max} selected",
+          "send": "Send test",
+          "sending": "Sending…",
+          "testAgain": "Test again",
+          "toastFailed": "Test send failed",
+          "status": {
+            "sent": "Sent",
+            "failed": "Failed",
+            "invalid_phone": "Invalid phone",
+            "opted_out": "Opted out",
+            "whatsapp_invalid": "Dead number",
+            "not_found": "Not found"
+          }
         }
       },
       "scheduleSend": {
@@ -954,6 +1039,7 @@
         "audienceTags": "Filtered by tags",
         "audienceField": "Filtered by custom field",
         "audienceCsv": "CSV upload",
+        "audienceStaged": "Reviewed in triage",
         "variables": "Variables:",
         "variablesMapped": "{count} mapped",
         "saveDraft": "Save as Draft",
@@ -961,7 +1047,260 @@
         "sending": "Sending...",
         "preparing": "Preparing...",
         "progressDesc": "Processing {current} of {total} recipients...",
-        "toastFailedPreview": "Failed to load preview data"
+        "toastFailedPreview": "Failed to load preview data",
+        "estimatedReach": "Estimated reach",
+        "language": "Language",
+        "confirmTitle": "Confirm broadcast",
+        "confirmBody": "You are about to send this broadcast to <strong>{count}</strong> contacts using the <strong>{template}</strong> template. This action cannot be undone.",
+        "starting": "Starting the send…",
+        "serverSideHint": "The send runs on our server. You can close this tab — it will keep going."
+      },
+      "abTest": {
+        "enable": "Test two templates (A/B)",
+        "description": "The same audience is split at random between two approved templates, and both campaigns show up side by side on the results screen.",
+        "noCandidates": "No other approved template in the {category} category — an A/B test compares two texts of the same category.",
+        "variantTemplate": "Variant B template",
+        "split": "Audience split",
+        "splitOption": "{a}% to A · {b}% to B",
+        "minimumHint": "Results only reach statistical significance above ~300 recipients per arm.",
+        "tab": "Variant {variant} · {template}",
+        "summaryTitle": "A/B test",
+        "variantLine": "Variant {variant}",
+        "summaryHint": "The split is drawn on the server, over the audience resolved at send time. The numbers above are an estimate.",
+        "tooSmall": "An A/B test needs at least two recipients — one per arm.",
+        "confirmBody": "Two campaigns will be created: {templateA} for ~{countA} contacts and {templateB} for ~{countB}."
+      }
+    },
+    "audience": {
+      "source": {
+        "recommended": "Recommended",
+        "googleSheets": {
+          "label": "Google Sheets",
+          "description": "Paste a link to a spreadsheet you already keep."
+        },
+        "spreadsheet": {
+          "label": "CSV or Excel file",
+          "description": "Upload a .csv or .xlsx from your computer."
+        },
+        "all": {
+          "label": "All contacts",
+          "description": "Send to every contact in your database."
+        },
+        "tags": {
+          "label": "Filter by tags",
+          "description": "Send to contacts matching specific tags."
+        },
+        "customField": {
+          "label": "Custom field",
+          "description": "Send to contacts matching a custom field rule."
+        }
+      },
+      "upload": {
+        "choose": "Choose a file",
+        "orDrag": "or drag it here",
+        "accepted": "CSV or Excel (.xlsx), up to {max}",
+        "parsing": "Reading…",
+        "clear": "Remove file",
+        "sheet": "Sheet",
+        "columnsHint": "Needs a phone column. Name, email, company and tags are optional.",
+        "parsingProgress": "Reading {processed} of {total} rows…"
+      },
+      "sheets": {
+        "title": "Import from Google Sheets",
+        "placeholder": "https://docs.google.com/spreadsheets/d/…",
+        "import": "Import",
+        "invalidUrl": "That doesn't look like a Google Sheets link.",
+        "shareHint": "The spreadsheet must be shared as \"Anyone with the link can view\".",
+        "error": {
+          "invalid_url": "That doesn't look like a Google Sheets link.",
+          "not_public": "This spreadsheet is not public. Share it as \"Anyone with the link can view\" and try again.",
+          "not_found": "Spreadsheet not found. Check the link.",
+          "too_large": "This spreadsheet is too large to import.",
+          "timeout": "Google took too long to respond. Try again.",
+          "fetch_failed": "Could not read the spreadsheet. Try again."
+        }
+      },
+      "summary": {
+        "title": "Import summary",
+        "sheet": "Sheet: {name}",
+        "read": "read",
+        "valid": "valid",
+        "duplicates": "duplicates",
+        "invalid": "invalid",
+        "rejectedRows": "{count} rows were not imported",
+        "line": "Line {n}",
+        "showAll": "Show all {count}"
+      },
+      "invalidReason": {
+        "missing_phone": "no phone",
+        "invalid_phone": "invalid phone",
+        "duplicate_in_file": "duplicate"
+      },
+      "parseError": {
+        "file_too_large": "This file is too large. The limit is 10 MB.",
+        "too_many_rows": "This file has more than {max} rows. Split it into smaller files.",
+        "missing_phone_column": "No phone column found. Add a column named \"phone\" and try again.",
+        "empty_file": "This file has no data rows.",
+        "unreadable": "Could not read this file. Check that it is a valid CSV or Excel file.",
+        "unsupported_format": "Unsupported format. Use a .csv or .xlsx file."
+      },
+      "quota": {
+        "title": "24-hour sending quota",
+        "stale": "Out of date",
+        "staleHint": "Could not reach Meta — showing the last known tier. The limit is still enforced.",
+        "unlimited": "No limit on this tier.",
+        "selectedOfRemaining": "{selected} selected of {remaining} available",
+        "usedInWindow": "{used} already reached in the last 24 h",
+        "exceeded": "{excess} over the available quota.",
+        "blockedHint": "This audience exceeds the quota available in the last 24 hours. Remove contacts or wait for the window to reset."
+      },
+      "estimate": {
+        "title": "Audience summary",
+        "calculating": "Calculating…",
+        "recipients": "estimated recipients",
+        "empty": "Pick an audience source to see the estimate."
+      },
+      "excludeNotAppliedToImport": "Tag exclusion does not apply to an imported list — imported contacts carry no tags yet.",
+      "sendError": {
+        "whatsapp_not_configured": "WhatsApp is not connected. Set up the integration in Settings and try again.",
+        "empty_audience": "No contacts with a valid phone number matched this audience.",
+        "quota_exceeded": "This audience exceeds the quota available in the last 24 hours. Remove contacts or wait for the window to reset.",
+        "too_many_recipients": "This audience is too large for a single broadcast. Split it into smaller sends.",
+        "template_malformed": "This template is out of sync. Run \"Sync from Meta\" in Settings and try again.",
+        "draft_not_found": "This draft no longer exists or was already sent. Start the audience over.",
+        "bad_request": "Something in this broadcast is not valid. Go back and review the audience and variables.",
+        "rate_limited": "Too many broadcasts started in a row. Wait a moment and try again.",
+        "internal": "Could not start the broadcast. Try again in a moment.",
+        "all_opted_out": "Every contact in this audience has asked to stop receiving marketing.",
+        "outside_send_window": "This time is outside the allowed send window. Pick another time or confirm the override.",
+        "schedule_in_past": "The scheduled time has already passed. Pick a time in the future.",
+        "schedule_too_far": "Broadcasts can be scheduled up to 90 days ahead.",
+        "template_not_found": "This template no longer exists for this account. Pick another one.",
+        "all_whatsapp_invalid": "Every contact in this audience has a phone number flagged as invalid on WhatsApp.",
+        "ab_same_template": "An A/B test needs two different templates.",
+        "ab_category_mismatch": "Both variants must share the same template category.",
+        "ab_audience_too_small": "This audience is too small to split into two arms."
+      },
+      "stageError": {
+        "template_not_found": "This template could not be found. Go back and pick it again.",
+        "too_many_rows": "This audience has more rows than the limit ({max}). Split it into smaller files.",
+        "empty_audience": "No contacts matched this audience.",
+        "bad_request": "Something in this audience is not valid. Go back and review it.",
+        "rate_limited": "Too many attempts in a row. Wait a moment and try again.",
+        "internal": "Could not stage this audience. Try again in a moment."
+      },
+      "triage": {
+        "title": "Audience triage",
+        "subtitle": "Review who is about to receive \"{template}\" before continuing.",
+        "backToAudience": "Discard draft",
+        "cancelConfirmTitle": "Discard this draft?",
+        "cancelConfirmBody": "The staged audience will be discarded. This cannot be undone.",
+        "cancelConfirmAction": "Discard draft",
+        "cancel": "Cancel",
+        "continue": "Continue",
+        "discardFailed": "Could not discard this draft. Try again.",
+        "draftNotFound": "This draft could not be found.",
+        "draftAlreadySent": "This broadcast was already sent — the audience can no longer be triaged.",
+        "viewBroadcast": "View broadcast",
+        "backToNew": "Start a new broadcast",
+        "searchPlaceholder": "Search by name or phone",
+        "selectedSummary": "{selected} selected",
+        "quotaBlockedHint": "This selection exceeds the quota available in the last 24 hours. Remove contacts or wait for the window to reset.",
+        "selectAllFiltered": "Select all matching ({count})",
+        "clearAllFiltered": "Clear all matching",
+        "selectionUpdated": "{count} rows updated",
+        "bulkActionFailed": "Could not update the selection. Try again.",
+        "toggleFailed": "Could not update this row. Try again.",
+        "loadError": "Could not load the triage table.",
+        "empty": "No rows match this filter.",
+        "never": "Never",
+        "selectRow": "Select",
+        "engagementPresets": "Engagement presets",
+        "rowCount": "Showing {shown} of {total}",
+        "filter": {
+          "all": "All",
+          "selected": "Selected",
+          "unselected": "Not selected",
+          "valid": "Valid",
+          "invalid": "Invalid",
+          "new": "New contacts",
+          "existing": "Existing contacts",
+          "engaged": "🔥 Engaged",
+          "reads_no_reply": "👀 Reads, never replies",
+          "dormant": "😴 Dormant",
+          "never_contacted": "✨ Never contacted",
+          "problematic": "⚠️ Problematic",
+          "cooldown": "In cooldown",
+          "opted_out": "🚫 Opted out",
+          "optable": "✅ Can receive marketing"
+        },
+        "table": {
+          "contact": "Contact",
+          "status": "Status",
+          "campaigns": "Campaigns",
+          "lastDelivered": "Last delivered",
+          "read": "Read",
+          "replied": "Replied",
+          "failures": "Failures",
+          "tags": "Tags"
+        },
+        "badge": {
+          "new": "New",
+          "existing": "Existing",
+          "optedOut": "Opted out"
+        },
+        "dashboard": {
+          "title": "Engagement history",
+          "subtitle": "How this account's broadcasts have performed in the last 30 days.",
+          "cards": {
+            "campaignsSent": "Campaigns sent",
+            "messagesDelivered": "Messages delivered",
+            "readRate": "Read rate",
+            "replyRate": "Reply rate",
+            "contactsReached": "Contacts reached",
+            "quotaUsed": "24h quota used"
+          },
+          "chart": {
+            "title": "Last 30 days",
+            "empty": "No broadcasts in the last 30 days.",
+            "legend": {
+              "messages_sent": "Sent",
+              "messages_delivered": "Delivered",
+              "messages_read": "Read",
+              "messages_replied": "Replied",
+              "messages_failed": "Failed"
+            }
+          },
+          "summary": {
+            "empty": "No valid contacts in this audience yet.",
+            "sentence": "Of these {total} contacts, {everContacted} already received a campaign — {readPct}% read it and {repliedPct}% replied. {neverDelivered} have never been delivered to.",
+            "optedOut": "{count} of them asked to stop receiving marketing and will not be included.",
+            "inCooldown": "{count} received a campaign recently and were automatically deselected (cooldown)."
+          }
+        },
+        "consentFilters": "Consent",
+        "removeOptedOut": "Remove opted out",
+        "removeCooldown": "Remove those in cooldown",
+        "overrideCooldown": "Include those in cooldown"
+      },
+      "consent": {
+        "excludedFromMarketing": "Contacts who asked to stop receiving marketing are already excluded from this count."
+      },
+      "schedule": {
+        "title": "When to send",
+        "now": "Send now",
+        "later": "Schedule",
+        "scheduleAction": "Schedule broadcast",
+        "timeZoneHint": "Time in your time zone ({timeZone}).",
+        "mustBeFuture": "Pick a time at least a minute from now.",
+        "windowHint": "Allowed window: weekdays, {window}. Sending outside it hurts your number’s reputation with Meta.",
+        "outsideWindow": "This time is outside the allowed window ({window}, weekdays).",
+        "moveToSuggested": "Move to {when}",
+        "overrideLabel": "Send anyway — I accept the reputation risk.",
+        "overrideConfirm": "This send is outside the {window} window. The override will be recorded in the audit trail.",
+        "blockedHint": "Outside the allowed send window. Pick another time or confirm the override.",
+        "confirmScheduled": "Nothing is sent now: the campaign goes out at {when}, from the server.",
+        "scheduledToast": "Broadcast scheduled for {when}."
       }
     }
   },
@@ -1679,13 +2018,11 @@
       "deleteLocallyAria": "Delete template locally",
       "deleteMetaLocallyTitle": "Delete from Meta and locally",
       "deleteLocallyTitle": "Delete locally",
-
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
       "dialogNewDesc": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
       "authWarning": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <bold>Sync from Meta</bold> to bring them in.",
-
       "templateName": "Template Name",
       "namePlaceholder": "e.g. order_confirmation",
       "nameFixed": "Name is fixed once a template exists on Meta — create a new template to change it.",
@@ -1694,7 +2031,6 @@
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
-
       "header": "Header",
       "headerNone": "None",
       "headerText": "Text",
@@ -1704,7 +2040,6 @@
       "headerTextPlaceholder": "Header text (max 60 chars, optional {{1}})",
       "headerSampleAria": "Sample value for header variable",
       "headerSamplePlaceholder": "Sample value for {{1}} (required for Meta review)",
-
       "uploadImage": "Upload image",
       "uploadHint": "JPEG or PNG, ≤5 MB",
       "mediaUrlPlaceholder": "https://… (or paste a public {format} link)",
@@ -1712,17 +2047,14 @@
       "mediaHint": "Must be a publicly accessible HTTPS link. Meta fetches it once during review, so it needs to stay live for ~24 hrs.",
       "videoHint": " Recommended: MP4 / 3GPP, ≤16 MB, ≤60 seconds.",
       "documentHint": " Recommended: PDF, ≤100 MB.",
-
       "bodyText": "Body Text",
       "bodyPlaceholder": "Hello {{1}}, your order {{2}} is confirmed.",
       "bodyHint": "Use {{1}}, {{2}} for variables (must be contiguous starting at {{1}}).",
       "sampleValues": "Sample values (Meta uses these to review your template)",
       "sampleAria": "Sample value for body variable {var}",
       "samplePlaceholder": "Sample for {var}",
-
       "footer": "Footer (optional)",
       "footerPlaceholder": "Optional footer text (max 60 chars)",
-
       "buttons": "Buttons (optional)",
       "addButton": "Add Button",
       "buttonsLimit": "Up to {max} buttons. QUICK_REPLY buttons must come before URL / phone / copy-code buttons.",
@@ -1735,19 +2067,16 @@
       "urlSamplePlaceholder": "Example value for {{1}} (required when URL has a variable)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "Example code (e.g. SUMMER20)",
-
       "cancel": "Cancel",
       "saving": "Saving…",
       "submitting": "Submitting…",
       "saveResubmit": "Save & Resubmit",
       "submitApproval": "Submit for Approval",
-
       "deleteDialogTitle": "Delete template?",
       "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
       "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
-
       "toastLoadFailed": "Failed to load templates",
       "toastSubmitFailed": "Failed to submit",
       "toastSubmitEditSuccess": "Edit submitted — Meta typically reviews within 24 hours.",
@@ -1824,6 +2153,18 @@
       "webhookTitle": "Webhook Configuration",
       "webhookDesc": "Use this URL as your webhook callback in the Meta App Dashboard.",
       "webhookUrl": "Webhook Callback URL",
+      "cooldown": {
+        "title": "Cooldown / anti-fatigue",
+        "description": "Avoid resending marketing to the same contact before the window below has passed. This is the control that most protects number quality — which in turn decides your Meta sending tier.",
+        "label": "Days before resending marketing to the same contact",
+        "hint": "0 disables cooldown. Contacts within the window arrive deselected by default in triage — admins can re-include them manually.",
+        "invalid": "Enter a whole number between 0 and 90.",
+        "save": "Save cooldown",
+        "saving": "Saving...",
+        "saveSuccess": "Cooldown updated.",
+        "saveFailed": "Could not save the cooldown setting. Try again.",
+        "adminOnlyHint": "Only admins can change this value."
+      },
       "saving": "Saving...",
       "saveConfig": "Save Configuration",
       "testing": "Testing...",
@@ -1897,7 +2238,6 @@
       "profileSaved": "Profile saved",
       "emailChangeFailed": "Email change failed: {message}",
       "profileSavedEmailCheck": "Profile saved — check your email to confirm the address change",
-
       "passwordTitle": "Password",
       "passwordDesc": "Use at least {min} characters. You will stay signed in on this device after changing it.",
       "currentPassword": "Current password",
@@ -1911,7 +2251,6 @@
       "currentPasswordIncorrect": "Current password is incorrect",
       "passwordUpdateFailed": "Password update failed: {message}",
       "passwordUpdated": "Password updated",
-
       "sessionsTitle": "Active sessions",
       "sessionsDesc": "Sign out of every device where you're logged in — including this one. Useful if you lost a laptop or shared your password.",
       "signOutAll": "Sign out of all devices",

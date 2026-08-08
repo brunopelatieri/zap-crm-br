@@ -253,7 +253,17 @@ export default function BroadcastsPage() {
                     onClick={() => router.push(`/broadcasts/${broadcast.id}`)}
                   >
                     <TableCell className="text-foreground font-medium">
-                      {broadcast.name}
+                      <span className="flex items-center gap-2">
+                        {broadcast.name}
+                        {/* Teste A/B (§6.6): os dois braços têm o mesmo
+                            nome de propósito — é uma campanha só, com
+                            dois textos. O rótulo é o que os distingue. */}
+                        {broadcast.variant_label && (
+                          <span className="border-primary/30 bg-primary/10 text-primary inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium">
+                            {t('variant', { variant: broadcast.variant_label })}
+                          </span>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground hidden md:table-cell">
                       {broadcast.template_name}

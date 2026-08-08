@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isInvalidWhatsappNumberError,
   isRecipientNotAllowedError,
   isValidE164,
   normalizePhone,
@@ -156,5 +157,33 @@ describe('isRecipientNotAllowedError', () => {
       false
     );
     expect(isRecipientNotAllowedError('')).toBe(false);
+  });
+});
+
+describe('isInvalidWhatsappNumberError', () => {
+  it('matches Meta error code 131026', () => {
+    expect(
+      isInvalidWhatsappNumberError(
+        '(#131026) Message Undeliverable: recipient not on WhatsApp'
+      )
+    ).toBe(true);
+  });
+
+  it('matches the human-readable text variants, case-insensitive', () => {
+    expect(isInvalidWhatsappNumberError('not a WhatsApp user')).toBe(true);
+    expect(
+      isInvalidWhatsappNumberError('The recipient phone number is not a WhatsApp phone number.')
+    ).toBe(true);
+    expect(isInvalidWhatsappNumberError('NOT A WHATSAPP USER')).toBe(true);
+  });
+
+  it('does not false-positive on unrelated errors, including the sandbox allow-list code', () => {
+    expect(isInvalidWhatsappNumberError('(#131030) not in allowed list')).toBe(
+      false
+    );
+    expect(isInvalidWhatsappNumberError('(#100) Invalid parameter')).toBe(
+      false
+    );
+    expect(isInvalidWhatsappNumberError('')).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import {
   canDeleteAccount,
   canEditSettings,
   canManageMembers,
+  canOverrideCooldown,
   canReassignToOthers,
   canSendMessages,
   canTransferOwnership,
@@ -26,7 +27,8 @@ export type CanAction =
   | 'delete-account'
   | 'transfer-ownership'
   | 'view-all-conversations'
-  | 'reassign-conversation';
+  | 'reassign-conversation'
+  | 'override-cooldown';
 
 /**
  * Inline alternative to `<RequireRole>` for places that need a
@@ -62,6 +64,8 @@ export function useCan(action: CanAction): boolean {
       return canViewAllConversations(accountRole);
     case 'reassign-conversation':
       return canReassignToOthers(accountRole);
+    case 'override-cooldown':
+      return canOverrideCooldown(accountRole);
     default: {
       // Exhaustiveness check — adding a new `CanAction` without a
       // case here fails the typecheck because TS narrows `action`

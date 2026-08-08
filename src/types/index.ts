@@ -108,6 +108,26 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  /**
+   * Consentimento de marketing (migração 048, SPEC 044 §6.8).
+   * `opted_out` nunca entra em audiência de marketing. Escrito só pela
+   * RPC `set_contact_opt_in` — ver `lib/contacts/consent.ts`.
+   */
+  opt_in_status?: 'opted_in' | 'opted_out' | 'unknown';
+  /** Como o estado atual foi definido: inbound_keyword | manual | … */
+  opt_in_source?: string | null;
+  /** Quando o estado atual passou a valer. NULL = nunca declarado. */
+  opt_in_updated_at?: string | null;
+  /**
+   * Auto-limpeza de números mortos (migração 049, SPEC 044 §6.4).
+   * `invalid` é excluído por padrão de audiências futuras. Reversível —
+   * ver `lib/contacts/whatsapp-status.ts`.
+   */
+  whatsapp_status?: 'valid' | 'invalid';
+  /** Por que ficou no status atual: consecutive_failures | meta_error | manual. */
+  whatsapp_status_reason?: string | null;
+  /** Quando o status atual passou a valer. NULL = nunca mudou do default. */
+  whatsapp_status_updated_at?: string | null;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
@@ -322,6 +342,8 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /** Anti-fatigue cooldown in days (SPEC 044 §6.2). 0 = disabled. */
+  broadcast_cooldown_days?: number;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
@@ -454,6 +476,28 @@ export interface Broadcast {
   template_variables?: Record<string, unknown>;
   audience_filter?: Record<string, unknown>;
   scheduled_at?: string;
+  /**
+   * Fuso IANA em que `scheduled_at` foi escolhido (migração 048, SPEC
+   * 044 §6.3). É neste fuso que o cron avalia a janela de horário —
+   * "20h" não significa nada sem ele.
+   */
+  scheduled_timezone?: string | null;
+  /** O usuário aceitou disparar fora da janela permitida (§6.3). */
+  window_override?: boolean;
+  /**
+   * URL de mídia do header escolhida no passo 3. Persistida para o
+   * disparo agendado poder ser retomado sem o navegador (§6.3).
+   */
+  header_media_url?: string | null;
+  /**
+   * Teste A/B (migração 051, SPEC 044 §6.6). A variante A é uma campanha
+   * comum com `variant_label = 'A'`; a B aponta para ela por
+   * `parent_broadcast_id`. NULL nos três campos = campanha comum.
+   */
+  parent_broadcast_id?: string | null;
+  variant_label?: 'A' | 'B' | null;
+  /** Fatia da audiência sorteada para a variante A. Vive na linha A. */
+  ab_split_percent?: number | null;
   status: BroadcastStatus;
   total_recipients: number;
   sent_count: number;

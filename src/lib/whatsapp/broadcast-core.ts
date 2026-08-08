@@ -30,6 +30,7 @@ import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import { createHeaderMediaResolver } from '@/lib/whatsapp/header-media';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { detectDeadNumberOnFailure } from '@/lib/contacts/whatsapp-status';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -59,6 +60,8 @@ export interface CreateBroadcastParams {
 
 interface PlannedRecipient {
   recipientRowId: string;
+  /** Dono da linha — precisa acompanhar a falha para a §6.4 poder agir. */
+  contactId: string;
   phone: string;
   params: string[];
 }
@@ -75,6 +78,15 @@ export interface BroadcastPlan {
   rejected: number;
 }
 
+/**
+ * Teto de destinatários POR REQUISIÇÃO da API pública.
+ *
+ * É um contrato documentado de `/api/v1/broadcasts`, não um limite do
+ * motor: quem chama a API divide audiências maiores em requisições. O
+ * disparo do painel não passa por `createBroadcast` — ele resolve os
+ * contatos por conta própria (SPEC 044 §6.1) e tem o próprio teto, que
+ * é a cota de 24 h da Meta.
+ */
 const MAX_RECIPIENTS = 1000;
 
 /**
@@ -236,6 +248,7 @@ export async function createBroadcast(
     const r = byContact.get(row.contact_id as string)!;
     return {
       recipientRowId: row.id as string,
+      contactId: r.contactId,
       phone: r.phone,
       params: r.params,
     };
@@ -253,6 +266,25 @@ export async function createBroadcast(
   };
 }
 
+export interface DeliverOptions {
+  /**
+   * Pausa `delayMs` a cada `batchSize` envios, para o disparo ficar
+   * abaixo do limite de taxa por número da Meta.
+   *
+   * Omitido = sem pausa, que é o comportamento histórico da API
+   * pública: ela já é limitada a {@link MAX_RECIPIENTS} por requisição
+   * e roda dentro do `maxDuration` da rota, então uma pausa a cada
+   * lote só aproximaria o corte por timeout. O disparo do painel
+   * (SPEC 044 §6.1) não tem esse teto e passa a pausa explicitamente.
+   */
+  batchSize?: number;
+  delayMs?: number;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Fan out a {@link BroadcastPlan}: send each recipient's template
  * (phone-variant retry) and stamp its `broadcast_recipients` row.
@@ -268,9 +300,13 @@ export async function createBroadcast(
  */
 export async function deliverBroadcast(
   db: SupabaseClient,
-  plan: BroadcastPlan
+  plan: BroadcastPlan,
+  options: DeliverOptions = {}
 ): Promise<void> {
   let sentCount = 0;
+  const { batchSize = 0, delayMs = 0 } = options;
+  const paced = batchSize > 0 && delayMs > 0;
+  let sinceLastPause = 0;
 
   // Header de mídia: o bucket virou privado na migração 040, então a URL
   // do template precisa ser assinada. Um broadcast longo ultrapassaria a
@@ -321,13 +357,29 @@ export async function deliverBroadcast(
         })
         .eq('id', recipient.recipientRowId);
     } else {
+      const errorMessage = lastError || 'Unknown error';
       await db
         .from('broadcast_recipients')
         .update({
           status: 'failed',
-          error_message: lastError || 'Unknown error',
+          error_message: errorMessage,
         })
         .eq('id', recipient.recipientRowId);
+
+      // Auto-limpeza de números mortos (§6.4) — best-effort, nunca
+      // aborta o fan-out do resto da audiência.
+      await detectDeadNumberOnFailure(db, {
+        contactId: recipient.contactId,
+        errorMessage,
+      });
+    }
+
+    if (paced) {
+      sinceLastPause++;
+      if (sinceLastPause >= batchSize) {
+        sinceLastPause = 0;
+        await sleep(delayMs);
+      }
     }
   }
 

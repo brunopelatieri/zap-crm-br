@@ -597,7 +597,45 @@
       "toastCustomFieldsSaved": "Campos personalizados salvos",
       "toastCustomFieldsFailed": "Falha ao salvar campos personalizados",
       "toastTemplateSent": "Template \"{name}\" enviado",
-      "toastTemplateFailed": "Falha ao enviar template: {reason}"
+      "toastTemplateFailed": "Falha ao enviar template: {reason}",
+      "consent": {
+        "label": "Consentimento de marketing",
+        "status": {
+          "opted_in": "Aceitou receber",
+          "opted_out": "Pediu para sair",
+          "unknown": "Não declarado"
+        },
+        "source": {
+          "inbound_keyword": "respondeu com palavra-chave",
+          "manual": "definido pela equipe",
+          "import": "vindo de importação",
+          "api": "pela API",
+          "automation": "por uma automação"
+        },
+        "since": "desde {when} — {source}",
+        "hint": "Disparos de marketing pulam quem pediu para sair. Toda mudança fica registrada na trilha de auditoria.",
+        "optedOutHint": "Este contato não recebe disparos de marketing. Templates de utilidade e autenticação continuam alcançando.",
+        "markOptedIn": "Marcar como aceitou",
+        "markOptedOut": "Marcar como pediu para sair",
+        "saved": "Consentimento atualizado.",
+        "saveFailed": "Não foi possível atualizar o consentimento."
+      },
+      "whatsappStatus": {
+        "label": "Número de WhatsApp",
+        "status": {
+          "invalid": "Número morto"
+        },
+        "reason": {
+          "consecutive_failures": "2 falhas de entrega seguidas",
+          "meta_error": "A Meta informou que este número não é WhatsApp",
+          "manual": "definido pela equipe"
+        },
+        "since": "desde {when} — {reason}",
+        "hint": "Excluído por padrão de disparos futuros. Marque como válido de novo se achar que foi engano.",
+        "markValid": "Marcar como válido de novo",
+        "saved": "Status de WhatsApp atualizado.",
+        "saveFailed": "Não foi possível atualizar o status de WhatsApp."
+      }
     },
     "importModal": {
       "title": "Importar contatos",
@@ -801,7 +839,8 @@
         "date": "Data"
       },
       "errorLoad": "Falha ao carregar disparos",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "variant": "Variante {variant}"
     },
     "status": {
       "draft": "Rascunho",
@@ -852,7 +891,29 @@
         "failed": "Falharam"
       },
       "toastFailedDelete": "Falha ao excluir: {error}",
-      "toastDeleted": "Disparo excluído"
+      "toastDeleted": "Disparo excluído",
+      "abTest": {
+        "title": "Teste A/B",
+        "subtitle": "A audiência foi dividida {percentA}% / {percentB}% entre os dois templates.",
+        "variantLabel": "Variante {variant}",
+        "currentCampaign": "campanha aberta",
+        "openVariant": "abrir esta variante",
+        "armSize": "{total} destinatários · {sent} mensagens enviadas",
+        "winner": "Variante {variant} venceu em {metric}",
+        "noWinner": "Sem diferença significativa",
+        "noWinnerHint": "A diferença entre os dois braços não é distinguível de acaso (p ≥ 0,05).",
+        "smallSample": "Amostra pequena",
+        "smallSampleHint": "Com menos de {minimum} mensagens enviadas por braço (o menor tem {smallest}), nenhum resultado aqui é confiável — as taxas aparecem, mas não indicam vencedor.",
+        "primary": "principal",
+        "points": "pontos",
+        "methodology": "Taxas calculadas sobre as mensagens enviadas de cada braço. Significância por teste z de duas proporções, bilateral, a 5%.",
+        "table": {
+          "metric": "Métrica",
+          "difference": "Diferença (B − A)",
+          "pValue": "valor-p"
+        },
+        "deleteCascade": "Apagar a variante A apaga o teste inteiro, incluindo a variante B. Confirmar?"
+      }
     },
     "new": {
       "title": "Novo disparo",
@@ -883,6 +944,7 @@
       "selectAudience": {
         "title": "Selecionar público",
         "subtitle": "Escolha quem vai receber este disparo.",
+        "analyze": "Analisar audiência",
         "method": {
           "all": "Todos os contatos",
           "tags": "Filtrar por etiquetas",
@@ -940,6 +1002,29 @@
           "name": "Nome",
           "phone": "Telefone",
           "email": "E-mail"
+        },
+        "headerMediaMissing": "Uma URL de mídia é obrigatória para enviar este modelo.",
+        "headerMediaInvalid": "Informe uma URL http(s) válida.",
+        "unmappedWarning": "Mapeie todas as variáveis antes de continuar — ainda faltam {keys}. Caso contrário elas chegam à Meta como texto vazio.",
+        "testSend": {
+          "button": "Enviar teste",
+          "dialogTitle": "Enviar uma mensagem de teste",
+          "dialogSubtitle": "Envia este modelo para até {max} contatos reais com o mesmo mapeamento de variáveis, antes de mandar para a audiência inteira.",
+          "searchPlaceholder": "Buscar contatos por nome ou telefone…",
+          "noResults": "Nenhum contato encontrado.",
+          "selectedCount": "{count}/{max} selecionados",
+          "send": "Enviar teste",
+          "sending": "Enviando…",
+          "testAgain": "Testar novamente",
+          "toastFailed": "Falha ao enviar o teste",
+          "status": {
+            "sent": "Enviado",
+            "failed": "Falhou",
+            "invalid_phone": "Telefone inválido",
+            "opted_out": "Optou por sair",
+            "whatsapp_invalid": "Número morto",
+            "not_found": "Não encontrado"
+          }
         }
       },
       "scheduleSend": {
@@ -954,6 +1039,7 @@
         "audienceTags": "Filtrado por etiquetas",
         "audienceField": "Filtrado por campo personalizado",
         "audienceCsv": "Envio de CSV",
+        "audienceStaged": "Revisado na triagem",
         "variables": "Variáveis:",
         "variablesMapped": "{count} associada(s)",
         "saveDraft": "Salvar como rascunho",
@@ -961,7 +1047,260 @@
         "sending": "Enviando...",
         "preparing": "Preparando...",
         "progressDesc": "Processando {current} de {total} destinatários...",
-        "toastFailedPreview": "Falha ao carregar dados de pré-visualização"
+        "toastFailedPreview": "Falha ao carregar dados de pré-visualização",
+        "estimatedReach": "Alcance estimado",
+        "language": "Idioma",
+        "confirmTitle": "Confirmar disparo",
+        "confirmBody": "Você está prestes a enviar este disparo para <strong>{count}</strong> contatos usando o modelo <strong>{template}</strong>. Esta ação não pode ser desfeita.",
+        "starting": "Iniciando o disparo…",
+        "serverSideHint": "O envio roda no nosso servidor. Você pode fechar esta aba — ele continua."
+      },
+      "abTest": {
+        "enable": "Testar dois templates (A/B)",
+        "description": "A mesma audiência é dividida aleatoriamente entre dois templates aprovados, e as duas campanhas aparecem lado a lado na tela de resultado.",
+        "noCandidates": "Nenhum outro template aprovado na categoria {category} — um teste A/B compara dois textos da mesma categoria.",
+        "variantTemplate": "Template da variante B",
+        "split": "Divisão da audiência",
+        "splitOption": "{a}% para A · {b}% para B",
+        "minimumHint": "Resultados só ganham significância estatística acima de ~300 destinatários por braço.",
+        "tab": "Variante {variant} · {template}",
+        "summaryTitle": "Teste A/B",
+        "variantLine": "Variante {variant}",
+        "summaryHint": "A divisão é sorteada no servidor, sobre a audiência resolvida na hora do disparo. Os números acima são estimativa.",
+        "tooSmall": "Um teste A/B precisa de pelo menos dois destinatários — um por braço.",
+        "confirmBody": "Serão criadas duas campanhas: {templateA} para ~{countA} contatos e {templateB} para ~{countB}."
+      }
+    },
+    "audience": {
+      "source": {
+        "recommended": "Recomendado",
+        "googleSheets": {
+          "label": "Google Planilhas",
+          "description": "Cole o link de uma planilha que você já mantém."
+        },
+        "spreadsheet": {
+          "label": "Arquivo CSV ou Excel",
+          "description": "Envie um .csv ou .xlsx do seu computador."
+        },
+        "all": {
+          "label": "Todos os contatos",
+          "description": "Enviar para todos os contatos da sua base."
+        },
+        "tags": {
+          "label": "Filtrar por etiquetas",
+          "description": "Enviar para contatos com etiquetas específicas."
+        },
+        "customField": {
+          "label": "Campo personalizado",
+          "description": "Enviar para contatos que atendam a uma regra de campo."
+        }
+      },
+      "upload": {
+        "choose": "Escolher arquivo",
+        "orDrag": "ou arraste aqui",
+        "accepted": "CSV ou Excel (.xlsx), até {max}",
+        "parsing": "Lendo…",
+        "clear": "Remover arquivo",
+        "sheet": "Aba",
+        "columnsHint": "Precisa de uma coluna de telefone. Nome, e-mail, empresa e etiquetas são opcionais.",
+        "parsingProgress": "Lendo {processed} de {total} linhas…"
+      },
+      "sheets": {
+        "title": "Importar do Google Planilhas",
+        "placeholder": "https://docs.google.com/spreadsheets/d/…",
+        "import": "Importar",
+        "invalidUrl": "Isso não parece um link do Google Planilhas.",
+        "shareHint": "A planilha precisa estar compartilhada como \"Qualquer pessoa com o link pode ver\".",
+        "error": {
+          "invalid_url": "Isso não parece um link do Google Planilhas.",
+          "not_public": "Esta planilha não está pública. Compartilhe como \"Qualquer pessoa com o link pode ver\" e tente de novo.",
+          "not_found": "Planilha não encontrada. Confira o link.",
+          "too_large": "Esta planilha é grande demais para importar.",
+          "timeout": "O Google demorou demais para responder. Tente de novo.",
+          "fetch_failed": "Não foi possível ler a planilha. Tente de novo."
+        }
+      },
+      "summary": {
+        "title": "Resumo da importação",
+        "sheet": "Aba: {name}",
+        "read": "lidas",
+        "valid": "válidas",
+        "duplicates": "duplicadas",
+        "invalid": "inválidas",
+        "rejectedRows": "{count} linhas não foram importadas",
+        "line": "Linha {n}",
+        "showAll": "Ver todas as {count}"
+      },
+      "invalidReason": {
+        "missing_phone": "sem telefone",
+        "invalid_phone": "telefone inválido",
+        "duplicate_in_file": "duplicada"
+      },
+      "parseError": {
+        "file_too_large": "Este arquivo é grande demais. O limite é 10 MB.",
+        "too_many_rows": "Este arquivo tem mais de {max} linhas. Divida em arquivos menores.",
+        "missing_phone_column": "Nenhuma coluna de telefone encontrada. Adicione uma coluna \"telefone\" e tente de novo.",
+        "empty_file": "Este arquivo não tem linhas de dados.",
+        "unreadable": "Não foi possível ler este arquivo. Confira se é um CSV ou Excel válido.",
+        "unsupported_format": "Formato não suportado. Use um arquivo .csv ou .xlsx."
+      },
+      "quota": {
+        "title": "Cota de envio de 24 h",
+        "stale": "Desatualizado",
+        "staleHint": "Não foi possível consultar a Meta — exibindo o último tier conhecido. O limite continua sendo aplicado.",
+        "unlimited": "Sem limite neste tier.",
+        "selectedOfRemaining": "{selected} selecionados de {remaining} disponíveis",
+        "usedInWindow": "{used} já alcançados nas últimas 24 h",
+        "exceeded": "{excess} acima da cota disponível.",
+        "blockedHint": "Esta audiência excede a cota disponível nas últimas 24 horas. Remova contatos ou aguarde a janela reabrir."
+      },
+      "estimate": {
+        "title": "Resumo da audiência",
+        "calculating": "Calculando…",
+        "recipients": "destinatários estimados",
+        "empty": "Escolha uma fonte de audiência para ver a estimativa."
+      },
+      "excludeNotAppliedToImport": "A exclusão por etiqueta não se aplica a uma lista importada — contatos importados ainda não têm etiquetas.",
+      "sendError": {
+        "whatsapp_not_configured": "O WhatsApp não está conectado. Configure a integração em Ajustes e tente de novo.",
+        "empty_audience": "Nenhum contato com telefone válido corresponde a esta audiência.",
+        "quota_exceeded": "Esta audiência excede a cota disponível nas últimas 24 horas. Remova contatos ou aguarde a janela reabrir.",
+        "too_many_recipients": "Esta audiência é grande demais para um único disparo. Divida em envios menores.",
+        "template_malformed": "Este template está dessincronizado. Rode \"Sincronizar com a Meta\" em Ajustes e tente de novo.",
+        "draft_not_found": "Este rascunho não existe mais ou já foi enviado. Refaça a seleção de audiência.",
+        "bad_request": "Algo neste disparo não está válido. Volte e revise a audiência e as variáveis.",
+        "rate_limited": "Muitos disparos iniciados seguidos. Aguarde um instante e tente de novo.",
+        "internal": "Não foi possível iniciar o disparo. Tente novamente em instantes.",
+        "all_opted_out": "Todos os contatos desta audiência pediram para não receber marketing.",
+        "outside_send_window": "Este horário está fora da janela de envio permitida. Escolha outro horário ou confirme o override.",
+        "schedule_in_past": "O horário agendado já passou. Escolha um horário no futuro.",
+        "schedule_too_far": "É possível agendar um disparo com até 90 dias de antecedência.",
+        "template_not_found": "Este template já não existe nesta conta. Escolha outro.",
+        "all_whatsapp_invalid": "Todos os contatos desta audiência estão com o número marcado como inválido no WhatsApp.",
+        "ab_same_template": "Um teste A/B precisa de dois templates diferentes.",
+        "ab_category_mismatch": "As duas variantes precisam ser da mesma categoria de template.",
+        "ab_audience_too_small": "Audiência pequena demais para dividir em dois braços."
+      },
+      "stageError": {
+        "template_not_found": "Este template não foi encontrado. Volte e escolha novamente.",
+        "too_many_rows": "Esta audiência tem mais linhas do que o limite ({max}). Divida em arquivos menores.",
+        "empty_audience": "Nenhum contato corresponde a esta audiência.",
+        "bad_request": "Algo nesta audiência não está válido. Volte e revise.",
+        "rate_limited": "Muitas tentativas seguidas. Aguarde um instante e tente de novo.",
+        "internal": "Não foi possível preparar esta audiência para triagem. Tente novamente em instantes."
+      },
+      "triage": {
+        "title": "Triagem de audiência",
+        "subtitle": "Revise quem está prestes a receber \"{template}\" antes de continuar.",
+        "backToAudience": "Descartar rascunho",
+        "cancelConfirmTitle": "Descartar este rascunho?",
+        "cancelConfirmBody": "A audiência preparada será descartada. Esta ação não pode ser desfeita.",
+        "cancelConfirmAction": "Descartar rascunho",
+        "cancel": "Cancelar",
+        "continue": "Continuar",
+        "discardFailed": "Não foi possível descartar este rascunho. Tente novamente.",
+        "draftNotFound": "Este rascunho não foi encontrado.",
+        "draftAlreadySent": "Este disparo já foi enviado — a audiência não pode mais ser triada.",
+        "viewBroadcast": "Ver disparo",
+        "backToNew": "Iniciar um novo disparo",
+        "searchPlaceholder": "Buscar por nome ou telefone",
+        "selectedSummary": "{selected} selecionado(s)",
+        "quotaBlockedHint": "Esta seleção excede a cota disponível nas últimas 24 horas. Remova contatos ou aguarde a janela reabrir.",
+        "selectAllFiltered": "Selecionar todos que casam ({count})",
+        "clearAllFiltered": "Limpar todos que casam",
+        "selectionUpdated": "{count} linha(s) atualizada(s)",
+        "bulkActionFailed": "Não foi possível atualizar a seleção. Tente novamente.",
+        "toggleFailed": "Não foi possível atualizar esta linha. Tente novamente.",
+        "loadError": "Não foi possível carregar a tabela de triagem.",
+        "empty": "Nenhuma linha corresponde a este filtro.",
+        "never": "Nunca",
+        "selectRow": "Selecionar",
+        "engagementPresets": "Presets de engajamento",
+        "rowCount": "Mostrando {shown} de {total}",
+        "filter": {
+          "all": "Todos",
+          "selected": "Selecionados",
+          "unselected": "Não selecionados",
+          "valid": "Válidos",
+          "invalid": "Inválidos",
+          "new": "Contatos novos",
+          "existing": "Contatos existentes",
+          "engaged": "🔥 Engajados",
+          "reads_no_reply": "👀 Leem, não respondem",
+          "dormant": "😴 Adormecidos",
+          "never_contacted": "✨ Nunca contatados",
+          "problematic": "⚠️ Problemáticos",
+          "cooldown": "Em cooldown",
+          "opted_out": "🚫 Pediram para sair",
+          "optable": "✅ Podem receber marketing"
+        },
+        "table": {
+          "contact": "Contato",
+          "status": "Status",
+          "campaigns": "Campanhas",
+          "lastDelivered": "Última entrega",
+          "read": "Leu",
+          "replied": "Respondeu",
+          "failures": "Falhas",
+          "tags": "Etiquetas"
+        },
+        "badge": {
+          "new": "Novo",
+          "existing": "Existente",
+          "optedOut": "Pediu para sair"
+        },
+        "dashboard": {
+          "title": "Histórico de engajamento",
+          "subtitle": "Como os disparos desta conta performaram nos últimos 30 dias.",
+          "cards": {
+            "campaignsSent": "Campanhas enviadas",
+            "messagesDelivered": "Mensagens entregues",
+            "readRate": "Taxa de leitura",
+            "replyRate": "Taxa de resposta",
+            "contactsReached": "Contatos alcançados",
+            "quotaUsed": "Cota de 24h usada"
+          },
+          "chart": {
+            "title": "Últimos 30 dias",
+            "empty": "Nenhum disparo nos últimos 30 dias.",
+            "legend": {
+              "messages_sent": "Enviadas",
+              "messages_delivered": "Entregues",
+              "messages_read": "Lidas",
+              "messages_replied": "Respondidas",
+              "messages_failed": "Falhas"
+            }
+          },
+          "summary": {
+            "empty": "Ainda não há contatos válidos nesta audiência.",
+            "sentence": "Desta lista de {total} contatos, {everContacted} já receberam alguma campanha — {readPct}% leram e {repliedPct}% responderam. {neverDelivered} nunca receberam entrega.",
+            "optedOut": "{count} deles pediram para não receber marketing e ficarão de fora.",
+            "inCooldown": "{count} receberam uma campanha há pouco tempo e foram desmarcados automaticamente (cooldown)."
+          }
+        },
+        "consentFilters": "Consentimento",
+        "removeOptedOut": "Remover quem pediu para sair",
+        "removeCooldown": "Remover quem está em cooldown",
+        "overrideCooldown": "Incluir quem está em cooldown"
+      },
+      "consent": {
+        "excludedFromMarketing": "Contatos que pediram para não receber marketing já estão fora desta contagem."
+      },
+      "schedule": {
+        "title": "Quando enviar",
+        "now": "Enviar agora",
+        "later": "Agendar",
+        "scheduleAction": "Agendar disparo",
+        "timeZoneHint": "Horário no seu fuso ({timeZone}).",
+        "mustBeFuture": "Escolha um horário pelo menos um minuto à frente.",
+        "windowHint": "Janela permitida: dias úteis, {window}. Disparar fora dela prejudica a reputação do seu número na Meta.",
+        "outsideWindow": "Este horário está fora da janela permitida ({window}, dias úteis).",
+        "moveToSuggested": "Mover para {when}",
+        "overrideLabel": "Enviar mesmo assim — assumo o risco de reputação.",
+        "overrideConfirm": "Este disparo está fora da janela {window}. O override ficará registrado na trilha de auditoria.",
+        "blockedHint": "Fora da janela de horário permitida. Escolha outro horário ou confirme o override.",
+        "confirmScheduled": "Nada é enviado agora: a campanha sai em {when}, pelo servidor.",
+        "scheduledToast": "Disparo agendado para {when}."
       }
     }
   },
@@ -1814,6 +2153,18 @@
       "webhookTitle": "Configuração do webhook",
       "webhookDesc": "Use esta URL como callback de webhook no painel do App da Meta.",
       "webhookUrl": "URL de callback do webhook",
+      "cooldown": {
+        "title": "Cooldown / anti-fadiga",
+        "description": "Evite reenviar marketing ao mesmo contato antes que o prazo abaixo passe. É o controle que mais protege a qualidade do número — que por sua vez decide o teto de disparo da Meta.",
+        "label": "Dias sem reenviar marketing ao mesmo contato",
+        "hint": "0 desativa o cooldown. Contatos dentro do prazo chegam desmarcados por padrão na triagem — administradores podem reincluí-los manualmente.",
+        "invalid": "Informe um número inteiro entre 0 e 90.",
+        "save": "Salvar cooldown",
+        "saving": "Salvando...",
+        "saveSuccess": "Cooldown atualizado.",
+        "saveFailed": "Não foi possível salvar o cooldown. Tente novamente.",
+        "adminOnlyHint": "Apenas administradores podem alterar este valor."
+      },
       "saving": "Salvando...",
       "saveConfig": "Salvar configuração",
       "testing": "Testando...",

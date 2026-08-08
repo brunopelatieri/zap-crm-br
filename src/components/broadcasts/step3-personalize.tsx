@@ -1,5 +1,23 @@
 'use client';
 
+/**
+ * Passo 3 do wizard — mapeamento de variáveis, mídia de header e
+ * pré-visualização.
+ *
+ * Por que o miolo virou um componente por variante (SPEC 044 §6.6)
+ *
+ *   Um teste A/B são dois templates, e dois templates têm placeholders
+ *   diferentes: `{{1}}` do primeiro pode ser o nome e o do segundo, a
+ *   cidade. Reaproveitar um mapeamento só entre os dois mandaria a
+ *   cidade no lugar do nome para metade da audiência — e a tela não
+ *   teria como mostrar isso. Cada braço mapeia o próprio template, em
+ *   abas; sem teste A/B a aba não aparece e o passo é o de sempre.
+ *
+ *   As leituras de apoio (campos personalizados e um contato real para o
+ *   preview) continuam acontecendo UMA vez, no componente de fora: elas
+ *   não dependem do template.
+ */
+
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Contact, CustomField, MessageTemplate } from '@/types';
@@ -12,9 +30,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, ArrowRight, Eye, ImageIcon, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMediaSrc } from '@/lib/storage/use-media-src';
+import { TestSendDialog } from '@/components/broadcasts/test-send-dialog';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -23,13 +43,21 @@ interface VariableMapping {
   value: string;
 }
 
+type VariableMap = Record<string, VariableMapping>;
+
 interface Step3Props {
   template: MessageTemplate;
-  variables: Record<string, VariableMapping>;
-  onUpdate: (variables: Record<string, VariableMapping>) => void;
+  variables: VariableMap;
+  onUpdate: (variables: VariableMap) => void;
   /** Media URL for an IMAGE/VIDEO/DOCUMENT header, when the template has one. */
   headerMediaUrl: string;
   onHeaderMediaUrlChange: (url: string) => void;
+  /** Variante B do teste A/B (§6.6). `null` = disparo comum. */
+  variantTemplate?: MessageTemplate | null;
+  variantVariables?: VariableMap;
+  onVariantUpdate?: (variables: VariableMap) => void;
+  variantHeaderMediaUrl?: string;
+  onVariantHeaderMediaUrlChange?: (url: string) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -48,6 +76,47 @@ function isValidHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Os `{{N}}` do corpo, sem repetição e em ordem. */
+function placeholdersOf(template: MessageTemplate): string[] {
+  const matches = template.body_text.match(/\{\{(\d+)\}\}/g);
+  if (!matches) return [];
+  return [...new Set(matches)].sort();
+}
+
+/**
+ * Um placeholder está "sem mapa" quando o usuário não escolheu nem um
+ * valor fixo nem uma origem. Bloqueia o "Próximo" — sem isso o disparo
+ * sairia com string vazia e confundiria quem recebe.
+ */
+function unmappedPlaceholders(
+  template: MessageTemplate,
+  variables: VariableMap
+): string[] {
+  return placeholdersOf(template).filter((placeholder) => {
+    const key = placeholder.replace(/^\{\{|\}\}$/g, '');
+    const mapping = variables[key];
+    return !mapping || !mapping.value?.trim();
+  });
+}
+
+type HeaderMediaError = 'missing' | 'invalid' | null;
+
+/**
+ * Templates com header IMAGE/VIDEO/DOCUMENT precisam de uma URL de mídia
+ * no envio — a Meta exige o componente em toda entrega e recusa o
+ * disparo sem ele.
+ */
+function headerMediaErrorOf(
+  template: MessageTemplate,
+  headerMediaUrl: string
+): HeaderMediaError {
+  if (!isMediaHeaderType(template.header_type)) return null;
+  const value = headerMediaUrl.trim();
+  if (!value) return 'missing';
+  if (!isValidHttpUrl(value)) return 'invalid';
+  return null;
 }
 
 const contactFields = [
@@ -87,77 +156,36 @@ function HeaderImagePreview({ url }: { url: string }) {
   );
 }
 
-export function Step3Personalize({
+interface VariantFormProps {
+  template: MessageTemplate;
+  variables: VariableMap;
+  onUpdate: (variables: VariableMap) => void;
+  headerMediaUrl: string;
+  onHeaderMediaUrlChange: (url: string) => void;
+  customFields: CustomField[];
+  loadingFields: boolean;
+  firstContact: Contact | null;
+  firstContactCustomValues: Map<string, string>;
+  loadingPreview: boolean;
+}
+
+/** O miolo do passo 3, para UM template. */
+function VariantForm({
   template,
   variables,
   onUpdate,
   headerMediaUrl,
   onHeaderMediaUrlChange,
-  onNext,
-  onBack,
-}: Step3Props) {
+  customFields,
+  loadingFields,
+  firstContact,
+  firstContactCustomValues,
+  loadingPreview,
+}: VariantFormProps) {
   const t = useTranslations('Broadcasts.wizard');
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [loadingFields, setLoadingFields] = useState(true);
-  const [firstContact, setFirstContact] = useState<Contact | null>(null);
-  const [firstContactCustomValues, setFirstContactCustomValues] = useState<
-    Map<string, string>
-  >(new Map());
-  const [loadingPreview, setLoadingPreview] = useState(true);
 
-  // Load user's custom fields + a representative contact for the
-  // live preview. Fall back to sample data if no contacts exist yet.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const supabase = createClient();
-      const [fieldsRes, contactRes] = await Promise.all([
-        supabase.from('custom_fields').select('*').order('field_name'),
-        supabase
-          .from('contacts')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-      if (cancelled) return;
+  const placeholders = useMemo(() => placeholdersOf(template), [template]);
 
-      setCustomFields(fieldsRes.data ?? []);
-      setLoadingFields(false);
-
-      const contact = contactRes.data ?? null;
-      setFirstContact(contact);
-
-      if (contact) {
-        const { data: customVals } = await supabase
-          .from('contact_custom_values')
-          .select('custom_field_id, value')
-          .eq('contact_id', contact.id);
-        if (!cancelled) {
-          const map = new Map<string, string>();
-          for (const row of customVals ?? []) {
-            map.set(row.custom_field_id, row.value ?? '');
-          }
-          setFirstContactCustomValues(map);
-        }
-      }
-      setLoadingPreview(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const placeholders = useMemo(() => {
-    const matches = template.body_text.match(/\{\{(\d+)\}\}/g);
-    if (!matches) return [];
-    return [...new Set(matches)].sort();
-  }, [template.body_text]);
-
-  // Templates with an IMAGE/VIDEO/DOCUMENT header need a media URL at
-  // send time — Meta requires the media component on every delivery and
-  // rejects the broadcast without it. The field is hidden for text-only
-  // headers.
   const mediaHeaderType = isMediaHeaderType(template.header_type)
     ? template.header_type
     : null;
@@ -173,31 +201,15 @@ export function Step3Personalize({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaHeaderType, template.header_media_url]);
 
-  const headerMediaError = useMemo<'missing' | 'invalid' | null>(() => {
-    if (!mediaHeaderType) return null;
-    const value = headerMediaUrl.trim();
-    if (!value) return 'missing';
-    if (!isValidHttpUrl(value)) return 'invalid';
-    return null;
-  }, [mediaHeaderType, headerMediaUrl]);
+  const headerMediaError = useMemo(
+    () => headerMediaErrorOf(template, headerMediaUrl),
+    [template, headerMediaUrl]
+  );
 
-  /**
-   * A placeholder is "unmapped" if the user hasn't picked either a
-   * static value or a field/custom-field source. Blocks Next until
-   * every placeholder has something — otherwise the broadcast would
-   * ship with empty strings and confuse recipients.
-   */
-  const unmappedKeys = useMemo(() => {
-    const missing: string[] = [];
-    for (const placeholder of placeholders) {
-      const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-      const mapping = variables[key];
-      if (!mapping || !mapping.value?.trim()) {
-        missing.push(placeholder);
-      }
-    }
-    return missing;
-  }, [placeholders, variables]);
+  const unmappedKeys = useMemo(
+    () => unmappedPlaceholders(template, variables),
+    [template, variables]
+  );
 
   function updateVariable(key: string, patch: Partial<VariableMapping>) {
     const current = variables[key] ?? {
@@ -258,15 +270,6 @@ export function Step3Personalize({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-foreground text-lg font-semibold">
-          {t('personalize.title')}
-        </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {t('personalize.subtitle')}
-        </p>
-      </div>
-
       {mediaHeaderType && (
         <div className="border-border bg-card/50 rounded-xl border p-4">
           <div className="mb-3 flex items-center gap-2">
@@ -299,8 +302,8 @@ export function Step3Personalize({
           {headerMediaError && (
             <p className="mt-1.5 text-xs text-amber-300">
               {headerMediaError === 'missing'
-                ? 'A media URL is required to send this template.'
-                : 'Enter a valid http(s) URL.'}
+                ? t('personalize.headerMediaMissing')
+                : t('personalize.headerMediaInvalid')}
             </p>
           )}
         </div>
@@ -433,17 +436,28 @@ export function Step3Personalize({
       {/* Live Preview — rendered as a WhatsApp-style bubble so the user
           sees approximately what the recipient will see. */}
       <div className="border-border bg-card/50 rounded-xl border p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Eye className="text-primary h-4 w-4" />
-          <p className="text-foreground text-sm font-medium">
-            {t('personalize.preview')}
-          </p>
-          <span className="text-muted-foreground text-xs">
-            ({previewLabel})
-          </span>
-          {loadingPreview && (
-            <Loader2 className="text-primary h-3.5 w-3.5 animate-spin" />
-          )}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Eye className="text-primary h-4 w-4" />
+            <p className="text-foreground text-sm font-medium">
+              {t('personalize.preview')}
+            </p>
+            <span className="text-muted-foreground text-xs">
+              ({previewLabel})
+            </span>
+            {loadingPreview && (
+              <Loader2 className="text-primary h-3.5 w-3.5 animate-spin" />
+            )}
+          </div>
+          {/* Simulação a seco (SPEC 044 §6.7) — este texto acima é a
+              estimativa estática do wizard; o teste manda a mensagem de
+              verdade, com a mesma resolução de variáveis do disparo
+              real, para contatos reais escolhidos a dedo. */}
+          <TestSendDialog
+            template={template}
+            variables={variables}
+            headerMediaUrl={headerMediaUrl}
+          />
         </div>
         <div className="rounded-lg bg-[#0e1a12] p-3">
           <div className="bg-primary/30 ml-auto max-w-[85%] rounded-lg px-3 py-2 shadow-sm">
@@ -456,12 +470,160 @@ export function Step3Personalize({
 
       {unmappedKeys.length > 0 && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-          Map every placeholder before continuing — still missing{' '}
-          <span className="font-mono font-semibold">
-            {unmappedKeys.join(', ')}
-          </span>
-          . Otherwise those placeholders will ship to Meta as empty strings.
+          {t('personalize.unmappedWarning', { keys: unmappedKeys.join(', ') })}
         </div>
+      )}
+    </div>
+  );
+}
+
+export function Step3Personalize({
+  template,
+  variables,
+  onUpdate,
+  headerMediaUrl,
+  onHeaderMediaUrlChange,
+  variantTemplate = null,
+  variantVariables = {},
+  onVariantUpdate,
+  variantHeaderMediaUrl = '',
+  onVariantHeaderMediaUrlChange,
+  onNext,
+  onBack,
+}: Step3Props) {
+  const t = useTranslations('Broadcasts.wizard');
+  const tAb = useTranslations('Broadcasts.wizard.abTest');
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [loadingFields, setLoadingFields] = useState(true);
+  const [firstContact, setFirstContact] = useState<Contact | null>(null);
+  const [firstContactCustomValues, setFirstContactCustomValues] = useState<
+    Map<string, string>
+  >(new Map());
+  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [activeVariant, setActiveVariant] = useState<'A' | 'B'>('A');
+
+  // Load user's custom fields + a representative contact for the
+  // live preview. Fall back to sample data if no contacts exist yet.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const [fieldsRes, contactRes] = await Promise.all([
+        supabase.from('custom_fields').select('*').order('field_name'),
+        supabase
+          .from('contacts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      if (cancelled) return;
+
+      setCustomFields(fieldsRes.data ?? []);
+      setLoadingFields(false);
+
+      const contact = contactRes.data ?? null;
+      setFirstContact(contact);
+
+      if (contact) {
+        const { data: customVals } = await supabase
+          .from('contact_custom_values')
+          .select('custom_field_id, value')
+          .eq('contact_id', contact.id);
+        if (!cancelled) {
+          const map = new Map<string, string>();
+          for (const row of customVals ?? []) {
+            map.set(row.custom_field_id, row.value ?? '');
+          }
+          setFirstContactCustomValues(map);
+        }
+      }
+      setLoadingPreview(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const shared = {
+    customFields,
+    loadingFields,
+    firstContact,
+    firstContactCustomValues,
+    loadingPreview,
+  };
+
+  // O "Próximo" olha os DOIS braços. Liberar o passo com a variante B
+  // pela metade mandaria `{{1}}` cru para metade da audiência — e a aba
+  // com o problema pode nem estar aberta na hora do clique.
+  const blockedA =
+    unmappedPlaceholders(template, variables).length > 0 ||
+    headerMediaErrorOf(template, headerMediaUrl) !== null;
+  const blockedB = variantTemplate
+    ? unmappedPlaceholders(variantTemplate, variantVariables).length > 0 ||
+      headerMediaErrorOf(variantTemplate, variantHeaderMediaUrl) !== null
+    : false;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-foreground text-lg font-semibold">
+          {t('personalize.title')}
+        </h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {t('personalize.subtitle')}
+        </p>
+      </div>
+
+      {variantTemplate ? (
+        <Tabs
+          value={activeVariant}
+          onValueChange={(v) => setActiveVariant(v as 'A' | 'B')}
+        >
+          <TabsList>
+            <TabsTrigger value="A">
+              {tAb('tab', { variant: 'A', template: template.name })}
+              {blockedA && <span className="ml-1 text-amber-400">•</span>}
+            </TabsTrigger>
+            <TabsTrigger value="B">
+              {tAb('tab', { variant: 'B', template: variantTemplate.name })}
+              {blockedB && <span className="ml-1 text-amber-400">•</span>}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="A" className="mt-4">
+            <VariantForm
+              template={template}
+              variables={variables}
+              onUpdate={onUpdate}
+              headerMediaUrl={headerMediaUrl}
+              onHeaderMediaUrlChange={onHeaderMediaUrlChange}
+              {...shared}
+            />
+          </TabsContent>
+
+          <TabsContent value="B" className="mt-4">
+            <VariantForm
+              template={variantTemplate}
+              variables={variantVariables}
+              onUpdate={onVariantUpdate ?? (() => {})}
+              headerMediaUrl={variantHeaderMediaUrl}
+              onHeaderMediaUrlChange={
+                onVariantHeaderMediaUrlChange ?? (() => {})
+              }
+              {...shared}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <VariantForm
+          template={template}
+          variables={variables}
+          onUpdate={onUpdate}
+          headerMediaUrl={headerMediaUrl}
+          onHeaderMediaUrlChange={onHeaderMediaUrlChange}
+          {...shared}
+        />
       )}
 
       <div className="border-border flex items-center justify-between border-t pt-4">
@@ -475,7 +637,7 @@ export function Step3Personalize({
         </Button>
         <Button
           onClick={onNext}
-          disabled={unmappedKeys.length > 0 || headerMediaError !== null}
+          disabled={blockedA || blockedB}
           className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {t('next')}

@@ -1,11 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Loader2, FileText, ArrowRight } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Loader2, FileText, ArrowRight, FlaskConical } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+
+import { AB_DEFAULT_SPLIT_PERCENT } from '@/lib/broadcasts/ab-test';
+
+/** Divisões oferecidas. Configurável, mas não com um campo livre. */
+const SPLIT_OPTIONS = [50, 60, 70, 80, 90];
 
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -16,6 +28,15 @@ const categoryColors: Record<string, string> = {
 interface Step1Props {
   selectedTemplate: MessageTemplate | null;
   onSelect: (template: MessageTemplate) => void;
+  /**
+   * Segundo template do teste A/B (SPEC 044 §6.6). `null` = disparo
+   * comum, com um template só.
+   */
+  variantTemplate: MessageTemplate | null;
+  onVariantSelect: (template: MessageTemplate | null) => void;
+  /** Fatia da audiência que fica com a variante A. */
+  splitPercent: number;
+  onSplitPercentChange: (percent: number) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -23,13 +44,35 @@ interface Step1Props {
 export function Step1ChooseTemplate({
   selectedTemplate,
   onSelect,
+  variantTemplate,
+  onVariantSelect,
+  splitPercent,
+  onSplitPercentChange,
   onNext,
   onBack,
 }: Step1Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const tAb = useTranslations('Broadcasts.wizard.abTest');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Candidatos a variante B.
+   *
+   * Mesma categoria de propósito: o planner recusa categorias diferentes
+   * (§6.6), porque marketing exclui quem pediu opt-out e Utility não —
+   * um "teste" entre categorias compararia dois públicos. Filtrar aqui
+   * transforma um erro no fim do wizard numa opção que nunca aparece.
+   */
+  const variantCandidates = useMemo(() => {
+    if (!selectedTemplate) return [];
+    return templates.filter(
+      (candidate) =>
+        candidate.id !== selectedTemplate.id &&
+        candidate.category === selectedTemplate.category
+    );
+  }, [templates, selectedTemplate]);
 
   useEffect(() => {
     async function fetchTemplates() {
@@ -117,7 +160,7 @@ export function Step1ChooseTemplate({
                     {template.name}
                   </h3>
                   <span
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 ml-1 text-[10px] font-medium ${catColor}`}
+                    className={`ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${catColor}`}
                   >
                     {template.category}
                   </span>
@@ -134,6 +177,98 @@ export function Step1ChooseTemplate({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Teste A/B (SPEC 044 §6.6) ───────────────────────────────
+          Fica no passo do template porque é disso que se trata: a mesma
+          audiência recebendo dois textos. Só aparece depois de escolher
+          o primeiro — antes disso não há nada com que comparar. */}
+      {selectedTemplate && (
+        <div className="border-border bg-card/50 space-y-3 rounded-xl border p-4">
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={variantTemplate !== null}
+              onChange={(e) =>
+                onVariantSelect(
+                  e.target.checked ? (variantCandidates[0] ?? null) : null
+                )
+              }
+              disabled={variantCandidates.length === 0}
+              className="mt-1 disabled:opacity-50"
+            />
+            <span>
+              <span className="text-foreground flex items-center gap-1.5 text-sm font-medium">
+                <FlaskConical className="text-primary h-4 w-4" />
+                {tAb('enable')}
+              </span>
+              <span className="text-muted-foreground mt-0.5 block text-xs">
+                {variantCandidates.length === 0
+                  ? tAb('noCandidates', { category: selectedTemplate.category })
+                  : tAb('description')}
+              </span>
+            </span>
+          </label>
+
+          {variantTemplate && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                  {tAb('variantTemplate')}
+                </label>
+                <Select
+                  value={variantTemplate.id}
+                  onValueChange={(id) =>
+                    onVariantSelect(
+                      variantCandidates.find((c) => c.id === id) ?? null
+                    )
+                  }
+                >
+                  <SelectTrigger className="border-border bg-muted text-foreground w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="border-border bg-popover">
+                    {variantCandidates.map((candidate) => (
+                      <SelectItem key={candidate.id} value={candidate.id}>
+                        {candidate.name} ({candidate.language ?? 'en_US'})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                  {tAb('split')}
+                </label>
+                <Select
+                  value={String(splitPercent || AB_DEFAULT_SPLIT_PERCENT)}
+                  onValueChange={(value) => onSplitPercentChange(Number(value))}
+                >
+                  <SelectTrigger className="border-border bg-muted text-foreground w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="border-border bg-popover">
+                    {SPLIT_OPTIONS.map((percent) => (
+                      <SelectItem key={percent} value={String(percent)}>
+                        {tAb('splitOption', {
+                          a: percent,
+                          b: 100 - percent,
+                        })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {variantTemplate && (
+            <p className="text-muted-foreground text-xs">
+              {tAb('minimumHint')}
+            </p>
+          )}
         </div>
       )}
 

@@ -13,6 +13,7 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
+  Timer,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -50,12 +51,20 @@ export function WhatsAppConfig() {
   // context and key every read off it — so a teammate who just
   // joined an account sees the inviter's saved config without
   // having to re-enter anything.
-  const { user, accountId, loading: authLoading, profileLoading } = useAuth();
+  const {
+    user,
+    accountId,
+    loading: authLoading,
+    profileLoading,
+    canEditSettings,
+  } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [cooldownDaysInput, setCooldownDaysInput] = useState('7');
+  const [savingCooldown, setSavingCooldown] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
   const [connectionStatus, setConnectionStatus] =
@@ -129,6 +138,7 @@ export function WhatsAppConfig() {
           setVerifyToken('');
           setPin('');
           setTokenEdited(false);
+          setCooldownDaysInput(String(data.broadcast_cooldown_days ?? 7));
         } else {
           setConfig(null);
           setPhoneNumberId('');
@@ -137,6 +147,7 @@ export function WhatsAppConfig() {
           setVerifyToken('');
           setPin('');
           setTokenEdited(false);
+          setCooldownDaysInput('7');
         }
         // Clear any stale probe result when reloading the row.
         setRegistrationProbe(null);
@@ -397,6 +408,39 @@ export function WhatsAppConfig() {
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
     toast.success('Webhook URL copied to clipboard');
+  }
+
+  // Anti-fadiga (SPEC 044 §6.2). Escreve direto em `whatsapp_config`,
+  // como `deals-settings.tsx` faz para `accounts.default_currency` — a
+  // policy `whatsapp_config_update` (017) já é admin+, então não há
+  // motivo para passar pela rota cheia de POST /api/whatsapp/config
+  // (que reverifica credenciais com a Meta a cada chamada) só para
+  // trocar um número.
+  async function handleSaveCooldown() {
+    if (!accountId) return;
+    const parsed = Number(cooldownDaysInput);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 90) {
+      toast.error(t('cooldown.invalid'));
+      return;
+    }
+
+    setSavingCooldown(true);
+    const { error } = await supabase
+      .from('whatsapp_config')
+      .update({ broadcast_cooldown_days: parsed })
+      .eq('account_id', accountId);
+    setSavingCooldown(false);
+
+    if (error) {
+      console.error('Save cooldown error:', error);
+      toast.error(t('cooldown.saveFailed'));
+      return;
+    }
+
+    setConfig((prev) =>
+      prev ? { ...prev, broadcast_cooldown_days: parsed } : prev
+    );
+    toast.success(t('cooldown.saveSuccess'));
   }
 
   if (loading) {
@@ -728,6 +772,67 @@ export function WhatsAppConfig() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Cooldown / anti-fadiga (SPEC 044 §6.2). Só faz sentido depois
+              que existe uma conta configurada para guardar o valor. */}
+          {config && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-foreground flex items-center gap-2">
+                  <Timer className="text-primary size-4" />
+                  {t('cooldown.title')}
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  {t('cooldown.description')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2 sm:max-w-xs">
+                  <Label className="text-muted-foreground">
+                    {t('cooldown.label')}
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={90}
+                    step={1}
+                    value={cooldownDaysInput}
+                    onChange={(e) => setCooldownDaysInput(e.target.value)}
+                    disabled={!canEditSettings}
+                    className="bg-muted border-border text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    {t('cooldown.hint')}
+                  </p>
+                  {!canEditSettings && (
+                    <p className="text-muted-foreground text-xs">
+                      {t('cooldown.adminOnlyHint')}
+                    </p>
+                  )}
+                </div>
+                {canEditSettings && (
+                  <Button
+                    onClick={handleSaveCooldown}
+                    disabled={
+                      savingCooldown ||
+                      cooldownDaysInput ===
+                        String(config.broadcast_cooldown_days ?? 7)
+                    }
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {savingCooldown ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        {t('cooldown.saving')}
+                      </>
+                    ) : (
+                      t('cooldown.save')
+                    )}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-3">

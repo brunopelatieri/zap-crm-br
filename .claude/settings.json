@@ -73,7 +73,26 @@
       "mcp__rs__list_tables",
       "mcp__rs__list_migrations",
       "mcp__rs__apply_migration",
-      "mcp__rs__get_advisors"
+      "mcp__rs__get_advisors",
+      "mcp__vn__search_docs",
+      "Bash(node -e \"const j=require\\('./messages/en.json'\\); console.log\\(JSON.stringify\\(j.Broadcasts.wizard.selectAudience,null,1\\)\\); console.log\\('---KEYS wizard---'\\); console.log\\(Object.keys\\(j.Broadcasts.wizard\\)\\); console.log\\('---KEYS Broadcasts---'\\); console.log\\(Object.keys\\(j.Broadcasts\\)\\);\")",
+      "Bash(node -e \"console.log\\(JSON.stringify\\('\\\\uFEFFphone,name'.trim\\(\\)\\)\\); console.log\\('trim remove BOM?', '\\\\uFEFFphone'.trim\\(\\)==='phone'\\);\")",
+      "Bash(npm install *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('read-excel-file:', p.dependencies['read-excel-file']\\);\")",
+      "Bash(node -e \"const p=require\\('./node_modules/read-excel-file/package.json'\\); console.log\\('v'+p.version\\); console.log\\(Object.keys\\(p.exports||{}\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node 'C:\\\\Users\\\\BRUNOP~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e--Documentos-0004-GitHub-zap-crm-br\\\\938f1dd7-c96c-48a3-a6c5-e7460670e1fa\\\\scratchpad\\\\add-i18n.mjs')",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(rm -f src/hooks/probe.worker.ts src/workers/spreadsheet-parser.worker.ts)",
+      "Bash(rmdir src/workers)",
+      "Bash(echo \"TSC=$?\")",
+      "Bash(rm -rf .next)",
+      "Bash(grep -iE \"\\\\.ts$|worker\")",
+      "Bash(echo \"LINT_EXIT=$?\")",
+      "mcp__rs__execute_sql",
+      "mcp__vn__apply_migration",
+      "Bash(node -e \"const m=require\\('./messages/en.json'\\);console.log\\(JSON.stringify\\(m.Broadcasts.audience,null,1\\).slice\\(0,4000\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(JSON.stringify\\(p.scripts,null,1\\)\\)\")",
+      "Bash(node -e \"const m=require\\('./messages/en.json'\\);console.log\\(JSON.stringify\\(m.Broadcasts.wizard.scheduleSend,null,1\\)\\);console.log\\('--- detail keys ---'\\);console.log\\(Object.keys\\(m.Broadcasts.detail\\).join\\(', '\\)\\)\")"
     ],
     "additionalDirectories": [
       "e:\\Documentos\\0004_GitHub\\zap-crm-br\\.claude"

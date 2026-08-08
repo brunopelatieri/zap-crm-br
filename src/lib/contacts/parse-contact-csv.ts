@@ -39,15 +39,63 @@ export interface ParseContactCsvResult {
   hasCompanyColumn: boolean;
 }
 
-export function parseContactCsv(text: string): ParseContactCsvResult {
+/** One data line, with the 1-based line number it came from. */
+export interface CsvTableRow {
+  values: string[];
+  /**
+   * 1-based line number in the original file, counting the header.
+   * The contacts import ignores this; the broadcast audience importer
+   * uses it to say "line 47 has an invalid phone" instead of the
+   * useless "one line was skipped".
+   */
+  lineNumber: number;
+}
+
+export interface CsvTable {
+  /** Lower-cased, unquoted header cells. */
+  headers: string[];
+  rows: CsvTableRow[];
+}
+
+/**
+ * Low-level CSV reader: header + data lines, nothing domain-specific.
+ *
+ * Extracted so the contacts import and the broadcast audience import
+ * share one tokenizer — the part with the real edge cases (quoted
+ * fields, CRLF, a leading BOM absorbed by `trim`). The two callers
+ * disagree about what to do with a row that has no phone (the import
+ * drops it, the audience importer reports it), so that decision stays
+ * with them and not here.
+ */
+export function readCsvTable(text: string): CsvTable {
   const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) {
-    return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
-  }
+  if (lines.length < 2) return { headers: [], rows: [] };
 
   const headers = lines[0]
     .split(',')
     .map((h) => h.trim().toLowerCase().replace(/["']/g, ''));
+
+  const rows: CsvTableRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    rows.push({ values: parseCsvLine(line), lineNumber: i + 1 });
+  }
+
+  return { headers, rows };
+}
+
+/** Read a cell by column index, stripping stray quotes. Empty → undefined. */
+export function csvCell(values: string[], index: number): string | undefined {
+  if (index < 0) return undefined;
+  return values[index]?.replace(/["']/g, '').trim() || undefined;
+}
+
+export function parseContactCsv(text: string): ParseContactCsvResult {
+  const { headers, rows: tableRows } = readCsvTable(text);
+  if (headers.length === 0) {
+    return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
+  }
 
   const phoneIdx = headers.indexOf('phone');
   if (phoneIdx === -1) {
@@ -61,11 +109,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
 
   const rows: ParsedContactRow[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const values = parseCsvLine(line);
+  for (const { values } of tableRows) {
     const phone = values[phoneIdx]?.replace(/["']/g, '').trim();
     if (!phone) continue;
 

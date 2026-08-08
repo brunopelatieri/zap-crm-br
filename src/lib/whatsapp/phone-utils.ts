@@ -102,3 +102,21 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message);
 }
+
+/**
+ * Returns true when the Meta API error means the recipient's number
+ * isn't a WhatsApp user (SPEC 044 §6.4) — Meta's documented error code
+ * 131026 ("Message Undeliverable"), whose causes include the phone
+ * number not being on WhatsApp, not having accepted the current Terms
+ * of Service, or running an unsupported client version. Distinct from
+ * {@link isRecipientNotAllowedError} (131030), which is a SANDBOX
+ * allow-list restriction, not a signal the number is dead.
+ *
+ * A single match here is enough to flag the contact immediately —
+ * unlike the "≥2 consecutive failures" heuristic, Meta has already
+ * told us the number can't receive messages, so there's no value in
+ * waiting for a second attempt to confirm it.
+ */
+export function isInvalidWhatsappNumberError(message: string): boolean {
+  return /131026|not a whatsapp (user|phone number)/i.test(message);
+}

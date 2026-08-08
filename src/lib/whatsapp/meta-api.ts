@@ -9,6 +9,11 @@
  * instead of a runtime rejection from Meta.
  */
 
+import {
+  MESSAGING_LIMIT_FIELDS,
+  type MessagingLimitResponse,
+} from './messaging-limit';
+
 const META_API_VERSION = 'v21.0';
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
@@ -78,6 +83,46 @@ export async function verifyPhoneNumber(
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`);
+  }
+  return response.json();
+}
+
+export interface FetchMessagingLimitArgs {
+  phoneNumberId: string;
+  accessToken: string;
+}
+
+/**
+ * Read the account's messaging-limit tier (SPEC 044 §4.1).
+ *
+ * Asks for both `messaging_limit_tier` (phone-number node) and
+ * `whatsapp_business_manager_messaging_limit` (business-manager node)
+ * in one call. Which one a given account answers depends on the API
+ * version and how the number was provisioned, and Graph ignores a
+ * field it doesn't recognise rather than erroring — so requesting both
+ * and normalising whatever comes back takes the guess off the critical
+ * path. `tierFromResponse` handles the picking.
+ *
+ * Deliberately pinned to the repo-wide `META_API_VERSION`. Bumping
+ * that constant changes every call in this file (send, templates,
+ * media, registration) and deserves its own PR with the template sync
+ * revalidated — not a side effect of adding a quota meter.
+ */
+export async function fetchMessagingLimit(
+  args: FetchMessagingLimitArgs
+): Promise<MessagingLimitResponse> {
+  const { phoneNumberId, accessToken } = args;
+  const fields = MESSAGING_LIMIT_FIELDS.join(',');
+  const url = `${META_API_BASE}/${phoneNumberId}?fields=${fields}`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    // A quota lookup must never be what makes the broadcast page hang.
+    signal: AbortSignal.timeout(10_000),
+  });
+
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`);
   }
