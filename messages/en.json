@@ -1145,14 +1145,17 @@
         "unsupported_format": "Unsupported format. Use a .csv or .xlsx file."
       },
       "quota": {
-        "title": "24-hour sending quota",
+        "title": "Contacts per broadcast",
         "stale": "Out of date",
         "staleHint": "Could not reach Meta — showing the last known tier. The limit is still enforced.",
         "unlimited": "No limit on this tier.",
-        "selectedOfRemaining": "{selected} selected of {remaining} available",
-        "usedInWindow": "{used} already reached in the last 24 h",
-        "exceeded": "{excess} over the available quota.",
-        "blockedHint": "This audience exceeds the quota available in the last 24 hours. Remove contacts or wait for the window to reset."
+        "selectedOfLimit": "{selected} selected of {limit} allowed per broadcast",
+        "usedInWindow": "{used} reached in the last 24 h",
+        "exceeded": "{excess} over the limit for a single broadcast.",
+        "blockedHint": "This audience is larger than your Meta messaging tier allows in a single broadcast. Remove contacts or split the campaign.",
+        "check": "Check limit",
+        "checking": "Checking…",
+        "checkHint": "Query Meta right now for this account's messaging tier, ignoring the 15-minute cache."
       },
       "estimate": {
         "title": "Audience summary",
@@ -1164,7 +1167,7 @@
       "sendError": {
         "whatsapp_not_configured": "WhatsApp is not connected. Set up the integration in Settings and try again.",
         "empty_audience": "No contacts with a valid phone number matched this audience.",
-        "quota_exceeded": "This audience exceeds the quota available in the last 24 hours. Remove contacts or wait for the window to reset.",
+        "quota_exceeded": "This audience is larger than your Meta messaging tier allows in a single broadcast. Remove contacts or split the campaign.",
         "too_many_recipients": "This audience is too large for a single broadcast. Split it into smaller sends.",
         "template_malformed": "This template is out of sync. Run \"Sync from Meta\" in Settings and try again.",
         "draft_not_found": "This draft no longer exists or was already sent. Start the audience over.",
@@ -1258,7 +1261,7 @@
             "readRate": "Read rate",
             "replyRate": "Reply rate",
             "contactsReached": "Contacts reached",
-            "quotaUsed": "24h quota used"
+            "reached24h": "Reached in 24 h"
           },
           "chart": {
             "title": "Last 30 days",

@@ -89,7 +89,7 @@ export function Step4ScheduleSend({
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
-  const { remaining, refresh: refreshQuota } = useMessagingLimit();
+  const { batchLimit, refresh: refreshQuota } = useMessagingLimit();
 
   // ── Agendamento (§6.3) ─────────────────────────────────────────
   const [mode, setMode] = useState<'now' | 'schedule'>('now');
@@ -141,7 +141,7 @@ export function Step4ScheduleSend({
     if (open) await refreshQuota();
   }
 
-  const overQuota = exceedsQuota(estimatedReach, remaining);
+  const overQuota = exceedsQuota(estimatedReach, batchLimit);
 
   // Instante em que a mensagem vai SAIR — é ele que a janela julga, não
   // o momento do clique.

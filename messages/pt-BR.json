@@ -1145,14 +1145,17 @@
         "unsupported_format": "Formato não suportado. Use um arquivo .csv ou .xlsx."
       },
       "quota": {
-        "title": "Cota de envio de 24 h",
+        "title": "Contatos por disparo",
         "stale": "Desatualizado",
         "staleHint": "Não foi possível consultar a Meta — exibindo o último tier conhecido. O limite continua sendo aplicado.",
         "unlimited": "Sem limite neste tier.",
-        "selectedOfRemaining": "{selected} selecionados de {remaining} disponíveis",
-        "usedInWindow": "{used} já alcançados nas últimas 24 h",
-        "exceeded": "{excess} acima da cota disponível.",
-        "blockedHint": "Esta audiência excede a cota disponível nas últimas 24 horas. Remova contatos ou aguarde a janela reabrir."
+        "selectedOfLimit": "{selected} selecionados de {limit} permitidos por disparo",
+        "usedInWindow": "{used} alcançados nas últimas 24 h",
+        "exceeded": "{excess} acima do limite de um único disparo.",
+        "blockedHint": "Esta audiência é maior do que o seu tier de mensageria na Meta permite em um único disparo. Remova contatos ou divida a campanha.",
+        "check": "Checar limite",
+        "checking": "Checando…",
+        "checkHint": "Consultar a Meta agora para saber o tier de mensageria desta conta, ignorando o cache de 15 minutos."
       },
       "estimate": {
         "title": "Resumo da audiência",
@@ -1164,7 +1167,7 @@
       "sendError": {
         "whatsapp_not_configured": "O WhatsApp não está conectado. Configure a integração em Ajustes e tente de novo.",
         "empty_audience": "Nenhum contato com telefone válido corresponde a esta audiência.",
-        "quota_exceeded": "Esta audiência excede a cota disponível nas últimas 24 horas. Remova contatos ou aguarde a janela reabrir.",
+        "quota_exceeded": "Esta audiência é maior do que o seu tier de mensageria na Meta permite em um único disparo. Remova contatos ou divida a campanha.",
         "too_many_recipients": "Esta audiência é grande demais para um único disparo. Divida em envios menores.",
         "template_malformed": "Este template está dessincronizado. Rode \"Sincronizar com a Meta\" em Ajustes e tente de novo.",
         "draft_not_found": "Este rascunho não existe mais ou já foi enviado. Refaça a seleção de audiência.",
@@ -1258,7 +1261,7 @@
             "readRate": "Taxa de leitura",
             "replyRate": "Taxa de resposta",
             "contactsReached": "Contatos alcançados",
-            "quotaUsed": "Cota de 24h usada"
+            "reached24h": "Alcançados em 24 h"
           },
           "chart": {
             "title": "Últimos 30 dias",

@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Context do limite de mensageria (SPEC 044 §4.4).
+ * Context do limite de mensageria — o teto de contatos por disparo em
+ * lote que a Meta concede à conta (SPEC 044 §4.4).
  *
  * Espelha a forma do `AuthProvider` de propósito: o projeto não tem
  * Zustand, Redux nem React Query, e introduzir um gerenciador de estado
@@ -14,7 +15,7 @@
  *
  * `Infinity` não sobrevive ao JSON, então a rota manda `null` para o
  * tier ilimitado e a reconstituição acontece aqui — assim todo consumidor
- * lida com números, e `remaining >= n` funciona sem caso especial.
+ * lida com números, e `batchLimit >= n` funciona sem caso especial.
  */
 
 import {
@@ -34,27 +35,26 @@ export interface MessagingLimitValue {
   /** False quando a conta ainda não conectou o WhatsApp. */
   configured: boolean;
   tier: string;
-  /** Teto bruto do tier. `Infinity` para ilimitado. */
-  tierCap: number;
-  /** Teto após margem de segurança — é contra este que se valida. */
-  effectiveCap: number;
+  /**
+   * Máximo de contatos por disparo em lote. `Infinity` para ilimitado.
+   * É contra este número que a audiência é validada.
+   */
+  batchLimit: number;
+  /** Informativo: contatos alcançados nas últimas 24 h. Não limita. */
   usedLast24h: number;
-  /** Quanto ainda cabe na janela de 24 h. `Infinity` para ilimitado. */
-  remaining: number;
   /** True quando exibimos o último valor conhecido (Meta indisponível). */
   stale: boolean;
   loading: boolean;
   checkedAt: string | null;
-  refresh: () => Promise<void>;
+  /** `force` pula o cache de 15 min e consulta a Meta na hora. */
+  refresh: (options?: { force?: boolean }) => Promise<void>;
 }
 
 const FALLBACK_STATE: Omit<MessagingLimitValue, 'refresh'> = {
   configured: false,
   tier: FALLBACK_TIER,
-  tierCap: tierCap(FALLBACK_TIER),
-  effectiveCap: tierCap(FALLBACK_TIER),
+  batchLimit: tierCap(FALLBACK_TIER),
   usedLast24h: 0,
-  remaining: tierCap(FALLBACK_TIER),
   stale: true,
   loading: true,
   checkedAt: null,
@@ -72,10 +72,8 @@ function toNumber(value: number | null | undefined): number {
 interface ApiResponse {
   configured?: boolean;
   tier?: string;
-  tierCap?: number | null;
-  effectiveCap?: number | null;
+  batchLimit?: number | null;
   usedLast24h?: number;
-  remaining?: number | null;
   stale?: boolean;
   checkedAt?: string;
 }
@@ -94,10 +92,14 @@ export function MessagingLimitProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { force?: boolean }) => {
     setState((prev) => ({ ...prev, loading: true }));
     try {
-      const res = await fetch('/api/whatsapp/messaging-limit');
+      const res = await fetch(
+        options?.force
+          ? '/api/whatsapp/messaging-limit?force=1'
+          : '/api/whatsapp/messaging-limit'
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ApiResponse = await res.json();
 
@@ -112,10 +114,8 @@ export function MessagingLimitProvider({ children }: { children: ReactNode }) {
       setState({
         configured: true,
         tier,
-        tierCap: toNumber(data.tierCap),
-        effectiveCap: toNumber(data.effectiveCap),
+        batchLimit: toNumber(data.batchLimit),
         usedLast24h: data.usedLast24h ?? 0,
-        remaining: toNumber(data.remaining),
         stale: data.stale ?? false,
         loading: false,
         checkedAt: data.checkedAt ?? null,

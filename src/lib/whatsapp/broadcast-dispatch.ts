@@ -158,10 +158,10 @@ export interface PlanDashboardBroadcastParams {
   userId: string;
   input: DashboardBroadcastInput;
   /**
-   * Quanto ainda cabe na janela de 24 h, vindo de `loadAccountQuota`.
-   * `Infinity` para TIER_UNLIMITED.
+   * Máximo de contatos que o tier da conta permite em UM disparo,
+   * vindo de `loadAccountQuota`. `Infinity` para TIER_UNLIMITED.
    */
-  quotaRemaining: number;
+  batchLimit: number;
   /**
    * Id de um `broadcasts` que já existe e deve ser ADOTADO em vez de um
    * INSERT novo — é assim que o cron da §6.3 retoma uma campanha
@@ -374,11 +374,11 @@ function countSendable(evaluated: EvaluatedContact[]): number {
  * sem esforço. Este teste é o que efetivamente protege o número da conta
  * (§4.5, item 4).
  */
-function assertFitsQuota(sendable: number, quotaRemaining: number): void {
-  if (Number.isFinite(quotaRemaining) && sendable > quotaRemaining) {
+function assertFitsQuota(sendable: number, batchLimit: number): void {
+  if (Number.isFinite(batchLimit) && sendable > batchLimit) {
     throw new BroadcastError(
       'quota_exceeded',
-      `This broadcast needs ${sendable} conversations but only ${quotaRemaining} remain in the 24-hour window.`,
+      `This broadcast targets ${sendable} contacts but the account's messaging tier allows at most ${batchLimit} per broadcast.`,
       409
     );
   }
@@ -676,7 +676,7 @@ export async function planDashboardBroadcast(
     accountId,
     userId,
     input,
-    quotaRemaining,
+    batchLimit,
     adoptBroadcastId,
   }: PlanDashboardBroadcastParams
 ): Promise<DashboardBroadcastPlan> {
@@ -714,7 +714,7 @@ export async function planDashboardBroadcast(
     );
   }
 
-  assertFitsQuota(sendable, quotaRemaining);
+  assertFitsQuota(sendable, batchLimit);
 
   const arm = await materializeArm(db, {
     accountId,
@@ -745,7 +745,8 @@ export interface PlanAbTestParams {
   variant: AbVariantInput;
   /** Fatia da audiência sorteada para A (1–99). Padrão 50. */
   splitPercent?: number;
-  quotaRemaining: number;
+  /** Máximo de contatos por disparo — ver `PlanDashboardBroadcastParams`. */
+  batchLimit: number;
   /** Linha a adotar para a variante A (rascunho staged ou agendamento). */
   adoptBroadcastId?: string;
   /** Linha a adotar para a variante B — só o cron usa (§6.3 + §6.6). */
@@ -795,7 +796,7 @@ export async function planAbTestBroadcast(
     input,
     variant,
     splitPercent = AB_DEFAULT_SPLIT_PERCENT,
-    quotaRemaining,
+    batchLimit,
     adoptBroadcastId,
     adoptVariantBroadcastId,
     rng,
@@ -871,7 +872,7 @@ export async function planAbTestBroadcast(
     );
   }
 
-  assertFitsQuota(sendable.length, quotaRemaining);
+  assertFitsQuota(sendable.length, batchLimit);
 
   // O sorteio vale sobre quem PODE receber; os números inválidos são
   // repartidos na mesma proporção só para que cada braço leve as próprias

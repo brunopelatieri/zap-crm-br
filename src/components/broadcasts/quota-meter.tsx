@@ -1,19 +1,33 @@
 'use client';
 
 /**
- * Medidor de cota de 24 h (SPEC 044 §4.5).
+ * Medidor do limite de contatos por disparo (SPEC 044 §4.5).
  *
- * Mostra "selecionados / disponíveis" e é o que torna o teto da Meta
+ * Mostra "selecionados / limite do tier" e é o que torna o teto da Meta
  * visível antes do disparo, em vez de descoberto no meio dele.
  *
- * O número exibido é `remaining` (teto − já enviados na janela), não o
- * teto do tier: um TIER_1K com 800 contatos já alcançados hoje tem 150
- * de folga, não 1 000. Exibir o teto bruto seria tecnicamente verdade e
- * praticamente uma armadilha.
+ * O número exibido é `batchLimit` — o valor de
+ * `whatsapp_business_manager_messaging_limit`, que é quantos contatos
+ * cabem em UM disparo em lote. Não se subtrai daqui o que já foi
+ * enviado hoje: isso encolhia o teto artificialmente. Os contatos
+ * alcançados nas últimas 24 h aparecem ao lado como informação de
+ * volume, sem participar da validação.
+ *
+ * O botão "Checar limite" força uma consulta à Graph API (ignorando o
+ * cache de 15 min) e propaga o resultado pelo provider — então o passo
+ * 4 e a triagem enxergam o valor novo sem recarregar a página.
  */
 
-import { AlertTriangle, Gauge, Infinity as InfinityIcon } from 'lucide-react';
+import { useState } from 'react';
+import {
+  AlertTriangle,
+  Gauge,
+  Infinity as InfinityIcon,
+  RefreshCw,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
+
+import { Button } from '@/components/ui/button';
 
 import { useMessagingLimit } from './messaging-limit-provider';
 
@@ -24,31 +38,46 @@ interface QuotaMeterProps {
   compact?: boolean;
 }
 
-/** True quando a seleção não cabe na cota — mesma regra do servidor. */
-export function exceedsQuota(selected: number, remaining: number): boolean {
-  return Number.isFinite(remaining) && selected > remaining;
+/** True quando a seleção não cabe no disparo — mesma regra do servidor. */
+export function exceedsQuota(selected: number, batchLimit: number): boolean {
+  return Number.isFinite(batchLimit) && selected > batchLimit;
 }
 
 export function QuotaMeter({ selected, compact = false }: QuotaMeterProps) {
   const t = useTranslations('Broadcasts.audience.quota');
-  const { configured, tier, remaining, usedLast24h, stale, loading } =
+  const { configured, tier, batchLimit, usedLast24h, stale, loading, refresh } =
     useMessagingLimit();
+
+  // `loading` do provider também sobe na busca automática de montagem;
+  // um estado local é o que faz o spinner pertencer a ESTE clique.
+  const [checking, setChecking] = useState(false);
 
   // Sem WhatsApp conectado não há tier a exibir; o passo 1 já bloqueia
   // esse caminho (sem template aprovado não se chega aqui).
   if (!configured && !loading) return null;
 
-  const unlimited = !Number.isFinite(remaining);
-  const over = exceedsQuota(selected, remaining);
+  const unlimited = !Number.isFinite(batchLimit);
+  const over = exceedsQuota(selected, batchLimit);
   const pct = unlimited
     ? 0
-    : Math.min(100, Math.round((selected / Math.max(1, remaining)) * 100));
+    : Math.min(100, Math.round((selected / Math.max(1, batchLimit)) * 100));
 
   const barColor = over
     ? 'bg-red-500'
     : pct > 80
       ? 'bg-amber-500'
       : 'bg-primary';
+
+  async function handleCheck() {
+    setChecking(true);
+    try {
+      await refresh({ force: true });
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  const busy = checking || loading;
 
   return (
     <div
@@ -66,7 +95,7 @@ export function QuotaMeter({ selected, compact = false }: QuotaMeterProps) {
           {tier.replace('TIER_', '')}
         </span>
 
-        {stale && !loading && (
+        {stale && !busy && (
           <span
             className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-300"
             title={t('staleHint')}
@@ -74,6 +103,19 @@ export function QuotaMeter({ selected, compact = false }: QuotaMeterProps) {
             {t('stale')}
           </span>
         )}
+
+        <Button
+          variant="outline"
+          size={compact ? 'icon-xs' : 'xs'}
+          className="ml-auto"
+          disabled={busy}
+          onClick={handleCheck}
+          title={t('checkHint')}
+          aria-label={t('check')}
+        >
+          <RefreshCw className={busy ? 'animate-spin' : undefined} />
+          {!compact && <span>{busy ? t('checking') : t('check')}</span>}
+        </Button>
       </div>
 
       {unlimited ? (
@@ -92,9 +134,9 @@ export function QuotaMeter({ selected, compact = false }: QuotaMeterProps) {
 
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
             <span className={over ? 'text-red-300' : 'text-foreground'}>
-              {t('selectedOfRemaining', {
+              {t('selectedOfLimit', {
                 selected: selected.toLocaleString(),
-                remaining: remaining.toLocaleString(),
+                limit: batchLimit.toLocaleString(),
               })}
             </span>
             <span className="text-muted-foreground">
@@ -109,7 +151,7 @@ export function QuotaMeter({ selected, compact = false }: QuotaMeterProps) {
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             {t('exceeded', {
-              excess: (selected - remaining).toLocaleString(),
+              excess: (selected - batchLimit).toLocaleString(),
             })}
           </span>
         </div>

@@ -123,7 +123,7 @@ export function Step2SelectAudience({
   const [staging, setStaging] = useState(false);
 
   const parser = useSpreadsheetParser();
-  const { remaining, loading: quotaLoading } = useMessagingLimit();
+  const { batchLimit, loading: quotaLoading } = useMessagingLimit();
 
   // Tags alimentam tanto o filtro por etiqueta quanto a lista de
   // exclusão (que vale para qualquer fonte) — carregar sempre.
@@ -373,7 +373,7 @@ export function Step2SelectAudience({
 
   // ── Validação ─────────────────────────────────────────────────
   const selectedCount = estimatedCount ?? 0;
-  const overQuota = exceedsQuota(selectedCount, remaining);
+  const overQuota = exceedsQuota(selectedCount, batchLimit);
 
   const hasAudience =
     source === 'all' ||

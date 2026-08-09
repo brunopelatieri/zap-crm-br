@@ -210,7 +210,7 @@ describe('planDashboardBroadcast — cota', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: 2,
+        batchLimit: 2,
       })
     ).rejects.toMatchObject({ code: 'quota_exceeded', status: 409 });
 
@@ -225,7 +225,7 @@ describe('planDashboardBroadcast — cota', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: Number.POSITIVE_INFINITY,
+      batchLimit: Number.POSITIVE_INFINITY,
     });
 
     expect(plan.planned).toHaveLength(1);
@@ -246,7 +246,7 @@ describe('planDashboardBroadcast — cota', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 1,
+      batchLimit: 1,
     });
 
     expect(plan.planned).toHaveLength(1);
@@ -264,7 +264,7 @@ describe('planDashboardBroadcast — persistência', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     // `total_recipients` inclui as inválidas: elas aparecem na tela de
@@ -307,7 +307,7 @@ describe('planDashboardBroadcast — persistência', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'internal' });
 
@@ -332,7 +332,7 @@ describe('planDashboardBroadcast — persistência', () => {
           '1': { type: 'field', value: 'name' },
         },
       },
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.planned[0].params).toEqual(['Ana', 'Promo', 'dez']);
@@ -348,7 +348,7 @@ describe('planDashboardBroadcast — validações de entrada', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'whatsapp_not_configured', status: 400 });
   });
@@ -361,7 +361,7 @@ describe('planDashboardBroadcast — validações de entrada', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'empty_audience', status: 400 });
   });
@@ -380,7 +380,7 @@ describe('planDashboardBroadcast — validações de entrada', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: Number.POSITIVE_INFINITY,
+        batchLimit: Number.POSITIVE_INFINITY,
       })
     ).rejects.toMatchObject({ code: 'too_many_recipients', status: 400 });
   });
@@ -399,7 +399,7 @@ describe('planDashboardBroadcast — validações de entrada', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'template_malformed' });
 
@@ -425,7 +425,7 @@ describe('planDashboardBroadcast — header de mídia', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: { ...BASE_INPUT, headerMediaUrl: 'https://exemplo.test/nova.png' },
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.templateRow?.header_media_url).toBe(
@@ -443,7 +443,7 @@ describe('planDashboardBroadcast — header de mídia', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: { ...BASE_INPUT, headerMediaUrl: 'https://exemplo.test/nova.png' },
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.templateRow?.header_media_url).toBeUndefined();
@@ -469,7 +469,7 @@ describe('planDashboardBroadcast — opt-out (§6.8)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.excludedOptedOut).toBe(1);
@@ -498,7 +498,7 @@ describe('planDashboardBroadcast — opt-out (§6.8)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     const inserted = mock
@@ -526,7 +526,7 @@ describe('planDashboardBroadcast — opt-out (§6.8)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 1,
+      batchLimit: 1,
     });
 
     expect(plan.planned).toHaveLength(1);
@@ -545,7 +545,7 @@ describe('planDashboardBroadcast — opt-out (§6.8)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.excludedOptedOut).toBe(0);
@@ -568,7 +568,7 @@ describe('planDashboardBroadcast — opt-out (§6.8)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.excludedOptedOut).toBe(1);
@@ -587,7 +587,7 @@ describe('planDashboardBroadcast — opt-out (§6.8)', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'all_opted_out' });
 
@@ -610,7 +610,7 @@ describe('planDashboardBroadcast — número morto (§6.4)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.excludedInvalidWhatsapp).toBe(1);
@@ -636,7 +636,7 @@ describe('planDashboardBroadcast — número morto (§6.4)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.excludedInvalidWhatsapp).toBe(1);
@@ -656,7 +656,7 @@ describe('planDashboardBroadcast — número morto (§6.4)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     const inserted = mock
@@ -681,7 +681,7 @@ describe('planDashboardBroadcast — número morto (§6.4)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 1,
+      batchLimit: 1,
     });
 
     expect(plan.planned).toHaveLength(1);
@@ -700,7 +700,7 @@ describe('planDashboardBroadcast — número morto (§6.4)', () => {
         accountId: ACCOUNT,
         userId: USER,
         input: BASE_INPUT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'all_whatsapp_invalid' });
 
@@ -721,7 +721,7 @@ describe('planDashboardBroadcast — número morto (§6.4)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     expect(plan.excludedOptedOut).toBe(1);
@@ -741,7 +741,7 @@ describe('planDashboardBroadcast — adoção pelo cron (§6.3)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
       adoptBroadcastId: 'bc-1',
     });
 
@@ -763,7 +763,7 @@ describe('planDashboardBroadcast — adoção pelo cron (§6.3)', () => {
       accountId: ACCOUNT,
       userId: USER,
       input: BASE_INPUT,
-      quotaRemaining: 100,
+      batchLimit: 100,
       adoptBroadcastId: 'bc-1',
     });
 
@@ -788,7 +788,7 @@ describe('planDashboardBroadcast — adoção pelo cron (§6.3)', () => {
         ...BASE_INPUT,
         audience: { type: 'staged' as const, draftId: 'bc-1' },
       },
-      quotaRemaining: 100,
+      batchLimit: 100,
     });
 
     const filters = broadcastUpdateFilters[0].map((args) => args[0]);
@@ -991,7 +991,7 @@ describe('planAbTestBroadcast — divisão', () => {
       userId: USER,
       input: AB_INPUT,
       variant: AB_VARIANT,
-      quotaRemaining: 100,
+      batchLimit: 100,
       rng: fixedRng,
     });
 
@@ -1022,7 +1022,7 @@ describe('planAbTestBroadcast — divisão', () => {
       userId: USER,
       input: AB_INPUT,
       variant: AB_VARIANT,
-      quotaRemaining: 100,
+      batchLimit: 100,
       rng: fixedRng,
     });
 
@@ -1047,7 +1047,7 @@ describe('planAbTestBroadcast — divisão', () => {
       input: AB_INPUT,
       variant: AB_VARIANT,
       splitPercent: 80,
-      quotaRemaining: 100,
+      batchLimit: 100,
       rng: fixedRng,
     });
 
@@ -1069,7 +1069,7 @@ describe('planAbTestBroadcast — divisão', () => {
       userId: USER,
       input: AB_INPUT,
       variant: AB_VARIANT,
-      quotaRemaining: 100,
+      batchLimit: 100,
       rng: fixedRng,
     });
 
@@ -1099,7 +1099,7 @@ describe('planAbTestBroadcast — recusas', () => {
         userId: USER,
         input: AB_INPUT,
         variant: { ...AB_VARIANT, templateName: 'promo-a' },
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'ab_same_template' });
 
@@ -1123,7 +1123,7 @@ describe('planAbTestBroadcast — recusas', () => {
         userId: USER,
         input: AB_INPUT,
         variant: AB_VARIANT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'ab_category_mismatch' });
 
@@ -1142,7 +1142,7 @@ describe('planAbTestBroadcast — recusas', () => {
         userId: USER,
         input: AB_INPUT,
         variant: AB_VARIANT,
-        quotaRemaining: 100,
+        batchLimit: 100,
       })
     ).rejects.toMatchObject({ code: 'ab_audience_too_small' });
 
@@ -1163,7 +1163,7 @@ describe('planAbTestBroadcast — recusas', () => {
         userId: USER,
         input: AB_INPUT,
         variant: AB_VARIANT,
-        quotaRemaining: 6,
+        batchLimit: 6,
       })
     ).rejects.toMatchObject({ code: 'quota_exceeded' });
 
@@ -1184,7 +1184,7 @@ describe('planAbTestBroadcast — recusas', () => {
       userId: USER,
       input: AB_INPUT,
       variant: AB_VARIANT,
-      quotaRemaining: 100,
+      batchLimit: 100,
       rng: fixedRng,
     });
 

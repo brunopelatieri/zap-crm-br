@@ -15,6 +15,7 @@ describe('parseTier', () => {
       'TIER_50',
       'TIER_250',
       'TIER_1K',
+      'TIER_2K',
       'TIER_10K',
       'TIER_100K',
       'TIER_UNLIMITED',
@@ -35,7 +36,15 @@ describe('parseTier', () => {
 
   it('aceita a forma escrita por extenso', () => {
     expect(parseTier('TIER_1000')).toBe('TIER_1K');
+    expect(parseTier('TIER_2000')).toBe('TIER_2K');
     expect(parseTier('TIER_100000')).toBe('TIER_100K');
+  });
+
+  it('reconhece TIER_2K — o valor que a conta de produção devolve', () => {
+    // Regressão: sem TIER_2K na tabela, este era o caminho pelo qual
+    // uma conta de 2 000 contatos por disparo era tratada como 250.
+    expect(parseTier('TIER_2K')).toBe('TIER_2K');
+    expect(tierCap(parseTier('TIER_2K'))).toBe(2000);
   });
 
   // ---- falhar fechado -------------------------------------------------
@@ -100,50 +109,40 @@ describe('tierCap', () => {
 });
 
 describe('computeQuota', () => {
-  it('desconta o que já foi enviado na janela de 24 h', () => {
+  it('usa o teto cheio do tier, sem margem de segurança', () => {
+    const q = computeQuota({
+      tier: 'TIER_2K',
+      usedLast24h: 0,
+      source: 'meta',
+    });
+
+    expect(q.batchLimit).toBe(2000);
+  });
+
+  it('NÃO desconta o que já foi enviado nas últimas 24 h', () => {
+    // O invariante central deste ajuste. O tier é o teto de UM disparo,
+    // não um saldo diário: quem já alcançou 900 contatos hoje continua
+    // podendo montar uma audiência de 1 000.
     const q = computeQuota({
       tier: 'TIER_1K',
-      usedLast24h: 340,
+      usedLast24h: 900,
       source: 'meta',
     });
 
-    // 1000 − 5% = 950 efetivo; 950 − 340 = 610.
-    expect(q.effectiveCap).toBe(950);
-    expect(q.remaining).toBe(610);
+    expect(q.batchLimit).toBe(1000);
+    expect(q.usedLast24h).toBe(900);
   });
 
-  it('aplica a margem de segurança sobre o teto bruto', () => {
+  it('mantém o limite mesmo com uso acima do teto na janela', () => {
+    // Três disparos de 400 num TIER_250 são possíveis; o que não é
+    // possível é um único disparo de 400.
     const q = computeQuota({
       tier: 'TIER_250',
-      usedLast24h: 0,
+      usedLast24h: 1200,
       source: 'meta',
     });
 
-    expect(q.tierCap).toBe(250);
-    expect(q.effectiveCap).toBe(237); // floor(250 * 0.95)
-  });
-
-  it('permite desativar a margem', () => {
-    const q = computeQuota({
-      tier: 'TIER_250',
-      usedLast24h: 0,
-      source: 'meta',
-      safetyMargin: 0,
-    });
-
-    expect(q.effectiveCap).toBe(250);
-  });
-
-  it('limita remaining em zero quando a conta já passou do teto', () => {
-    // Acontece de verdade: a contagem da Meta diverge da nossa, ou
-    // alguém disparou fora do CRM. "-120 disponíveis" não é exibível.
-    const q = computeQuota({
-      tier: 'TIER_250',
-      usedLast24h: 400,
-      source: 'meta',
-    });
-
-    expect(q.remaining).toBe(0);
+    expect(q.batchLimit).toBe(250);
   });
 
   it('trata TIER_UNLIMITED como sem teto', () => {
@@ -153,8 +152,7 @@ describe('computeQuota', () => {
       source: 'meta',
     });
 
-    expect(q.remaining).toBe(Number.POSITIVE_INFINITY);
-    expect(q.effectiveCap).toBe(Number.POSITIVE_INFINITY);
+    expect(q.batchLimit).toBe(Number.POSITIVE_INFINITY);
   });
 
   it('marca stale quando a origem não é a Meta', () => {
@@ -221,22 +219,19 @@ describe('serializeQuota', () => {
       })
     );
 
-    expect(payload.remaining).toBeNull();
-    expect(payload.tierCap).toBeNull();
-    expect(JSON.parse(JSON.stringify(payload)).remaining).toBeNull();
+    expect(payload.batchLimit).toBeNull();
+    expect(JSON.parse(JSON.stringify(payload)).batchLimit).toBeNull();
   });
 
   it('mantém números finitos intactos', () => {
     const payload = serializeQuota(
-      computeQuota({ tier: 'TIER_1K', usedLast24h: 100, source: 'cache' })
+      computeQuota({ tier: 'TIER_2K', usedLast24h: 100, source: 'cache' })
     );
 
     expect(payload).toMatchObject({
-      tier: 'TIER_1K',
-      tierCap: 1000,
-      effectiveCap: 950,
+      tier: 'TIER_2K',
+      batchLimit: 2000,
       usedLast24h: 100,
-      remaining: 850,
       source: 'cache',
       stale: true,
     });

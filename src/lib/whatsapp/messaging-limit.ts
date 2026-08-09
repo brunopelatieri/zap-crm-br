@@ -1,25 +1,43 @@
 /**
- * Tier de mensageria da Meta e cálculo de cota (SPEC 044 §4).
+ * Tier de mensageria da Meta e limite de contatos por disparo
+ * (SPEC 044 §4).
  *
  * Lógica pura, sem I/O — a chamada HTTP mora em `meta-api.ts` e a
  * orquestração na rota. Isto aqui é o que precisa de teste: como um
- * tier vira um número, e como esse número vira "quantos ainda posso
- * enviar agora".
+ * tier vira um número, e o que esse número significa.
  *
- * O invariante que define o desenho
+ * O que o tier é — e o que ele NÃO é
  *
- *   O tier NÃO é um teto por disparo. É uma janela deslizante de 24 h
- *   sobre clientes únicos iniciados pelo negócio. Três disparos de 400
- *   contatos no mesmo dia estouram um TIER_1K mesmo cada um estando
- *   individualmente "dentro do limite". Por isso o número que a UI
- *   mostra é `remaining = cap − usados nas últimas 24 h`, e não `cap`.
+ *   `whatsapp_business_manager_messaging_limit` é o TETO DE CONTATOS
+ *   QUE PODEM RECEBER UM DISPARO EM LOTE. Um TIER_2K permite montar
+ *   uma audiência de até 2 000 contatos; é um limite por campanha, não
+ *   um saldo que se esgota ao longo do dia.
+ *
+ *   Uma versão anterior desta implementação tratava o valor como uma
+ *   cota de janela deslizante de 24 h e subtraía do teto os contatos já
+ *   alcançados no período. Isso encolhia o limite artificialmente: uma
+ *   conta TIER_2K que tivesse disparado para 1 800 contatos pela manhã
+ *   aparecia com 200 de folga, quando na verdade continuava podendo
+ *   montar uma audiência de 2 000.
+ *
+ *   `usedLast24h` continua sendo lido e exibido — é informação útil de
+ *   volume —, mas NÃO entra no cálculo do limite.
  */
 
-/** Tiers conhecidos da Meta e o teto de conversas de cada um. */
+/**
+ * Tiers conhecidos da Meta e o número máximo de contatos por disparo
+ * de cada um.
+ *
+ * `TIER_2K` não é hipotético: é o valor que a conta de produção
+ * devolve hoje. Sem ele na tabela, `parseTier` derrubava para o
+ * fallback restritivo e o CRM limitava um disparo a 250 contatos numa
+ * conta que aguenta 2 000.
+ */
 export const TIER_CAPS: Record<string, number> = {
   TIER_50: 50,
   TIER_250: 250,
   TIER_1K: 1_000,
+  TIER_2K: 2_000,
   TIER_10K: 10_000,
   TIER_100K: 100_000,
   TIER_UNLIMITED: Number.POSITIVE_INFINITY,
@@ -36,24 +54,18 @@ export const TIER_CAPS: Record<string, number> = {
 export const FALLBACK_TIER = 'TIER_250';
 
 /**
- * Margem de segurança sobre a cota (SPEC 044 §4.2).
- *
- * `usedLast24h` é a NOSSA contagem de destinatários enviados; a Meta
- * conta conversas pela contabilidade dela, que não é idêntica. Reservar
- * 5 % faz o CRM bloquear um pouco antes do teto real, em vez de
- * descobrir a diferença por rejeição no meio de um disparo.
- */
-export const QUOTA_SAFETY_MARGIN = 0.05;
-
-/**
  * Campos pedidos à Graph API.
  *
  * Dois, de propósito. `messaging_limit_tier` é o campo do nó de número
  * de telefone; `whatsapp_business_manager_messaging_limit` aparece
- * associado ao nó de Business Manager. Qual deles a conta responde
- * depende da versão da API e da forma como o número foi provisionado —
- * pedir os dois e normalizar o que voltar tira essa dúvida do caminho
- * crítico, em vez de fazer a feature depender de acertar o palpite.
+ * associado ao nó de Business Manager.
+ *
+ * Verificado contra a conta de produção (`v21.0` e `v25.0`, mesmo
+ * resultado): a Graph devolve apenas
+ * `whatsapp_business_manager_messaging_limit` e ignora em silêncio o
+ * outro campo, sem erro. Pedir os dois continua valendo — contas
+ * provisionadas de outra forma podem responder o primeiro —, e
+ * `tierFromResponse` escolhe o que vier preenchido.
  */
 export const MESSAGING_LIMIT_FIELDS = [
   'messaging_limit_tier',
@@ -90,6 +102,7 @@ export function parseTier(value: unknown): string {
   // A Meta já documentou os mesmos degraus escritos por extenso.
   const aliases: Record<string, string> = {
     TIER_1000: 'TIER_1K',
+    TIER_2000: 'TIER_2K',
     TIER_10000: 'TIER_10K',
     TIER_100000: 'TIER_100K',
     TIER_UNLIMITED_MESSAGING: 'TIER_UNLIMITED',
@@ -108,7 +121,10 @@ export function tierFromResponse(response: MessagingLimitResponse): string {
   );
 }
 
-/** Teto numérico de um tier. Desconhecido → fallback restritivo. */
+/**
+ * Máximo de contatos por disparo de um tier. Desconhecido → fallback
+ * restritivo.
+ */
 export function tierCap(tier: string): number {
   return TIER_CAPS[tier] ?? TIER_CAPS[FALLBACK_TIER];
 }
@@ -118,13 +134,19 @@ export type QuotaSource = 'meta' | 'cache' | 'fallback';
 
 export interface QuotaSnapshot {
   tier: string;
-  /** Teto bruto do tier. `Infinity` para TIER_UNLIMITED. */
-  tierCap: number;
-  /** Teto após a margem de segurança — é contra este que validamos. */
-  effectiveCap: number;
+  /**
+   * Máximo de contatos que cabem em um disparo em lote.
+   * `Infinity` para TIER_UNLIMITED. É contra este número que a UI e o
+   * servidor validam a audiência.
+   */
+  batchLimit: number;
+  /**
+   * Contatos distintos alcançados por disparo nas últimas 24 h.
+   *
+   * Puramente informativo desde que o tier passou a ser lido como
+   * teto por disparo: NÃO é subtraído de `batchLimit`.
+   */
   usedLast24h: number;
-  /** Quanto ainda cabe. Nunca negativo. */
-  remaining: number;
   source: QuotaSource;
   /** True quando estamos exibindo o último valor conhecido. */
   stale: boolean;
@@ -136,42 +158,24 @@ export interface ComputeQuotaInput {
   usedLast24h: number;
   source: QuotaSource;
   checkedAt?: Date;
-  /** Sobrescreve a margem padrão. Usado nos testes. */
-  safetyMargin?: number;
 }
 
 /**
- * Monta o retrato de cota que a UI e as validações consomem.
+ * Monta o retrato de limite que a UI e as validações consomem.
  *
- * `remaining` é limitado em zero de propósito: uma conta que já passou
- * do teto (porque a contagem da Meta divergiu, ou porque um envio veio
- * de fora do CRM) precisa ver "0 disponíveis", não um número negativo
- * que ninguém sabe interpretar.
+ * Sem aritmética sobre o teto: o número que a Meta devolve é o número
+ * que vale. A margem de segurança de 5 % que existia aqui compensava o
+ * erro da NOSSA contagem de 24 h contra a contabilidade da Meta — sem
+ * essa subtração, não há erro a compensar, e reservar 5 % só recusaria
+ * disparos que a Meta aceitaria.
  */
 export function computeQuota(input: ComputeQuotaInput): QuotaSnapshot {
   const { tier, usedLast24h, source } = input;
-  const margin = input.safetyMargin ?? QUOTA_SAFETY_MARGIN;
-  const cap = tierCap(tier);
-
-  // Sem teto não há margem a aplicar — e `Infinity * 0.95` seria
-  // Infinity de qualquer forma, mas o ramo explícito evita que um
-  // `Math.floor(Infinity)` apareça em algum cálculo derivado.
-  const effectiveCap = Number.isFinite(cap)
-    ? Math.floor(cap * (1 - margin))
-    : Number.POSITIVE_INFINITY;
-
-  const used = Math.max(0, Math.trunc(usedLast24h) || 0);
-
-  const remaining = Number.isFinite(effectiveCap)
-    ? Math.max(0, effectiveCap - used)
-    : Number.POSITIVE_INFINITY;
 
   return {
     tier,
-    tierCap: cap,
-    effectiveCap,
-    usedLast24h: used,
-    remaining,
+    batchLimit: tierCap(tier),
+    usedLast24h: Math.max(0, Math.trunc(usedLast24h) || 0),
     source,
     stale: source !== 'meta',
     checkedAt: (input.checkedAt ?? new Date()).toISOString(),
@@ -205,10 +209,8 @@ export function serializeQuota(snapshot: QuotaSnapshot) {
   const finite = (n: number) => (Number.isFinite(n) ? n : null);
   return {
     tier: snapshot.tier,
-    tierCap: finite(snapshot.tierCap),
-    effectiveCap: finite(snapshot.effectiveCap),
+    batchLimit: finite(snapshot.batchLimit),
     usedLast24h: snapshot.usedLast24h,
-    remaining: finite(snapshot.remaining),
     source: snapshot.source,
     stale: snapshot.stale,
     checkedAt: snapshot.checkedAt,

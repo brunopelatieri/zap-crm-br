@@ -27,6 +27,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
+  Activity,
   Ban,
   Clock,
   Send,
@@ -34,7 +35,6 @@ import {
   Eye,
   MessageCircle,
   Users,
-  Gauge,
 } from 'lucide-react';
 import {
   CartesianGrid,
@@ -109,7 +109,7 @@ export function EngagementDashboard({
 }: EngagementDashboardProps) {
   const t = useTranslations('Broadcasts.audience.triage.dashboard');
   const { accountId } = useAuth();
-  const { usedLast24h, tierCap } = useMessagingLimit();
+  const { usedLast24h } = useMessagingLimit();
 
   const [stats, setStats] = useState<AccountEngagementStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -268,12 +268,22 @@ export function EngagementDashboard({
           icon={<Users className="h-4 w-4" />}
           color="bg-muted text-muted-foreground"
         />
+        {/*
+          Sem denominador e sem linguagem de "aviso" de propósito. O
+          tier é o teto de UM disparo, não um saldo diário — exibir
+          "340 / 2 000" com ícone de medidor e cor âmbar sugeriria que
+          os alcançados hoje consomem o limite da próxima campanha, que
+          é exatamente a leitura errada que este ajuste corrige. Este
+          card é volume puro, no mesmo registro visual neutro de
+          "Contatos alcançados"; o teto por disparo é o que o
+          `QuotaMeter` do wizard mostra, com o vermelho/âmbar que faz
+          sentido lá.
+        */}
         <StatCard
-          label={t('cards.quotaUsed')}
+          label={t('cards.reached24h')}
           value={usedLast24h}
-          total={Number.isFinite(tierCap) ? tierCap : undefined}
-          icon={<Gauge className="h-4 w-4" />}
-          color="bg-amber-500/10 text-amber-400"
+          icon={<Activity className="h-4 w-4" />}
+          color="bg-cyan-500/10 text-cyan-400"
         />
       </div>
 

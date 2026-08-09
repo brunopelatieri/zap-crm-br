@@ -59,7 +59,7 @@ export default function AudienceTriagePage() {
   const draftId = params.draftId as string;
 
   const t = useTranslations('Broadcasts.audience.triage');
-  const { remaining, refresh: refreshQuota } = useMessagingLimit();
+  const { batchLimit, refresh: refreshQuota } = useMessagingLimit();
 
   const [draft, setDraft] = useState<DraftInfo | null>(null);
   const [draftLoading, setDraftLoading] = useState(true);
@@ -210,7 +210,7 @@ export default function AudienceTriagePage() {
   }
 
   const selected = selectedCount ?? 0;
-  const overQuota = exceedsQuota(selected, remaining);
+  const overQuota = exceedsQuota(selected, batchLimit);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

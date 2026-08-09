@@ -303,11 +303,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // Cota autoritativa. Sem WhatsApp configurado não há o que impor —
-    // e nem o que enviar; o planner devolve o erro tipado logo abaixo.
+    // Teto autoritativo por disparo. Sem WhatsApp configurado não há o
+    // que impor — e nem o que enviar; o planner devolve o erro tipado
+    // logo abaixo.
     const quota = await loadAccountQuota(supabase, accountId);
-    const quotaRemaining = quota.configured
-      ? quota.snapshot.remaining
+    const batchLimit = quota.configured
+      ? quota.snapshot.batchLimit
       : Number.POSITIVE_INFINITY;
 
     // ── Teste A/B (§6.6): dois braços, uma audiência ───────────────
@@ -315,7 +316,7 @@ export async function POST(request: Request) {
       const ab = await planAbTestBroadcast(supabase, {
         accountId,
         userId,
-        quotaRemaining,
+        batchLimit,
         input,
         variant: abTest.variant,
         splitPercent: abTest.splitPercent,
@@ -388,7 +389,7 @@ export async function POST(request: Request) {
     const plan = await planDashboardBroadcast(supabase, {
       accountId,
       userId,
-      quotaRemaining,
+      batchLimit,
       input,
     });
 

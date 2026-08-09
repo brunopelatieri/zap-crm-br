@@ -1,5 +1,5 @@
 /**
- * Leitura da cota de 24 h no servidor (SPEC 044 §4).
+ * Leitura do limite de contatos por disparo no servidor (SPEC 044 §4).
  *
  * Extraído da rota `GET /api/whatsapp/messaging-limit` quando o envio
  * migrou para o servidor (§6.1). O motivo é o §4.5, item 4: os pontos
@@ -29,9 +29,22 @@ export type QuotaLoadResult =
   | { configured: false; reason: 'no_config' }
   | { configured: true; snapshot: QuotaSnapshot };
 
+export interface LoadAccountQuotaOptions {
+  /**
+   * Ignora o cache de 15 min e consulta a Graph API na hora.
+   *
+   * É o que dá sentido ao botão "Checar limite" da tela de audiência:
+   * sem isto, um clique manual logo depois de uma leitura automática
+   * repetiria o valor em cache e pareceria não ter feito nada. O rate
+   * limit da rota (20/min por usuário) é o que segura o abuso.
+   */
+  force?: boolean;
+}
+
 /**
- * Resolve o retrato de cota da conta: tier (da Meta, do cache ou do
- * fallback restritivo) + quanto da janela de 24 h já foi consumido.
+ * Resolve o retrato de limite da conta: tier (da Meta, do cache ou do
+ * fallback restritivo) + quantos contatos já foram alcançados nas
+ * últimas 24 h (informativo — ver `computeQuota`).
  *
  * Nunca lança por causa da Meta. Se a Graph API estiver fora, devolve o
  * último tier conhecido — ou `TIER_250` se nunca houve leitura — com
@@ -39,7 +52,8 @@ export type QuotaLoadResult =
  */
 export async function loadAccountQuota(
   db: SupabaseClient,
-  accountId: string
+  accountId: string,
+  options: LoadAccountQuotaOptions = {}
 ): Promise<QuotaLoadResult> {
   const { data: config } = await db
     .from('whatsapp_config')
@@ -51,8 +65,9 @@ export async function loadAccountQuota(
 
   if (!config) return { configured: false, reason: 'no_config' };
 
-  // O consumo da janela sempre vem do banco — é barato e muda a cada
-  // disparo, então nunca é cacheado junto com o tier.
+  // O volume da janela sempre vem do banco — é barato e muda a cada
+  // disparo, então nunca é cacheado junto com o tier. Não limita nada;
+  // é o número de contexto que a tela exibe ao lado do limite.
   const { data: usedRaw, error: usageError } = await db.rpc(
     'broadcast_quota_usage',
     { p_account_id: accountId }
@@ -62,8 +77,9 @@ export async function loadAccountQuota(
   }
   const usedLast24h = Number(usedRaw ?? 0);
 
-  // ── Cache quente: pula a Meta ──────────────────────────────────
+  // ── Cache quente: pula a Meta (a menos que o usuário force) ────
   if (
+    !options.force &&
     config.messaging_limit_tier &&
     isCacheFresh(config.messaging_limit_checked_at)
   ) {

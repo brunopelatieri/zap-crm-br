@@ -1,7 +1,7 @@
 # SPEC 044 — Audiência multiformato, teto de tier Meta e triagem de contatos
 
-**Status:** 🟢 Fases 1–7 implementadas · migrações 044–051 aplicadas e verificadas em `vn` e `rs` (051 em 2026-08-08) · §6.7 implementada em 2026-08-07 · §6.4, §6.2 e §6.6 implementadas em 2026-08-08
-**Desvios da proposta original:** §3.2.1 (Excel via `read-excel-file`, sem `.xls`) e §3.4 (sem Web Worker — ver §3.4.1)
+**Status:** 🟢 Fases 1–7 implementadas · migrações 044–051 aplicadas e verificadas em `vn` e `rs` (051 em 2026-08-08) · §6.7 implementada em 2026-08-07 · §6.4, §6.2 e §6.6 implementadas em 2026-08-08 · **§4.2 retificada em 2026-08-08 (§4.2.1) — o tier é teto por disparo, não cota de 24 h; botão "Checar limite" em §4.2.2**
+**Desvios da proposta original:** §3.2.1 (Excel via `read-excel-file`, sem `.xls`), §3.4 (sem Web Worker — ver §3.4.1) e §4.2 (invariante de 24 h retificado — ver §4.2.1)
 **Ordem de execução escolhida:** fase 6 antes da fase 4 — decisão registrada em 2026-08-07. Fase 6 (envio server-side) foi desacoplada da fase 4 (não depende de staging/`draftId`; opera direto sobre `AudienceConfig`) e é a mais barata das quatro restantes, além de ser a única que corrige uma regressão real: as fases 1–3 habilitaram audiências de milhares de contatos via planilha, mas o disparo ainda roda no browser ([use-broadcast-sending.ts:464-563](../src/hooks/use-broadcast-sending.ts#L464-L563)) — fechar a aba mata a campanha no meio.
 **Módulo:** `src/components/broadcasts/`, `src/app/(dashboard)/broadcasts/`, `src/lib/audience/` (novo)
 **Data:** 2026-08-06
@@ -12,10 +12,11 @@
 > estágio de audiência do wizard em torno de dois invariantes novos que hoje
 > não existem em lugar nenhum do código:
 >
-> 1. **O tier da Meta é um teto de janela deslizante de 24 h sobre conversas
->    iniciadas pelo negócio** — não um limite por disparo. Tratá-lo como
->    "máximo de contatos no CSV" produz um sistema que _parece_ correto e
->    ainda assim estoura a cota (§4.2).
+> 1. ~~**O tier da Meta é um teto de janela deslizante de 24 h sobre conversas
+>    iniciadas pelo negócio** — não um limite por disparo.~~
+>    **Retificado em 2026-08-08 — ver §4.2.1.** O tier É o máximo de contatos
+>    por disparo em lote. A leitura de "janela deslizante" encolhia o teto
+>    artificialmente e foi removida do cálculo.
 > 2. **A triagem precisa sobreviver a um reload.** Uma "área de triagem"
 >    roteada exige um identificador persistido; manter a lista só em
 >    `useState` transforma F5 em perda de trabalho (§3.3).
@@ -149,7 +150,7 @@ Cinco compromissos explícitos, cada um amarrado a uma restrição observada:
 ```
 /broadcasts  ──► MessagingLimitProvider (layout)
                  └─ GET /api/whatsapp/messaging-limit
-                    → { tier, tierCap, usedLast24h, remaining, staleAt }
+                    → { tier, batchLimit, usedLast24h, stale, checkedAt }
                        │
 /broadcasts/new        │  Passo 1 · Template
                        │  Passo 2 · Audiência
@@ -167,7 +168,7 @@ Cinco compromissos explícitos, cada um amarrado a uma restrição observada:
 /broadcasts/new/[draftId]/triage ◄───────────┘
                        │  Dashboard histórico global (§5.2)
                        │  Tabela de triagem enriquecida (§5.1)
-                       │  Medidor de cota: selecionados / remaining (§4.2)
+                       │  Medidor: selecionados / batchLimit (§4.2.1)
                        │
                        ▼  Passo 3 · Personalização → Passo 4 · Envio
 ```
@@ -460,13 +461,16 @@ Fluxo do handler:
 
 ```jsonc
 {
-  "tier": "TIER_1K",
-  "tierCap": 1000,
+  "configured": true,
+  "tier": "TIER_2K",
+  // Máximo de contatos por disparo. `null` = TIER_UNLIMITED (Infinity
+  // não sobrevive ao JSON; o provider reconstitui).
+  "batchLimit": 2000,
+  // Informativo — não é subtraído de `batchLimit`. Ver §4.2.1.
   "usedLast24h": 340,
-  "remaining": 660,
-  "windowResetsAt": "2026-08-07T14:12:00Z",
   "source": "meta" | "cache" | "fallback",
-  "checkedAt": "2026-08-06T18:03:11Z"
+  "stale": false,
+  "checkedAt": "2026-08-08T18:03:11Z"
 }
 ```
 
@@ -508,13 +512,42 @@ const TIER_CAPS: Record<string, number> = {
   TIER_50: 50,
   TIER_250: 250,
   TIER_1K: 1_000,
+  TIER_2K: 2_000, // ← acrescentado em 2026-08-08; ver §4.1.2
   TIER_10K: 10_000,
   TIER_100K: 100_000,
   TIER_UNLIMITED: Number.POSITIVE_INFINITY,
 };
 ```
 
+#### 4.1.2 Verificação contra a conta real _(2026-08-08)_
+
+As dúvidas do §4.1.1 foram fechadas empiricamente, com `curl` direto contra o
+número de produção (`892352847302912`), em `v21.0` e `v25.0`:
+
+```
+GET /v21.0/892352847302912?fields=messaging_limit_tier,whatsapp_business_manager_messaging_limit
+→ {"whatsapp_business_manager_messaging_limit":"TIER_2K","id":"892352847302912"}
+```
+
+Três conclusões:
+
+1. **Nenhum bump de versão é necessário.** O campo já responde em `v21.0`, a
+   versão em que o repositório está fixado. A recomendação do §4.1.1 de não
+   subir `META_API_VERSION` por causa desta feature se confirma — e agora sem
+   custo nenhum.
+2. **`whatsapp_business_manager_messaging_limit` é o campo que responde**;
+   `messaging_limit_tier` é ignorado em silêncio, sem erro. A estratégia de
+   pedir os dois e normalizar (`tierFromResponse`) segue válida e não custa
+   nada.
+3. **`TIER_2K` existia e não estava mapeado.** Este era um bug real e ativo:
+   `parseTier` não reconhecia o valor, caía no `FALLBACK_TIER` e o CRM limitava
+   os disparos da conta a 250 contatos — 12,5 % do que ela de fato permite.
+
 ### 4.2 O invariante que muda o desenho: janela deslizante de 24 h
+
+> ⛔ **Esta seção está superada. O que vale é a §4.2.1.** O texto abaixo fica
+> como registro do raciocínio original — e porque a §4.2.1 só faz sentido
+> contra ele.
 
 O tier da Meta limita **conversas de marketing iniciadas pelo negócio em uma
 janela deslizante de 24 h**, contadas por cliente único — não mensagens por
@@ -556,6 +589,52 @@ antes do teto real, em vez de descobrir o limite por rejeição da API.
 > `is_account_member(p_account_id)` no corpo** e ACL restrita a
 > `authenticated`, exatamente como as `dashboard_*` da 039 e como a 042 exige.
 
+#### 4.2.1 Retificação — o tier é um teto POR DISPARO _(2026-08-08)_
+
+`whatsapp_business_manager_messaging_limit` responde **quantos contatos cabem
+em um disparo em lote**. Não é um saldo diário que se esgota.
+
+A implementação original tratava o valor como cota de janela de 24 h e
+calculava `remaining = floor(cap × 0,95) − usedLast24h`. O efeito prático numa
+conta `TIER_2K` que tivesse disparado para 1 800 contatos pela manhã: o wizard
+mostrava 100 de folga e bloqueava a campanha da tarde, quando a conta continuava
+podendo montar uma audiência de 2 000.
+
+**O que mudou no código:**
+
+| Antes                                                    | Agora                                                                                                                |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `remaining = effectiveCap − usedLast24h`                 | `batchLimit = tierCap(tier)` — sem aritmética                                                                        |
+| `effectiveCap = floor(cap × 0,95)` (margem de 5 %)       | Removida. Ela compensava o erro da nossa contagem de 24 h contra a da Meta; sem a subtração, não há erro a compensar |
+| `QuotaSnapshot: { tierCap, effectiveCap, remaining, … }` | `QuotaSnapshot: { batchLimit, usedLast24h, … }` — um número, uma verdade                                             |
+| `PlanDashboardBroadcastParams.quotaRemaining`            | `.batchLimit` — mesmo teste em `assertFitsQuota`, outra semântica                                                    |
+| Card de triagem "Cota 24 h usada — 340 / 2 000"          | "Alcançados em 24 h — 340", sem denominador                                                                          |
+
+**`usedLast24h` continua sendo lido e exibido.** A RPC `broadcast_quota_usage`
+e os índices da migração 044 permanecem como estão — a contagem é informação de
+volume útil ao lado do medidor. O que ela **não** faz mais é limitar coisa
+alguma. Nenhuma migração nova foi necessária.
+
+**Os quatro pontos de imposição da §4.5 seguem valendo**, com `batchLimit` no
+lugar de `remaining`. O item 4 (servidor, autoritativo) continua sendo o
+controle de verdade.
+
+#### 4.2.2 Botão "Checar limite" _(2026-08-08)_
+
+`GET /api/whatsapp/messaging-limit?force=1` pula o cache de 15 min e consulta a
+Graph API na hora. O `QuotaMeter` — presente no passo 2, na triagem e no passo
+4 — ganhou o botão que dispara isso.
+
+O `force` é o que torna o botão honesto: sem ele, um clique logo depois da
+busca automática de montagem devolveria o valor em cache e pareceria não ter
+feito nada. A rota já tinha rate limit próprio (`messagingLimit`, 20/min por
+usuário), que é o que segura o abuso; o token continua sendo decifrado só no
+servidor (§4.3 inalterada).
+
+Como o `MessagingLimitProvider` está montado no layout de `/broadcasts`, o
+resultado do clique propaga para os três pontos de exibição e para a validação
+do "Continuar" sem recarregar a página.
+
 ### 4.3 Segurança: o token nunca chega ao browser
 
 `whatsapp_config.access_token` está cifrado em repouso e só é decifrado no
@@ -588,14 +667,18 @@ conhecido com um selo "desatualizado" em vez de sumir.
 ```tsx
 // src/components/broadcasts/messaging-limit-provider.tsx
 interface MessagingLimitValue {
-  tier: string | null;
-  tierCap: number;
+  configured: boolean;
+  tier: string;
+  /** Máximo de contatos por disparo. `Infinity` para ilimitado. */
+  batchLimit: number;
+  /** Informativo: alcançados em 24 h. Não limita nada (§4.2.1). */
   usedLast24h: number;
-  remaining: number;
   loading: boolean;
   /** true quando a Meta falhou e estamos exibindo o último valor salvo */
   stale: boolean;
-  refresh: () => Promise<void>;
+  checkedAt: string | null;
+  /** `force` pula o cache de 15 min e consulta a Meta na hora (§4.2.2). */
+  refresh: (options?: { force?: boolean }) => Promise<void>;
 }
 export function useMessagingLimit(): MessagingLimitValue;
 ```
@@ -609,12 +692,12 @@ refazer a chamada a cada passo do wizard.
 
 Um teto exibido e não aplicado é decoração. Quatro pontos de imposição:
 
-| #   | Ponto                               | Comportamento                                                                                                      |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 1   | Pós-parse, antes do stage           | `rows.length > remaining` → aviso com opção de "importar mesmo assim e triar" (o corte pode acontecer na triagem). |
-| 2   | Triagem, ao selecionar              | `QuotaMeter` fica vermelho; botão "Continuar" desabilita com motivo textual.                                       |
-| 3   | Passo 4, antes de enviar            | Revalida com `refresh()` — a cota pode ter mudado se um colega disparou nesse meio-tempo.                          |
-| 4   | **Servidor, no `stage` e no envio** | Revalidação autoritativa. Os itens 1–3 são UX; **este** é o controle. Um cliente adulterado não passa.             |
+| #   | Ponto                               | Comportamento                                                                                                       |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1   | Pós-parse, antes do stage           | `rows.length > batchLimit` → aviso com opção de "importar mesmo assim e triar" (o corte pode acontecer na triagem). |
+| 2   | Triagem, ao selecionar              | `QuotaMeter` fica vermelho; botão "Continuar" desabilita com motivo textual.                                        |
+| 3   | Passo 4, antes de enviar            | Revalida com `refresh()` — o tier pode ter sido promovido pela Meta desde a abertura do wizard.                     |
+| 4   | **Servidor, no `stage` e no envio** | Revalidação autoritativa. Os itens 1–3 são UX; **este** é o controle. Um cliente adulterado não passa.              |
 
 Estados degradados: se `source === 'fallback'` (Meta inacessível), a UI mostra
 selo de desatualizado e o servidor aplica o **último tier conhecido**. Se nunca
@@ -649,7 +732,7 @@ Acima da tabela, dois blocos:
 promovido para `src/components/broadcasts/stat-card.tsx`:
 
 `Campanhas enviadas` · `Mensagens entregues` · `Taxa de leitura` ·
-`Taxa de resposta` · `Contatos alcançados (únicos)` · `Cota 24 h usada`
+`Taxa de resposta` · `Contatos alcançados (únicos)` · `Alcançados em 24 h`
 
 **(b) Recorte da audiência atual** — o número que realmente decide a triagem:
 _"desta lista de 1 198, 842 já receberam campanhas; 61 % leram; 12 % responderam;
@@ -1427,8 +1510,8 @@ Vitest, arquivos `*.test.ts` ao lado do código (convenção do repo).
 | Alvo                         | Casos                                                                                                                                                                                                                     |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `parseSpreadsheet`           | xlsx multi-aba, xls legado, header ausente, célula numérica que vira notação científica (telefone!), BOM UTF-8, CRLF                                                                                                      |
-| `parseTier`                  | cada tier conhecido, valor desconhecido → `TIER_250`, campo ausente, **ambos** os nomes de campo (§4.1.1)                                                                                                                 |
-| `computeQuota`               | `remaining` negativo, tier ilimitado, cache expirado, modo fallback                                                                                                                                                       |
+| `parseTier`                  | cada tier conhecido (**inclusive `TIER_2K`**), valor desconhecido → `TIER_250`, campo ausente, **ambos** os nomes de campo (§4.1.1)                                                                                       |
+| `computeQuota`               | `batchLimit` = teto cheio do tier, `usedLast24h` alto NÃO reduz o limite (§4.2.1), tier ilimitado, cache expirado, modo fallback                                                                                          |
 | `normalizeAudience`          | dedupe entre fontes, E.164 inválido preserva `sourceRow`, cruzamento com base existente                                                                                                                                   |
 | `extractSheetId`             | URLs de Sheets válidas, host hostil (SSRF), `gid` ausente                                                                                                                                                                 |
 | RPCs                         | `triage_audience_page` com filtro+busca+paginação; isolamento entre contas; **chamada como `anon` deve falhar** (regressão da 042)                                                                                        |

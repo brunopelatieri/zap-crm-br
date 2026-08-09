@@ -278,8 +278,8 @@ export async function GET(request: Request) {
 
     try {
       const quota = await loadAccountQuota(admin, row.account_id);
-      const quotaRemaining = quota.configured
-        ? quota.snapshot.remaining
+      const batchLimit = quota.configured
+        ? quota.snapshot.batchLimit
         : Number.POSITIVE_INFINITY;
 
       // ── Teste A/B agendado (§6.6) ──────────────────────────────
@@ -291,7 +291,7 @@ export async function GET(request: Request) {
         const ab = await planAbTestBroadcast(admin, {
           accountId: row.account_id,
           userId: row.user_id,
-          quotaRemaining,
+          batchLimit,
           adoptBroadcastId: row.id,
           adoptVariantBroadcastId: abVariant.id,
           splitPercent: row.ab_split_percent ?? undefined,
@@ -359,7 +359,7 @@ export async function GET(request: Request) {
         // Dono das linhas de contato que uma importação criar: quem
         // agendou, não quem (ninguém) apertou o botão agora.
         userId: row.user_id,
-        quotaRemaining,
+        batchLimit,
         // Adota a linha que acabamos de travar — sem isto o planner
         // criaria um broadcast NOVO e o agendamento ficaria pendurado em
         // `sending` para sempre, ao lado de uma cópia enviada.
