@@ -221,7 +221,10 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
     case 'send_message':
       return { text: '', ...WINDOW_GUARD_DEFAULT };
     case 'send_buttons':
-      return { ...toStepConfig(blankButtonsPayload()), ...WINDOW_GUARD_DEFAULT };
+      return {
+        ...toStepConfig(blankButtonsPayload()),
+        ...WINDOW_GUARD_DEFAULT,
+      };
     case 'send_list':
       return { ...toStepConfig(blankListPayload()), ...WINDOW_GUARD_DEFAULT };
     case 'send_template':
@@ -995,7 +998,7 @@ function TriggerCard({
             {type === 'tag_added' && (
               <div>
                 <label className="text-muted-foreground mb-1 block text-xs font-medium">
-                  Tag
+                  {t('config.tagLabel')}
                 </label>
                 <TagSelect
                   value={(config.tag_id as string) ?? ''}
@@ -1010,7 +1013,7 @@ function TriggerCard({
                   {t('schedule')}
                 </label>
                 <Input
-                  placeholder="Cron expression or HH:mm"
+                  placeholder={t('schedulePlaceholder')}
                   value={(config.schedule as string) ?? ''}
                   onChange={(e) =>
                     onConfigChange({ ...config, schedule: e.target.value })
@@ -1347,16 +1350,16 @@ function StepRenderer({
             <div className="min-w-0 flex-1">
               <div className="text-muted-foreground text-[11px] tracking-wide uppercase">
                 {isCondition
-                  ? 'Condition'
+                  ? t('stepKind.condition')
                   : step.step_type === 'wait'
-                    ? 'Wait'
-                    : 'Action'}
+                    ? t('stepKind.wait')
+                    : t('stepKind.action')}
               </div>
               <div className="text-foreground truncate text-sm font-medium">
                 {t(`steps.${meta.label}`)}
               </div>
               <div className="text-muted-foreground truncate text-[11px]">
-                {previewFor(step)}
+                {previewFor(step, t)}
               </div>
             </div>
             <ChevronDown
@@ -1372,13 +1375,13 @@ function StepRenderer({
                 step={step}
                 onChange={(next) => props.updateStep(path, () => next)}
               />
-              <div className="border-border mt-3 flex items-center justify-between gap-2 border-t pt-3">
+              <div className="border-border mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
                 <div className="flex gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
                     disabled={index === 0}
-                    aria-label="Move up"
+                    aria-label={t('moveUp')}
                     onClick={() => props.moveStepAt(path, -1)}
                   >
                     <ArrowUp className="h-4 w-4" />
@@ -1387,7 +1390,7 @@ function StepRenderer({
                     variant="ghost"
                     size="icon"
                     disabled={index === total - 1}
-                    aria-label="Move down"
+                    aria-label={t('moveDown')}
                     onClick={() => props.moveStepAt(path, 1)}
                   >
                     <ArrowDown className="h-4 w-4" />
@@ -1399,7 +1402,7 @@ function StepRenderer({
                   onClick={() => props.deleteStepAt(path)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  {t('delete', { defaultValue: 'Delete' })}
+                  {t('delete')}
                 </Button>
               </div>
             </div>
@@ -1659,8 +1662,11 @@ function StepEditor({
         </>
       );
     case 'wait':
+      // Um campo por linha. Duas colunas dentro de um card de 320px
+      // deixavam ~130px por coluna, o que corta o rótulo "Quantidade" e
+      // espreme o select de unidade.
       return (
-        <div className="grid grid-cols-2 gap-2">
+        <>
           <FieldBlock label={t('config.amountLabel')}>
             <Input
               type="number"
@@ -1676,14 +1682,14 @@ function StepEditor({
             <select
               value={(cfg.unit as string) ?? 'hours'}
               onChange={(e) => set({ unit: e.target.value })}
-              className="border-border bg-muted text-foreground w-full rounded-md border px-2 py-1.5 text-sm"
+              className={SELECT_CLASS}
             >
               <option value="minutes">{t('config.units.minutes')}</option>
               <option value="hours">{t('config.units.hours')}</option>
               <option value="days">{t('config.units.days')}</option>
             </select>
           </FieldBlock>
-        </div>
+        </>
       );
     case 'condition': {
       const subject = (cfg.subject as string) ?? 'tag_presence';
@@ -1806,10 +1812,7 @@ function StepEditor({
     case 'close_conversation':
       return (
         <p className="text-muted-foreground text-xs">
-          {t('config.closeConversationHint', {
-            defaultValue:
-              'Sets the conversation status to "closed". No configuration needed.',
-          })}
+          {t('config.closeConversationHint')}
         </p>
       );
     default:
@@ -1834,24 +1837,36 @@ function FieldBlock({
   );
 }
 
-function previewFor(step: BuilderStep): string {
+function previewFor(
+  step: BuilderStep,
+  t: ReturnType<typeof useTranslations>
+): string {
   switch (step.step_type) {
     case 'send_message':
-      return (step.step_config.text as string) || 'no text yet';
+      return (step.step_config.text as string) || t('preview.noText');
     case 'send_buttons':
     case 'send_list':
       return (
         interactivePayloadPreviewText(asInteractive(step.step_config)) ||
-        'no body yet'
+        t('preview.noBody')
       );
     case 'send_template':
-      return (step.step_config.template_name as string) || 'pick a template';
-    case 'wait':
-      return `${step.step_config.amount ?? '?'} ${step.step_config.unit ?? ''}`;
-    case 'condition':
-      return `when ${step.step_config.subject ?? '?'}`;
+      return (
+        (step.step_config.template_name as string) || t('preview.pickTemplate')
+      );
+    case 'wait': {
+      const unit = step.step_config.unit as string | undefined;
+      // Reusa os rótulos de unidade já traduzidos do editor do passo.
+      const unitLabel = unit ? t(`config.units.${unit}`) : '';
+      return `${step.step_config.amount ?? '?'} ${unitLabel}`.trim();
+    }
+    case 'condition': {
+      const subject = step.step_config.subject as string | undefined;
+      const subjectLabel = subject ? t(`config.subjects.${subject}`) : '?';
+      return t('preview.whenSubject', { subject: subjectLabel });
+    }
     case 'send_webhook':
-      return (step.step_config.url as string) || 'no url';
+      return (step.step_config.url as string) || t('preview.noUrl');
     default:
       return '';
   }

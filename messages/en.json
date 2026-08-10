@@ -1350,6 +1350,10 @@
         "follow_up_reminder": {
           "name": "Follow-up Reminder",
           "description": "Send a nudge if a contact has not replied within 24 hours."
+        },
+        "reengagement_before_window_closes": {
+          "name": "Re-engage Before the 24h Window Closes",
+          "description": "Ask an open question while a free-form reply is still allowed, so the conversation does not fall out of the 24-hour session window."
         }
       },
       "activate": "Activate",
@@ -1382,6 +1386,29 @@
       "loading": "Loading...",
       "loadError": "Failed to load ({status})",
       "back": "Back to Automations"
+    },
+    "templateSeeds": {
+      "welcome_message": {
+        "greeting": "Hi! 👋 Thanks for reaching out. We'll get back to you shortly."
+      },
+      "out_of_office": {
+        "reply": "Thanks for your message! Our team is offline right now (9am–6pm) and will reply first thing tomorrow."
+      },
+      "lead_qualifier": {
+        "question": "Great — happy to help with pricing! Quick question: roughly how many seats are you looking for?",
+        "keywords": "pricing, quote, buy"
+      },
+      "follow_up_reminder": {
+        "nudge": "Just circling back — did you have any other questions for us? Happy to help!"
+      },
+      "reengagement_before_window_closes": {
+        "body": "Before we wrap up: is there anything still open on your side? Tap an option and we will pick it up right away.",
+        "footer": "You can also just reply with your question.",
+        "button": {
+          "reengage_yes": "Yes, I need help",
+          "reengage_no": "All sorted, thanks"
+        }
+      }
     },
     "logs": {
       "title": "Execution logs",
@@ -1474,6 +1501,22 @@
       "replyIdsHelp": "Comma-separated button/list-row ids to match, exact. Use the same ids you set on a Send Buttons / Send List step.",
       "schedule": "Schedule",
       "scheduleHint": "Cron expression (e.g. 0 9 * * 1-5)",
+      "schedulePlaceholder": "Cron expression or HH:mm",
+      "delete": "Delete",
+      "moveUp": "Move step up",
+      "moveDown": "Move step down",
+      "stepKind": {
+        "action": "Action",
+        "condition": "Condition",
+        "wait": "Wait"
+      },
+      "preview": {
+        "noText": "no text yet",
+        "noBody": "no body yet",
+        "pickTemplate": "pick a template",
+        "noUrl": "no url",
+        "whenSubject": "when {subject}"
+      },
       "marginLabel": "Hours before the window closes",
       "marginHint": "Fires once per conversation, {minutes} minutes before its 24-hour window expires. Only conversations already waiting on the customer are re-engaged, and never outside business hours.",
       "marginWarn": "Above 12 hours this re-engages people who have only just messaged you.",

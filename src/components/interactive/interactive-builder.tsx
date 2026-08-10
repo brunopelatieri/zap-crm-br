@@ -94,7 +94,23 @@ export function InteractiveBuilder({
   };
 
   return (
-    <div className="flex flex-col gap-4 md:flex-row">
+    // ⚠️ Container queries (`@container` + `@xl:`), NÃO breakpoints de
+    // viewport. Este builder é montado em larguras muito diferentes: os
+    // diálogos do composer do inbox e das respostas rápidas (~640px de
+    // conteúdo: `sm:max-w-2xl` menos o `p-4` do DialogContent) e o card
+    // de 320px do passo `send_buttons`/`send_list` no construtor de
+    // automações (~288px depois do `px-4`).
+    //
+    // Com `md:flex-row` a decisão saía do tamanho da JANELA: num
+    // desktop, o card de 320px também virava duas colunas — a
+    // pré-visualização de 280px (`shrink-0`) comia a largura inteira e a
+    // coluna do formulário colapsava para perto de zero, renderizando o
+    // textarea com uma letra por linha.
+    //
+    // O limiar é `@xl` (576px) e não `@2xl` (672px) porque 672px cairia
+    // ACIMA dos 640px dos diálogos e os faria empilhar — trocaria um
+    // layout quebrado por outro. 576px separa exatamente os dois casos.
+    <div className="@container flex flex-col gap-4 @xl:flex-row">
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         {/* Kind toggle */}
         <div className="flex gap-2">
@@ -123,7 +139,10 @@ export function InteractiveBuilder({
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-2">
+        {/* Cabeçalho e rodapé lado a lado só quando cabem: em ~290px de
+            container, duas colunas dão ~140px cada e os rótulos
+            ("Cabeçalho (opcional)") sobrepõem o contador. */}
+        <div className="grid grid-cols-1 gap-2 @sm:grid-cols-2">
           <Field
             label={t('header')}
             counter={`${(value.header ?? '').length}/${INTERACTIVE_LIMITS.headerTextMaxLength}`}
@@ -174,7 +193,7 @@ export function InteractiveBuilder({
       </div>
 
       {showPreview && (
-        <div className="flex shrink-0 flex-col gap-1.5 md:w-[280px]">
+        <div className="flex shrink-0 flex-col gap-1.5 @xl:w-[280px]">
           <span className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
             {t('preview')}
           </span>
@@ -239,8 +258,10 @@ function ButtonsEditor({
         {buttons.map((b, i) => (
           <div
             key={i}
-            className="border-border bg-muted/40 flex items-center gap-2 rounded-md border p-2"
+            className="border-border bg-muted/40 rounded-md border p-2"
           >
+            {/* O campo de id ocupa a linha inteira em container estreito:
+                empilhado com o título ele deixaria ~70px para cada um. */}
             {advanced && (
               <Input
                 value={b.id}
@@ -248,29 +269,31 @@ function ButtonsEditor({
                   update(i, { id: slugify(e.target.value, `btn_${i + 1}`) })
                 }
                 placeholder="id"
-                className="bg-muted w-28 font-mono text-xs"
+                className="bg-muted mb-2 w-full font-mono text-xs @sm:mb-0 @sm:inline-flex @sm:w-28"
               />
             )}
-            <Input
-              value={b.title}
-              maxLength={INTERACTIVE_LIMITS.buttonTitleMaxLength}
-              onChange={(e) => update(i, { title: e.target.value })}
-              placeholder={t('buttonLabelPlaceholder')}
-              className="bg-muted flex-1"
-            />
-            <span className="text-muted-foreground w-10 shrink-0 text-right text-[10px]">
-              {b.title.length}/{INTERACTIVE_LIMITS.buttonTitleMaxLength}
-            </span>
-            {buttons.length > 1 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => remove(i)}
-                className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              <Input
+                value={b.title}
+                maxLength={INTERACTIVE_LIMITS.buttonTitleMaxLength}
+                onChange={(e) => update(i, { title: e.target.value })}
+                placeholder={t('buttonLabelPlaceholder')}
+                className="bg-muted min-w-0 flex-1"
+              />
+              <span className="text-muted-foreground w-10 shrink-0 text-right text-[10px]">
+                {b.title.length}/{INTERACTIVE_LIMITS.buttonTitleMaxLength}
+              </span>
+              {buttons.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => remove(i)}
+                  className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -387,14 +410,14 @@ function ListEditor({
               value={section.title ?? ''}
               onChange={(e) => updateSection(sIdx, { title: e.target.value })}
               placeholder={t('sectionTitlePlaceholder')}
-              className="bg-muted flex-1 text-xs"
+              className="bg-muted min-w-0 flex-1 text-xs"
             />
             {sections.length > 1 && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => removeSection(sIdx)}
-                className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -406,19 +429,19 @@ function ListEditor({
                 key={rIdx}
                 className="border-border bg-card rounded border p-2"
               >
+                {advanced && (
+                  <Input
+                    value={row.id}
+                    onChange={(e) =>
+                      updateRow(sIdx, rIdx, {
+                        id: slugify(e.target.value, `row_${rIdx + 1}`),
+                      })
+                    }
+                    placeholder="id"
+                    className="bg-muted mb-2 w-full font-mono text-xs @sm:w-24"
+                  />
+                )}
                 <div className="flex items-center gap-2">
-                  {advanced && (
-                    <Input
-                      value={row.id}
-                      onChange={(e) =>
-                        updateRow(sIdx, rIdx, {
-                          id: slugify(e.target.value, `row_${rIdx + 1}`),
-                        })
-                      }
-                      placeholder="id"
-                      className="bg-muted w-24 font-mono text-xs"
-                    />
-                  )}
                   <Input
                     value={row.title}
                     maxLength={INTERACTIVE_LIMITS.listRowTitleMaxLength}
@@ -426,7 +449,7 @@ function ListEditor({
                       updateRow(sIdx, rIdx, { title: e.target.value })
                     }
                     placeholder={t('rowTitlePlaceholder')}
-                    className="bg-muted flex-1"
+                    className="bg-muted min-w-0 flex-1"
                   />
                   <span className="text-muted-foreground w-10 shrink-0 text-right text-[10px]">
                     {row.title.length}/
@@ -437,7 +460,7 @@ function ListEditor({
                       variant="ghost"
                       size="sm"
                       onClick={() => removeRow(sIdx, rIdx)}
-                      className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                      className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -519,11 +542,16 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <label className="text-muted-foreground text-xs">{label}</label>
+    <div className="min-w-0">
+      {/* `min-w-0` + `shrink-0` no contador: sem os dois, um rótulo longo
+          ("Cabeçalho (opcional)") num container estreito empurra o
+          contador para fora da caixa e os dois se sobrepõem. */}
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <label className="text-muted-foreground min-w-0 text-xs">{label}</label>
         {counter && (
-          <span className="text-muted-foreground text-[10px]">{counter}</span>
+          <span className="text-muted-foreground shrink-0 text-[10px]">
+            {counter}
+          </span>
         )}
       </div>
       {children}

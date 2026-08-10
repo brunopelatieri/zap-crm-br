@@ -1350,6 +1350,10 @@
         "follow_up_reminder": {
           "name": "Lembrete de follow-up",
           "description": "Envia um lembrete se o contato não responder em 24 horas."
+        },
+        "reengagement_before_window_closes": {
+          "name": "Reengajar antes da janela de 24h fechar",
+          "description": "Faz uma pergunta aberta enquanto ainda é permitido responder com texto livre, para a conversa não sair da janela de sessão de 24 horas."
         }
       },
       "activate": "Ativar",
@@ -1382,6 +1386,29 @@
       "loading": "Carregando...",
       "loadError": "Falha ao carregar ({status})",
       "back": "Voltar para Automações"
+    },
+    "templateSeeds": {
+      "welcome_message": {
+        "greeting": "Oi! 👋 Obrigado por entrar em contato. Em breve retornamos por aqui."
+      },
+      "out_of_office": {
+        "reply": "Obrigado pela mensagem! Nosso time está fora do horário de atendimento agora (9h às 18h) e responde no início do próximo dia útil."
+      },
+      "lead_qualifier": {
+        "question": "Ótimo — posso te ajudar com os valores! Só uma pergunta rápida: quantas pessoas vão usar?",
+        "keywords": "preço, valor, orçamento, comprar"
+      },
+      "follow_up_reminder": {
+        "nudge": "Passando para saber se ficou alguma dúvida. Estou por aqui se precisar!"
+      },
+      "reengagement_before_window_closes": {
+        "body": "Antes de encerrarmos: ficou alguma coisa pendente do seu lado? Toque em uma opção e a gente retoma na hora.",
+        "footer": "Se preferir, é só responder com a sua dúvida.",
+        "button": {
+          "reengage_yes": "Preciso de ajuda",
+          "reengage_no": "Está tudo certo"
+        }
+      }
     },
     "logs": {
       "title": "Registros de execução",
@@ -1474,6 +1501,22 @@
       "replyIdsHelp": "IDs de botão/item de lista a corresponder, separados por vírgula, exatos. Use os mesmos IDs definidos em uma etapa Enviar botões / Enviar lista.",
       "schedule": "Programação",
       "scheduleHint": "Expressão cron (ex.: 0 9 * * 1-5)",
+      "schedulePlaceholder": "Expressão cron ou HH:mm",
+      "delete": "Excluir",
+      "moveUp": "Mover etapa para cima",
+      "moveDown": "Mover etapa para baixo",
+      "stepKind": {
+        "action": "Ação",
+        "condition": "Condição",
+        "wait": "Espera"
+      },
+      "preview": {
+        "noText": "sem texto ainda",
+        "noBody": "sem corpo ainda",
+        "pickTemplate": "escolha um template",
+        "noUrl": "sem url",
+        "whenSubject": "quando {subject}"
+      },
       "marginLabel": "Horas antes de a janela fechar",
       "marginHint": "Dispara uma vez por conversa, {minutes} minutos antes de a janela de 24 horas expirar. Só reengaja conversas que já estão esperando o cliente, e nunca fora do horário comercial.",
       "marginWarn": "Acima de 12 horas isso reengaja quem acabou de falar com você.",

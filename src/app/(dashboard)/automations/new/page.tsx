@@ -2,12 +2,14 @@
 
 import { useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 
 import {
   AutomationBuilder,
   type BuilderInitial,
   type BuilderStep,
 } from '@/components/automations/automation-builder';
+import { localizeTemplate } from '@/lib/automations/template-i18n';
 import {
   AUTOMATION_TEMPLATES,
   type TemplateSlug,
@@ -16,13 +18,18 @@ import type { AutomationStepType, AutomationTriggerType } from '@/types';
 
 export default function NewAutomationPage() {
   const params = useSearchParams();
+  const t = useTranslations('Automations');
   const template = params.get('template') as TemplateSlug | null;
 
   const initial: BuilderInitial = useMemo(() => {
     if (template && AUTOMATION_TEMPLATES[template]) {
-      const t = AUTOMATION_TEMPLATES[template];
+      // O catálogo em código é o fallback; o texto que o autor de fato
+      // vê (e que sai para o cliente no WhatsApp) vem do dicionário do
+      // locale ativo. Sem isto, escolher um template pronto abre o
+      // construtor inteiro em inglês mesmo com a interface em pt-BR.
+      const tpl = localizeTemplate(AUTOMATION_TEMPLATES[template], t);
       const steps = expandFromSeeds(
-        t.steps.map((seed, idx) => ({
+        tpl.steps.map((seed, idx) => ({
           index: idx,
           step_type: seed.step_type,
           step_config: seed.step_config as Record<string, unknown>,
@@ -31,10 +38,10 @@ export default function NewAutomationPage() {
         }))
       );
       return {
-        name: t.name,
-        description: t.description,
-        trigger_type: t.trigger_type,
-        trigger_config: t.trigger_config as Record<string, unknown>,
+        name: tpl.name,
+        description: tpl.description,
+        trigger_type: tpl.trigger_type,
+        trigger_config: tpl.trigger_config as Record<string, unknown>,
         is_active: false,
         steps,
       };
@@ -47,7 +54,7 @@ export default function NewAutomationPage() {
       is_active: false,
       steps: [],
     };
-  }, [template]);
+  }, [template, t]);
 
   return <AutomationBuilder initial={initial} />;
 }
