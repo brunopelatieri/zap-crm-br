@@ -102,7 +102,12 @@ Aparência → Idioma**; a escolha fica salva no navegador.
   [docs/teste-ab-disparos.md](./docs/teste-ab-disparos.md).
 - **Automações no-code** — gatilhos por mensagem recebida, novo
   contato, palavra-chave ou horário; ramificações, esperas, etiquetas
-  e webhooks. Construtor visual com rótulos em português.
+  e webhooks. Construtor visual com rótulos em português. O gatilho por
+  horário tem um construtor visual próprio — pílulas para "todo dia",
+  "toda segunda e quarta", "a cada 2 horas" etc., sem exigir saber o
+  que é uma expressão cron — e roda contra um segmento por etiqueta.
+  Detalhes técnicos em
+  [docs/spec-046-agendamento-visual.md](./docs/spec-046-agendamento-visual.md).
 - **Reengajamento automático antes da janela de 24h fechar** — 🆕
   _recurso exclusivo do ZAP CRM BR, ausente no
   [wacrm](https://github.com/ArnasDon/wacrm) original._ O WhatsApp só
@@ -275,11 +280,11 @@ alguém bater numa rota de tempos em tempos. Sem esse agendador, nada
 quebra visivelmente — o recurso simplesmente nunca acontece, em
 silêncio. É a pegadinha operacional mais comum de quem sobe o projeto.
 
-| Rota                    | O que faz                                         | Sem o cron                                                   |
-| ----------------------- | ------------------------------------------------- | ------------------------------------------------------------ |
-| `/api/broadcasts/cron`  | Dispara campanhas **agendadas** que venceram      | O disparo fica em "Agendado" para sempre e ninguém é avisado |
-| `/api/automations/cron` | Retoma automações paradas em passos de **espera** | A automação trava no "Wait" e não continua                   |
-| `/api/flows/cron`       | Encerra execuções de fluxo abandonadas            | Execuções velhas ficam penduradas                            |
+| Rota                    | O que faz                                                                                                              | Sem o cron                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `/api/broadcasts/cron`  | Dispara campanhas **agendadas** que venceram                                                                           | O disparo fica em "Agendado" para sempre e ninguém é avisado                                       |
+| `/api/automations/cron` | Retoma automações paradas em **espera**, dispara o gatilho **"Baseado em horário"** e o reengajamento de janela de 24h | A automação trava no "Wait"; agendamentos e reengajamento de janela nunca disparam, sem erro algum |
+| `/api/flows/cron`       | Encerra execuções de fluxo abandonadas                                                                                 | Execuções velhas ficam penduradas                                                                  |
 
 **Disparo imediato, inbox, contatos e funis não dependem do cron.** Se
 você ainda não usa agendamento nem passos de espera, isso pode esperar —
@@ -397,6 +402,11 @@ URL** (não existe `/pt-br/dashboard`). O locale é resolvido por cookie
 - [Teste A/B de templates nos disparos](./docs/teste-ab-disparos.md) —
   como dividir a audiência entre dois textos e ler o resultado sem se
   enganar com amostra pequena.
+- [Construtor visual de agendamento (gatilho "Baseado em horário")](./docs/spec-046-agendamento-visual.md) —
+  como o cron por trás do agendamento visual é montado, validado e
+  executado, e por que o piso é de 15 minutos.
+- [Reengajamento automático na janela de 24h](./docs/spec-045-reengajamento-janela-24h.md) —
+  o gatilho "Janela de 24h fechando" e os guarda-corpos por trás dele.
 - [Agendador cron via Supabase](./supabase/setup/cron-jobs.sql) —
   script pronto para o SQL Editor que agenda as três rotas de cron com o
   segredo no Vault. Contexto e alternativas na seção

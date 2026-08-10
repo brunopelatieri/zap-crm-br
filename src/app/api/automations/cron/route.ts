@@ -3,15 +3,18 @@ import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { resumePendingExecution } from '@/lib/automations/engine';
 import type { AutomationContext } from '@/lib/automations/engine';
 import { scanSessionWindows } from '@/lib/automations/window-scan';
+import { scanSchedules } from '@/lib/automations/schedule-scan';
 
 /**
- * Duas fases, um único agendamento:
+ * Três fases, um único agendamento:
  *
  *   1. **Drenar** as `automation_pending_executions` vencidas (o step
  *      `wait`). Comportamento original desta rota.
  *   2. **Varrer** as janelas de 24h prestes a fechar (SPEC 045 §5.5).
+ *   3. **Varrer** os agendamentos do gatilho `time_based` (SPEC 046 §6).
  *
- * Por que a varredura mora AQUI e não numa rota nova (§5.5.1)
+ * Por que a varredura mora AQUI e não numa rota nova (§5.5.1, e o mesmo
+ * argumento vale para a fase 3 — SPEC 046 §6.1)
  *
  *   O agendamento não é código: vive em `supabase/setup/cron-jobs.sql`,
  *   que não é uma migração — é configuração de ambiente, carrega a URL e
@@ -31,15 +34,18 @@ import { scanSessionWindows } from '@/lib/automations/window-scan';
  * O claim (status = 'running') serve de lock simples para que
  * invocações sobrepostas não processem a mesma linha duas vezes.
  * Best-effort: um `SELECT ... FOR UPDATE` caro é evitado em favor de um
- * UPDATE-por-id em dois passos. A varredura da fase 2 tem seu próprio
- * lock, pelo mesmo motivo e com o mesmo formato (§5.5.2).
+ * UPDATE-por-id em dois passos. As varreduras das fases 2 e 3 têm cada
+ * uma o seu próprio lock, pelo mesmo motivo e com o mesmo formato
+ * (§5.5.2 e SPEC 046 §6.3, respectivamente — tabelas de claim distintas
+ * porque a chave de idempotência é diferente: conversa×janela numa,
+ * contato×ocorrência na outra).
  */
 
 /**
- * Mesmo teto de `/api/broadcasts/cron`, e pela mesma razão: a fase 2
- * roda em `after()` e pode encostar em dezenas de envios pela Meta em
- * série. Sem declarar isto, valeria o padrão da plataforma e o corte
- * aconteceria NO MEIO de um envio — deixando a dúvida mais cara
+ * Mesmo teto de `/api/broadcasts/cron`, e pela mesma razão: as fases 2
+ * e 3 rodam em `after()` e podem encostar em dezenas de envios pela
+ * Meta em série. Sem declarar isto, valeria o padrão da plataforma e o
+ * corte aconteceria NO MEIO de um envio — deixando a dúvida mais cara
  * possível: a mensagem saiu para a Meta e o INSERT local não aconteceu?
  */
 export const maxDuration = 300;
@@ -99,20 +105,40 @@ export async function GET(request: Request) {
     processed++;
   }
 
-  // ── Fase 2: varredura de janela (SPEC 045 §5.5) ───────────────────
+  // ── Fases 2 e 3: varreduras de janela e de agendamento ────────────
   //
   // Depois da drenagem (a ordem que §5.5.1 pede) e FORA do caminho da
   // resposta. `after()` casa com o `timeout_milliseconds := 20000` do
   // job de pg_cron, que corta apenas a ESPERA pela resposta, não o
   // trabalho no servidor: o HTTP responde assim que a drenagem termina e
-  // a varredura segue dentro do `maxDuration` acima.
+  // as varreduras seguem dentro do `maxDuration` acima.
   //
-  // `scanSessionWindows` nunca lança — aqui dentro não há quem leia uma
-  // exceção.
+  // Sequenciais, não `Promise.all` — as duas competem pelo mesmo teto
+  // de `maxDuration`, e rodá-las em série mantém o corte previsível
+  // (a fase 3 nunca começa sem saber quanto tempo a 2 já consumiu).
+  // Nenhuma das duas lança — aqui dentro não há quem leia uma exceção.
   after(async () => {
-    const result = await scanSessionWindows();
-    if (result.dispatched > 0 || result.failed > 0) {
-      console.log('[automations-cron] window scan:', JSON.stringify(result));
+    const windowResult = await scanSessionWindows();
+    if (windowResult.dispatched > 0 || windowResult.failed > 0) {
+      console.log(
+        '[automations-cron] window scan:',
+        JSON.stringify(windowResult)
+      );
+    }
+
+    const scheduleResult = await scanSchedules();
+    // `truncated` entra na condição de propósito: uma audiência acima
+    // do teto do tick é justamente o caso que precisa aparecer no log,
+    // mesmo quando o despacho em si correu sem falha.
+    if (
+      scheduleResult.dispatched > 0 ||
+      scheduleResult.failed > 0 ||
+      scheduleResult.truncated
+    ) {
+      console.log(
+        '[automations-cron] schedule scan:',
+        JSON.stringify(scheduleResult)
+      );
     }
   });
 

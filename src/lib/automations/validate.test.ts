@@ -247,12 +247,64 @@ describe('validateTriggerForActivation', () => {
     ).toEqual([]);
   });
 
-  it('requires schedule on time_based triggers', () => {
+  it('requires schedule and audience_tag_id on time_based triggers', () => {
     expect(validateTriggerForActivation('time_based', {})).toEqual([
       { path: 'trigger.schedule', message: 'schedule is required' },
+      { path: 'trigger.audience_tag_id', message: 'audience tag is required' },
     ]);
     expect(
-      validateTriggerForActivation('time_based', { schedule: '0 9 * * *' })
+      validateTriggerForActivation('time_based', {
+        schedule: '0 9 * * *',
+        audience_tag_id: 'tag-uuid',
+      })
+    ).toEqual([]);
+  });
+
+  it('rejects a syntactically present but unusable schedule (SPEC 046 §6.5)', () => {
+    // Sintaxe não suportada — antes desta SPEC, um `schedule` não vazio
+    // qualquer bastava para ativar.
+    const issuesBadSyntax = validateTriggerForActivation('time_based', {
+      schedule: '0 8 * * 1#2',
+      audience_tag_id: 'tag-uuid',
+    });
+    expect(issuesBadSyntax).toHaveLength(1);
+    expect(issuesBadSyntax[0].path).toBe('trigger.schedule');
+
+    // Sintaticamente válido, mas abaixo do piso de 15 min (o tick do
+    // agendador é de 5 min).
+    const issuesBelowFloor = validateTriggerForActivation('time_based', {
+      schedule: '* * * * *',
+      audience_tag_id: 'tag-uuid',
+    });
+    expect(issuesBelowFloor).toHaveLength(1);
+    expect(issuesBelowFloor[0].path).toBe('trigger.schedule');
+  });
+
+  it('rejects a schedule the send window would silently swallow whole', () => {
+    // Sintaticamente perfeitos, e mesmo assim inertes: `SEND_WINDOW` é
+    // dias úteis das 09h às 20h, então sábado às 10h e qualquer dia às
+    // 22h nunca disparam. Sem esta checagem a automação salvava,
+    // ativava e ficava parada para sempre, sem erro nenhum — o modo de
+    // falha que a SPEC 046 existe para eliminar.
+    for (const schedule of ['0 10 * * 6', '0 22 * * *']) {
+      const issues = validateTriggerForActivation('time_based', {
+        schedule,
+        timezone: 'UTC',
+        audience_tag_id: 'tag-uuid',
+      });
+      expect(issues).toHaveLength(1);
+      expect(issues[0].path).toBe('trigger.schedule');
+      expect(issues[0].message).toContain('never runs');
+    }
+  });
+
+  it('accepts a schedule that fires at least once inside the send window', () => {
+    expect(
+      validateTriggerForActivation('time_based', {
+        schedule: '0 10 * * 1-5',
+        timezone: 'UTC',
+        audience_tag_id: 'tag-uuid',
+      })
     ).toEqual([]);
   });
 

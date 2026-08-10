@@ -114,24 +114,43 @@ export const AUTOMATION_TEMPLATES: Record<
     trigger_type: 'new_message_received',
     trigger_config: {},
     steps: [
+      // SPEC 045 §10, pergunta 3 (corrigido). Este `wait` ancora no
+      // instante em que o trigger disparou — o motor não tem como
+      // recalcular contra uma mensagem mais recente do cliente, ao
+      // contrário do `reengagement_before_window_closes` abaixo. Um
+      // `wait 1 day` original mandava o lembrete EXATAMENTE quando a
+      // janela de 24h fecha, correndo contra o próprio guarda que
+      // deveria protegê-lo. 20h deixa a mesma margem de 4h que a §10,
+      // pergunta 1, já escolheu como "grande o bastante para o cliente
+      // ver e responder" (`DEFAULT_MARGIN_MINUTES` em window-trigger.ts)
+      // — o lembrete passa a chegar enquanto a janela ainda está aberta
+      // no caso comum, em vez de disputar o fechamento dela.
       {
         step_type: 'wait',
-        step_config: { amount: 1, unit: 'days' },
+        step_config: { amount: 20, unit: 'hours' },
       },
       {
         step_type: 'send_message',
         step_config: {
           text: 'Just circling back — did you have any other questions for us? Happy to help!',
+          // Explícito pelo mesmo motivo do template abaixo: um template
+          // é código, não passa pelo `blankConfig()` do builder, então
+          // o default de LEITURA que valeria aqui é 'fail' (§5.3.2). As
+          // 20h já cobrem o caso comum; isto é a rede de segurança para
+          // quando o cron atrasa ou o cliente ficou muito tempo sem
+          // escrever antes do próprio trigger.
+          on_window_closed: 'skip',
         },
       },
     ],
   },
-  // SPEC 045 §5.8 — a versão correta do que `follow_up_reminder` tenta
-  // fazer. Aquele ancora a espera na mensagem que disparou o trigger e
-  // manda o lembrete `wait 1 day` depois, ou seja, EXATAMENTE no
-  // instante em que a janela de 24h fecha: a pior hora possível para
-  // tentar reengajar sem template. Este dispara com antecedência
-  // configurável, recalculada contra a mensagem mais recente do cliente.
+  // SPEC 045 §5.8 — ainda mais correto que `follow_up_reminder` mesmo
+  // depois da correção acima: aquele continua com uma espera ESTÁTICA,
+  // que não sabe se o cliente mandou uma mensagem nova enquanto
+  // esperava (o que moveria a âncora da janela para a frente). Este
+  // dispara via varredura, recalculada a cada tick contra a mensagem
+  // mais recente do cliente — por isso segue sendo a peça pedagógica
+  // principal da feature, com antecedência configurável em vez de fixa.
   reengagement_before_window_closes: {
     slug: 'reengagement_before_window_closes',
     name: 'Re-engage Before the 24h Window Closes',

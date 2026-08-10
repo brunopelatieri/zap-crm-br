@@ -5,6 +5,8 @@ import {
   MIN_MARGIN_MINUTES,
   isValidMarginMinutes,
 } from './window-trigger';
+import { firesAtLeastOnce, validateSchedule } from './schedule';
+import { resolveTimeZone } from '@/lib/broadcasts/send-window';
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -239,10 +241,41 @@ export function validateTriggerForActivation(
       });
     }
   } else if (triggerType === 'time_based') {
+    // SPEC 046 §6.5: sobe de "não vazio" para "faz parse e é
+    // executável" — a mesma porta (`validateSchedule`) que a UI usa
+    // para validar o modo avançado ao vivo, para as duas nunca
+    // divergirem sobre o que é um cron válido.
     if (!nonEmpty(cfg.schedule)) {
       issues.push({
         path: 'trigger.schedule',
         message: 'schedule is required',
+      });
+    } else {
+      const scheduleError = validateSchedule(cfg.schedule as string);
+      if (scheduleError) {
+        issues.push({ path: 'trigger.schedule', message: scheduleError });
+      } else if (
+        !firesAtLeastOnce(cfg.schedule as string, resolveTimeZone(cfg.timezone))
+      ) {
+        // Sintaticamente válido e mesmo assim inerte: a janela de
+        // horário permitido (dias úteis, 09h–20h) engole TODAS as
+        // ocorrências. Sábado às 10h e qualquer dia às 22h caem aqui.
+        // Sem esta checagem a automação salva, ativa e nunca roda —
+        // o modo de falha que esta SPEC existe para eliminar.
+        issues.push({
+          path: 'trigger.schedule',
+          message:
+            'this schedule never runs: every occurrence falls outside the allowed send window (weekdays, 09:00-20:00 in the schedule timezone)',
+        });
+      }
+    }
+    // Um gatilho agendado não tem contato vindo de evento — a
+    // automação roda uma vez por contato do segmento (§3.6), então a
+    // etiqueta não é opcional como em `tag_added`.
+    if (!nonEmpty(cfg.audience_tag_id)) {
+      issues.push({
+        path: 'trigger.audience_tag_id',
+        message: 'audience tag is required',
       });
     }
   } else if (triggerType === 'tag_added') {
@@ -254,7 +287,10 @@ export function validateTriggerForActivation(
     // tem de estar na faixa útil — ver window-trigger.ts para por que o
     // piso é 15 e não 1 (uma margem menor que 3 ticks de cron produz uma
     // automação que dispara "às vezes", sem o autor descobrir por quê).
-    if (cfg.margin_minutes != null && !isValidMarginMinutes(cfg.margin_minutes)) {
+    if (
+      cfg.margin_minutes != null &&
+      !isValidMarginMinutes(cfg.margin_minutes)
+    ) {
       issues.push({
         path: 'trigger.margin_minutes',
         message: `margin must be a whole number of minutes between ${MIN_MARGIN_MINUTES} and ${MAX_MARGIN_MINUTES}`,
@@ -299,7 +335,8 @@ function validateWindowGuard(
   if (!nonEmpty(fallback.template_name)) {
     issues.push({
       path: `${path}.fallback_template.template_name`,
-      message: 'fallback template name is required when on_window_closed is "fallback_template"',
+      message:
+        'fallback template name is required when on_window_closed is "fallback_template"',
     });
   }
 }

@@ -74,6 +74,48 @@ describe('reengagement_before_window_closes template (SPEC 045 §5.8)', () => {
   });
 });
 
+describe('follow_up_reminder template (SPEC 045 §10, pergunta 3)', () => {
+  const tpl = AUTOMATION_TEMPLATES.follow_up_reminder;
+  const waitStep = tpl.steps[0];
+  const messageStep = tpl.steps[1];
+
+  it('waits less than 24h — never races the session window it cannot see', () => {
+    // O gatilho é new_message_received: o motor não recalcula a espera
+    // contra uma mensagem mais recente do cliente, então o único jeito
+    // de não colidir com o fechamento da janela é esperar MENOS que ela.
+    const cfg = waitStep.step_config as { amount: number; unit: string };
+    const waitMs =
+      cfg.unit === 'days'
+        ? cfg.amount * 86_400_000
+        : cfg.unit === 'hours'
+          ? cfg.amount * 3_600_000
+          : cfg.amount * 60_000;
+    expect(waitMs).toBeLessThan(24 * 60 * 60 * 1000);
+  });
+
+  it('sets on_window_closed EXPLICITLY on the send_message step', () => {
+    // Mesmo motivo do template irmão: é código, não passa pelo
+    // blankConfig() do builder, então o default de LEITURA seria 'fail'.
+    const cfg = messageStep.step_config as Record<string, unknown>;
+    expect(cfg.on_window_closed).toBe('skip');
+  });
+
+  it('can be activated as seeded, with no manual fix-up', () => {
+    expect(
+      validateStepsForActivation([
+        {
+          step_type: waitStep.step_type,
+          step_config: waitStep.step_config as Record<string, unknown>,
+        },
+        {
+          step_type: messageStep.step_type,
+          step_config: messageStep.step_config as Record<string, unknown>,
+        },
+      ])
+    ).toEqual([]);
+  });
+});
+
 describe('template registry', () => {
   it('keeps every slug consistent with its key', () => {
     for (const [key, def] of Object.entries(AUTOMATION_TEMPLATES)) {

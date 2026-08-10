@@ -584,9 +584,16 @@ export interface TagTriggerConfig {
 }
 
 export interface TimeBasedTriggerConfig {
-  /** Cron expression or simple HH:mm string; engine can accept either. */
+  /** Cron expression or simple HH:mm string — see src/lib/automations/schedule.ts
+   *  for the parser/serializer/validator (SPEC 046). */
   schedule: string;
+  /** IANA timezone the schedule is evaluated in; captured from the
+   *  browser when the schedule is first set (SPEC 046 §3.5). */
   timezone?: string;
+  /** Tag id whose contacts the automation runs against each occurrence —
+   *  a scheduled trigger has no event-supplied contact, so this is
+   *  required at activation (SPEC 046 §3.6). */
+  audience_tag_id?: string;
 }
 
 export interface InteractiveReplyTriggerConfig {
@@ -653,7 +660,8 @@ export interface SendMessageStepConfig extends WindowGuardConfig {
  * Meta-limits validation (validateInteractivePayload ignores unknown
  * keys) — see SPEC 045 §5.3.1.
  */
-export type SendButtonsStepConfig = InteractiveMessagePayload & WindowGuardConfig;
+export type SendButtonsStepConfig = InteractiveMessagePayload &
+  WindowGuardConfig;
 export type SendListStepConfig = InteractiveMessagePayload & WindowGuardConfig;
 
 export interface SendTemplateStepConfig {

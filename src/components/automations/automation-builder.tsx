@@ -69,6 +69,7 @@ import {
 } from '@/lib/automations/window-trigger';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
+import { VisualCronBuilder } from './visual-cron-builder';
 
 // ------------------------------------------------------------
 // Types (builder-local — mirror the flattened rows we POST)
@@ -186,6 +187,64 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: 'time_based' },
   { value: 'session_window_expiring' },
 ];
+
+/**
+ * Config inicial por tipo de gatilho, usada quando o usuário TROCA o
+ * tipo no dropdown (SPEC 046 §5.5) — nunca na carga inicial de uma
+ * automação existente. Sem isto, `TriggerCard` espalhava
+ * `{ ...config, ... }` ao trocar de tipo, e `trigger_config` acumulava
+ * para sempre as chaves do tipo anterior (ex.: uma automação que já foi
+ * `keyword_match` carregava `keywords`/`match_type` mesmo depois de
+ * virar `time_based`).
+ *
+ * O padrão do `time_based` já nasce com um cron válido (dia útil às
+ * 9h) em vez de vazio: é o mesmo agendamento que `VisualCronBuilder`
+ * mostra por padrão quando `schedule` está ausente, então gravá-lo de
+ * uma vez evita a UI exibir "Todo dia às 09:00" sobre uma automação que
+ * na verdade ainda não tem `schedule` salvo.
+ */
+const DEFAULT_TRIGGER_CONFIG: Record<
+  AutomationTriggerType,
+  Record<string, unknown>
+> = {
+  new_message_received: {},
+  first_inbound_message: {},
+  keyword_match: { keywords: [], match_type: 'contains' },
+  new_contact_created: {},
+  conversation_assigned: {},
+  tag_added: { tag_id: '' },
+  time_based: { schedule: '0 9 * * *', audience_tag_id: '' },
+  interactive_reply: { reply_ids: [] },
+  session_window_expiring: {},
+};
+
+/**
+ * Normaliza o estado inicial na montagem do construtor.
+ *
+ * Hoje resolve um caso só: um rascunho `time_based` gravado sem
+ * `schedule` (possível antes da SPEC 046, quando o campo era texto
+ * livre). `VisualCronBuilder` interpreta a string vazia como "todo dia
+ * às 09:00" para ter um estado inicial sensato, mas não emite nada até
+ * o usuário mexer — então a tela mostrava um agendamento que o
+ * `trigger_config` não continha, e salvar com "Ativo" ligado falhava
+ * com "schedule is required" sobre um campo que parecia preenchido.
+ * Semear aqui alinha os dois, sem `useEffect`.
+ */
+function normalizeInitial(initial: BuilderInitial): BuilderInitial {
+  if (initial.trigger_type !== 'time_based') return initial;
+  const cfg = initial.trigger_config ?? {};
+  const schedule = cfg.schedule;
+  if (typeof schedule === 'string' && schedule.trim() !== '') return initial;
+  // Só o `schedule`: espalhar o DEFAULT inteiro apagaria um
+  // `audience_tag_id` já escolhido no rascunho.
+  return {
+    ...initial,
+    trigger_config: {
+      ...cfg,
+      schedule: DEFAULT_TRIGGER_CONFIG.time_based.schedule,
+    },
+  };
+}
 
 function cid(): string {
   return (
@@ -363,12 +422,14 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const SELECT_CLASS =
+export const SELECT_CLASS =
   'w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none';
 
 /** Tag dropdown by name + color, storing the tag's id. Falls back to a
- *  raw id input when no tags exist yet. */
-function TagSelect({
+ *  raw id input when no tags exist yet. Exported: `VisualCronBuilder`
+ *  (SPEC 046 §5.2) reuses it for the schedule trigger's audience
+ *  picker, inside the same `ResourcesProvider` tree. */
+export function TagSelect({
   value,
   onChange,
   t,
@@ -753,7 +814,9 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const router = useRouter();
   const t = useTranslations('Automations.builder');
   const isEditing = !!initial.id;
-  const [state, setState] = useState<BuilderInitial>(initial);
+  const [state, setState] = useState<BuilderInitial>(() =>
+    normalizeInitial(initial)
+  );
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -762,6 +825,18 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
     value: BuilderInitial[K]
   ) {
     setState((s) => ({ ...s, [key]: value }));
+  }
+
+  // Troca explícita de tipo de gatilho pelo usuário: reseta
+  // trigger_config para o padrão do tipo novo (§5.5) em vez de manter
+  // as chaves do tipo anterior. Só é chamada pelo <select> do
+  // TriggerCard, nunca pela carga inicial de `initial`.
+  function changeTriggerType(next: AutomationTriggerType) {
+    setState((s) => ({
+      ...s,
+      trigger_type: next,
+      trigger_config: DEFAULT_TRIGGER_CONFIG[next] ?? {},
+    }));
   }
 
   // --- Step tree mutations (immutable) ---
@@ -891,7 +966,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
             <TriggerCard
               type={state.trigger_type}
               config={state.trigger_config}
-              onTypeChange={(tVal) => patchTop('trigger_type', tVal)}
+              onTypeChange={changeTriggerType}
               onConfigChange={(c) => patchTop('trigger_config', c)}
               t={t}
             />
@@ -1008,22 +1083,11 @@ function TriggerCard({
               </div>
             )}
             {type === 'time_based' && (
-              <div>
-                <label className="text-muted-foreground mb-1 block text-xs font-medium">
-                  {t('schedule')}
-                </label>
-                <Input
-                  placeholder={t('schedulePlaceholder')}
-                  value={(config.schedule as string) ?? ''}
-                  onChange={(e) =>
-                    onConfigChange({ ...config, schedule: e.target.value })
-                  }
-                  className="bg-muted text-foreground"
-                />
-                <p className="text-muted-foreground mt-1 text-[11px]">
-                  {t('scheduleHint')}
-                </p>
-              </div>
+              <VisualCronBuilder
+                config={config}
+                onChange={onConfigChange}
+                t={t}
+              />
             )}
             {type === 'session_window_expiring' && (
               <SessionWindowMarginConfig
