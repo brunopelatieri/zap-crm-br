@@ -1105,6 +1105,21 @@
         "columnsHint": "Precisa de uma coluna de telefone. Nome, e-mail, empresa e etiquetas são opcionais.",
         "parsingProgress": "Lendo {processed} de {total} linhas…"
       },
+      "template": {
+        "title": "Modelo de planilha",
+        "subtitle": "Baixe o modelo, substitua as linhas de exemplo pelos seus contatos e envie. A primeira linha precisa ser o cabeçalho.",
+        "download": "Baixar modelo (.csv)",
+        "required": "obrigatória",
+        "optional": "opcional",
+        "alsoAccepted": "também aceita: {aliases}",
+        "columns": {
+          "phone": "Telefone com DDI e DDD — ex.: 5511987654321. Espaços, parênteses, traços e o \"+\" são ignorados.",
+          "name": "Nome do contato, usado nas variáveis do template.",
+          "email": "E-mail do contato.",
+          "company": "Empresa do contato.",
+          "tags": "Etiquetas separadas por vírgula ou ponto e vírgula."
+        }
+      },
       "sheets": {
         "title": "Importar do Google Planilhas",
         "placeholder": "https://docs.google.com/spreadsheets/d/…",
@@ -1382,6 +1397,17 @@
         "partial": "parcial",
         "failed": "falhou"
       },
+      "window": {
+        "title": "Resultados do reengajamento",
+        "sent": "Enviados",
+        "reopened": "Responderam em 24h",
+        "reopenedOf": "{count} conversas voltaram",
+        "failed": "Falhas de envio",
+        "optedOut": "Descadastraram depois",
+        "optedOutOf": "{count} contatos pediram para parar",
+        "optOutWarning": "Mais de 1 em cada 20 contatos se descadastrou depois desta mensagem. Mensagem de sessão não passa por revisão da Meta antes de sair, então este é o aviso mais cedo que você recebe — reescreva o texto para oferecer algo de valor real antes que isso comece a custar a reputação do seu número.",
+        "retentionNote": "Cobre os últimos 30 dias."
+      },
       "back": "Voltar",
       "backAria": "Voltar"
     },
@@ -1433,6 +1459,10 @@
         "time_based": {
           "label": "Baseado em horário",
           "hint": "Em uma programação recorrente"
+        },
+        "session_window_expiring": {
+          "label": "Janela de 24h fechando",
+          "hint": "Uma conversa parada está prestes a sair da janela de 24 horas — reengaje enquanto ainda é possível mandar mensagem livre"
         }
       },
       "trigger": "Gatilho",
@@ -1444,6 +1474,9 @@
       "replyIdsHelp": "IDs de botão/item de lista a corresponder, separados por vírgula, exatos. Use os mesmos IDs definidos em uma etapa Enviar botões / Enviar lista.",
       "schedule": "Programação",
       "scheduleHint": "Expressão cron (ex.: 0 9 * * 1-5)",
+      "marginLabel": "Horas antes de a janela fechar",
+      "marginHint": "Dispara uma vez por conversa, {minutes} minutos antes de a janela de 24 horas expirar. Só reengaja conversas que já estão esperando o cliente, e nunca fora do horário comercial.",
+      "marginWarn": "Acima de 12 horas isso reengaja quem acabou de falar com você.",
       "active": "Ativo",
       "activeAria": "Ativo",
       "save": "Salvar",
@@ -1522,12 +1555,19 @@
           "tag_presence": "Presença de etiqueta",
           "contact_field": "Campo do contato",
           "message_content": "Conteúdo da mensagem",
-          "time_of_day": "Horário do dia"
+          "time_of_day": "Horário do dia",
+          "session_window": "Janela de sessão de 24h"
         },
         "operandLabel": "Operando",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "nome / e-mail / empresa",
         "placeholderTag": "id da etiqueta",
+        "sessionWindowOperand": {
+          "open": "Janela está aberta",
+          "closed": "Janela está fechada",
+          "closing_soon": "Janela está prestes a fechar"
+        },
+        "sessionWindowMinutesLabel": "Limite de minutos restantes",
         "urlLabel": "URL",
         "headersLabel": "Cabeçalhos",
         "placeholderHeaders": "{\"Authorization\": \"Bearer ...\"}",
@@ -1536,7 +1576,14 @@
         "matchType": "Tipo de correspondência",
         "matchContains": "Contém",
         "matchExact": "Exato",
-        "closeConversationHint": "Define o status da conversa como \"encerrada\". Nenhuma configuração necessária."
+        "closeConversationHint": "Define o status da conversa como \"encerrada\". Nenhuma configuração necessária.",
+        "onWindowClosedLabel": "Quando a janela de sessão de 24h já tiver fechado",
+        "onWindowClosed": {
+          "skip": "Pular esta etapa",
+          "fail": "Falhar esta etapa",
+          "fallback_template": "Enviar um template — cobrado pela Meta"
+        },
+        "onWindowClosedHint": "Esta mensagem não passa por revisão da Meta antes do envio — ela conta com a reputação da conta, não com aprovação de template. Escolher falhar ou pular evita um envio rejeitado depois que a janela de 24h fechar."
       }
     }
   },

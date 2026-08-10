@@ -15,6 +15,7 @@ import {
   Clock,
   Users,
   PhoneCall,
+  Hourglass,
   Loader2,
 } from 'lucide-react';
 
@@ -51,6 +52,10 @@ const TEMPLATE_ORDER: TemplateSlug[] = [
   'welcome_message',
   'out_of_office',
   'lead_qualifier',
+  // Antes do `follow_up_reminder` de propósito: os dois resolvem o mesmo
+  // problema, e este é a versão que respeita a janela de 24h (SPEC 045
+  // §5.8). Quem lê a lista de cima para baixo encontra o certo primeiro.
+  'reengagement_before_window_closes',
   'follow_up_reminder',
 ];
 
@@ -59,6 +64,7 @@ const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
   out_of_office: Clock,
   lead_qualifier: Users,
   follow_up_reminder: PhoneCall,
+  reengagement_before_window_closes: Hourglass,
 };
 
 export default function AutomationsPage() {

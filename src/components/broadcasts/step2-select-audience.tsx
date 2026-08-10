@@ -15,6 +15,7 @@ import {
   type AudienceSourceId,
 } from './audience/audience-source-picker';
 import { AudienceImportSummary } from './audience/audience-import-summary';
+import { AudienceTemplateHint } from './audience/audience-template-hint';
 import { GoogleSheetsSource } from './audience/google-sheets-source';
 import { SpreadsheetDropzone } from './audience/spreadsheet-dropzone';
 import { QuotaMeter, exceedsQuota } from './quota-meter';
@@ -399,6 +400,11 @@ export function Step2SelectAudience({
       </div>
 
       <AudienceSourcePicker value={source} onChange={handleSourceChange} />
+
+      {/* Modelo + colunas aceitas. Vem ANTES do campo de upload de
+          propósito: quem chega aqui sem planilha pronta baixa o modelo
+          em vez de descobrir o formato pelo erro de parsing. */}
+      {isImportSource(source) && <AudienceTemplateHint />}
 
       {/* ── Google Sheets ─────────────────────────────────────── */}
       {source === 'google_sheets' && (

@@ -547,7 +547,14 @@ export type AutomationTriggerType =
   | 'time_based'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
-  | 'interactive_reply';
+  | 'interactive_reply'
+  /**
+   * SPEC 045 §5.5: the 24h Meta session window of a stalled conversation
+   * is about to close. Unlike every other trigger, this one is NOT
+   * reactive to a webhook event — there is no "event" for time passing,
+   * so it is driven by the periodic scan inside /api/automations/cron.
+   */
+  | 'session_window_expiring';
 
 export type AutomationStepType =
   | 'send_message'
@@ -587,15 +594,51 @@ export interface InteractiveReplyTriggerConfig {
   reply_ids: string[];
 }
 
+export interface SessionWindowExpiringTriggerConfig {
+  /**
+   * How many minutes before the 24h window closes the conversation
+   * becomes eligible (SPEC 045 §5.7.1). This is ALSO the width of the
+   * eligibility band, so it doubles as the per-tick batch size knob.
+   * Integer, 15–1440; absent means the 240 (4h) default.
+   */
+  margin_minutes: number;
+}
+
 export type AutomationTriggerConfig =
   | Record<string, never>
   | KeywordMatchTriggerConfig
   | TagTriggerConfig
   | TimeBasedTriggerConfig
   | InteractiveReplyTriggerConfig
+  | SessionWindowExpiringTriggerConfig
   | Record<string, unknown>;
 
-export interface SendMessageStepConfig {
+/**
+ * What a session-message step (`send_message` / `send_buttons` /
+ * `send_list`) should do when the 24h Meta session window is already
+ * closed at send time (SPEC 045 §5.3). `send_template` never reads
+ * this — it's already the correct path outside the window.
+ *
+ * Read default is `'fail'` (old JSONB without the field keeps today's
+ * behaviour: the step fails, same as a raw 400 from Meta would). Write
+ * default for NEWLY created steps is `'skip'` (see `blankConfig()` in
+ * automation-builder.tsx) — a step created after this shipped has no
+ * legacy behaviour to preserve, and `'fail'` would make every new
+ * automation born broken by default. §5.3.2 documents why these two
+ * defaults are deliberately different.
+ */
+export type OnWindowClosedAction = 'skip' | 'fail' | 'fallback_template';
+
+export interface WindowGuardConfig {
+  on_window_closed?: OnWindowClosedAction;
+  /** Required when on_window_closed === 'fallback_template' (§5.3.4).
+   *  A nested SendTemplateStepConfig (not two loose string fields) so
+   *  it can carry `variables` — most reengagement templates need at
+   *  least one. */
+  fallback_template?: SendTemplateStepConfig;
+}
+
+export interface SendMessageStepConfig extends WindowGuardConfig {
   text: string;
 }
 
@@ -603,9 +646,15 @@ export interface SendMessageStepConfig {
  * `send_buttons` / `send_list` step configs carry the full interactive
  * payload (same shape stored on messages + quick replies). `kind` is
  * implied by the step_type but kept on the payload for a uniform shape.
+ *
+ * Intersected with `WindowGuardConfig`: the extra keys ride along in
+ * the same JSONB `step_config` without leaking into the Meta payload
+ * (engineSendInteractive reads only its own named fields) or failing
+ * Meta-limits validation (validateInteractivePayload ignores unknown
+ * keys) — see SPEC 045 §5.3.1.
  */
-export type SendButtonsStepConfig = InteractiveMessagePayload;
-export type SendListStepConfig = InteractiveMessagePayload;
+export type SendButtonsStepConfig = InteractiveMessagePayload & WindowGuardConfig;
+export type SendListStepConfig = InteractiveMessagePayload & WindowGuardConfig;
 
 export interface SendTemplateStepConfig {
   template_name: string;
@@ -648,13 +697,26 @@ export interface WaitStepConfig {
 }
 
 export type ConditionSubject =
-  'contact_field' | 'tag_presence' | 'message_content' | 'time_of_day';
+  | 'contact_field'
+  | 'tag_presence'
+  | 'message_content'
+  | 'time_of_day'
+  /** SPEC 045 §5.4: is the 24h Meta session window open/closed/closing soon. */
+  | 'session_window';
 
 export interface ConditionStepConfig {
   subject: ConditionSubject;
-  /** e.g. field name, tag id, substring, or "HH:mm-HH:mm" depending on subject */
+  /**
+   * e.g. field name, tag id, substring, or "HH:mm-HH:mm" depending on
+   * subject. For `session_window`, one of 'open' | 'closed' |
+   * 'closing_soon'.
+   */
   operand?: string;
-  /** For contact_field equals / message_content contains — comparison value */
+  /**
+   * For contact_field equals / message_content contains — comparison
+   * value. For `session_window` with operand 'closing_soon', the
+   * minutes threshold (defaults to 240 when absent).
+   */
   value?: string;
 }
 

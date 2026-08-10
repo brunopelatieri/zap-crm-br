@@ -1105,6 +1105,21 @@
         "columnsHint": "Needs a phone column. Name, email, company and tags are optional.",
         "parsingProgress": "Reading {processed} of {total} rows…"
       },
+      "template": {
+        "title": "Spreadsheet template",
+        "subtitle": "Download the template, replace the sample rows with your contacts and upload it. The first row must be the header.",
+        "download": "Download template (.csv)",
+        "required": "required",
+        "optional": "optional",
+        "alsoAccepted": "also accepted: {aliases}",
+        "columns": {
+          "phone": "Phone with country and area code — e.g. 5511987654321. Spaces, parentheses, dashes and \"+\" are ignored.",
+          "name": "Contact name, used in the template variables.",
+          "email": "Contact email.",
+          "company": "Contact company.",
+          "tags": "Tags separated by comma or semicolon."
+        }
+      },
       "sheets": {
         "title": "Import from Google Sheets",
         "placeholder": "https://docs.google.com/spreadsheets/d/…",
@@ -1382,6 +1397,17 @@
         "partial": "partial",
         "failed": "failed"
       },
+      "window": {
+        "title": "Re-engagement results",
+        "sent": "Sent",
+        "reopened": "Replied within 24h",
+        "reopenedOf": "{count} conversations came back",
+        "failed": "Send failures",
+        "optedOut": "Opted out after",
+        "optedOutOf": "{count} contacts asked to stop",
+        "optOutWarning": "More than 1 in 20 contacts opted out after this message. Session messages are not reviewed by Meta before sending, so this is the earliest warning you get — rewrite the text to offer something genuinely useful before it starts costing your number's quality rating.",
+        "retentionNote": "Covers the last 30 days."
+      },
       "back": "Back",
       "backAria": "Back"
     },
@@ -1433,6 +1459,10 @@
         "time_based": {
           "label": "Time-Based",
           "hint": "On a recurring schedule"
+        },
+        "session_window_expiring": {
+          "label": "24h Window Closing",
+          "hint": "A stalled conversation is about to fall out of the 24-hour session window — re-engage while a free-form message is still allowed"
         }
       },
       "trigger": "Trigger",
@@ -1444,6 +1474,9 @@
       "replyIdsHelp": "Comma-separated button/list-row ids to match, exact. Use the same ids you set on a Send Buttons / Send List step.",
       "schedule": "Schedule",
       "scheduleHint": "Cron expression (e.g. 0 9 * * 1-5)",
+      "marginLabel": "Hours before the window closes",
+      "marginHint": "Fires once per conversation, {minutes} minutes before its 24-hour window expires. Only conversations already waiting on the customer are re-engaged, and never outside business hours.",
+      "marginWarn": "Above 12 hours this re-engages people who have only just messaged you.",
       "active": "Active",
       "activeAria": "Active",
       "save": "Save",
@@ -1522,12 +1555,19 @@
           "tag_presence": "Tag presence",
           "contact_field": "Contact field",
           "message_content": "Message content",
-          "time_of_day": "Time of day"
+          "time_of_day": "Time of day",
+          "session_window": "24h session window"
         },
         "operandLabel": "Operand",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "name / email / company",
         "placeholderTag": "tag id",
+        "sessionWindowOperand": {
+          "open": "Window is open",
+          "closed": "Window is closed",
+          "closing_soon": "Window is closing soon"
+        },
+        "sessionWindowMinutesLabel": "Minutes remaining threshold",
         "urlLabel": "URL",
         "headersLabel": "Headers",
         "placeholderHeaders": "{\"Authorization\": \"Bearer ...\"}",
@@ -1536,7 +1576,14 @@
         "matchType": "Match type",
         "matchContains": "Contains",
         "matchExact": "Exact",
-        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
+        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed.",
+        "onWindowClosedLabel": "When the 24h session window has closed",
+        "onWindowClosed": {
+          "skip": "Skip this step",
+          "fail": "Fail this step",
+          "fallback_template": "Send a template instead — billed by Meta"
+        },
+        "onWindowClosedHint": "This message is not reviewed by Meta before sending — it counts on account reputation, not template approval. Choosing to fail or skip avoids a rejected send once the 24h window is gone."
       }
     }
   },

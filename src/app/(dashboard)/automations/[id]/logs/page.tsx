@@ -21,6 +21,10 @@ import type {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/automations/trigger-meta';
+import {
+  loadWindowStats,
+  type WindowStats,
+} from '@/lib/automations/window-stats';
 
 export default function AutomationLogsPage({
   params,
@@ -36,6 +40,7 @@ export default function AutomationLogsPage({
   const [logs, setLogs] = useState<AutomationLog[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openLogId, setOpenLogId] = useState<string | null>(null);
+  const [windowStats, setWindowStats] = useState<WindowStats | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -52,8 +57,18 @@ export default function AutomationLogsPage({
         ]);
         if (autRes.error) throw autRes.error;
         if (logRes.error) throw logRes.error;
-        setAutomation(autRes.data as Automation | null);
+        const aut = autRes.data as Automation | null;
+        setAutomation(aut);
         setLogs((logRes.data ?? []) as AutomationLog[]);
+
+        // Painel de reengajamento (SPEC 045 §7). Só existe para este
+        // trigger, e a busca é separada de propósito: `loadWindowStats`
+        // devolve `null` em vez de lançar, então um deploy sem a
+        // migração 053 esconde o painel em vez de quebrar a página de
+        // logs — que é útil por si só.
+        if (aut?.trigger_type === 'session_window_expiring') {
+          setWindowStats(await loadWindowStats(supabase, id));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : t('loadError'));
       }
@@ -98,6 +113,8 @@ export default function AutomationLogsPage({
           <p className="text-muted-foreground mt-0.5 text-sm">{t('title')}</p>
         </div>
       </div>
+
+      {windowStats && <WindowStatsPanel stats={windowStats} t={t} />}
 
       {logs.length === 0 ? (
         <div className="border-border bg-card/40 flex h-48 flex-col items-center justify-center rounded-xl border border-dashed">
@@ -167,6 +184,97 @@ export default function AutomationLogsPage({
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * Painel de reengajamento (SPEC 045 §7). Só renderiza para automações
+ * do trigger `session_window_expiring`.
+ *
+ * A ordem das quatro caixas não é decorativa. `optOutRate` fica por
+ * último e ganha destaque próprio porque é a única que mede RISCO: uma
+ * mensagem de sessão não passa por revisão da Meta (§8.1), e o
+ * descadastro é o primeiro sinal de que o texto está incomodando —
+ * disponível antes de virar queda de quality rating, que é quando já
+ * não há o que fazer.
+ */
+function WindowStatsPanel({
+  stats,
+  t,
+}: {
+  stats: WindowStats;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const pct = (v: number | null) =>
+    v === null ? '—' : `${Math.round(v * 100)}%`;
+
+  // Um descadastro a cada 20 reengajamentos já é muito para uma
+  // mensagem que ninguém revisou antes de sair.
+  const optOutAlarming = stats.optOutRate !== null && stats.optOutRate >= 0.05;
+
+  return (
+    <div className="border-border bg-card rounded-xl border p-4">
+      <h2 className="text-foreground mb-3 text-sm font-semibold">
+        {t('window.title')}
+      </h2>
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatBox label={t('window.sent')} value={String(stats.sent)} />
+        <StatBox
+          label={t('window.reopened')}
+          value={pct(stats.reopenRate)}
+          hint={t('window.reopenedOf', { count: stats.reopened })}
+          tone="good"
+        />
+        <StatBox
+          label={t('window.failed')}
+          value={String(stats.failed)}
+          tone={stats.failed > 0 ? 'warn' : undefined}
+        />
+        <StatBox
+          label={t('window.optedOut')}
+          value={pct(stats.optOutRate)}
+          hint={t('window.optedOutOf', { count: stats.opted_out_after })}
+          tone={optOutAlarming ? 'bad' : undefined}
+        />
+      </dl>
+      {optOutAlarming && (
+        <p className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {t('window.optOutWarning')}
+        </p>
+      )}
+      <p className="text-muted-foreground mt-3 text-[11px]">
+        {t('window.retentionNote')}
+      </p>
+    </div>
+  );
+}
+
+function StatBox({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: 'good' | 'warn' | 'bad';
+}) {
+  return (
+    <div className="bg-muted/40 rounded-lg px-3 py-2">
+      <dt className="text-muted-foreground text-[11px]">{label}</dt>
+      <dd
+        className={cn(
+          'text-foreground mt-0.5 text-lg font-semibold',
+          tone === 'good' && 'text-primary',
+          tone === 'warn' && 'text-amber-300',
+          tone === 'bad' && 'text-red-300'
+        )}
+      >
+        {value}
+      </dd>
+      {hint && <p className="text-muted-foreground text-[11px]">{hint}</p>}
     </div>
   );
 }

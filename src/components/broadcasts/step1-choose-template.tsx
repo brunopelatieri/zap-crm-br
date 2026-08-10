@@ -139,44 +139,52 @@ export function Step1ChooseTemplate({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {templates.map((template) => {
-            const isSelected = selectedTemplate?.id === template.id;
-            const catColor =
-              categoryColors[template.category] ?? categoryColors.Utility;
+        <div
+          style={{
+            overflowY: 'scroll',
+            height: '500px',
+            paddingRight: '10px',
+          }}
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {templates.map((template) => {
+              const isSelected = selectedTemplate?.id === template.id;
+              const catColor =
+                categoryColors[template.category] ?? categoryColors.Utility;
 
-            return (
-              <button
-                key={template.id}
-                onClick={() => onSelect(template)}
-                className={`flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
-                  isSelected
-                    ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
-                    : 'border-border bg-card/50 hover:border-border hover:bg-card'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <h3 className="text-foreground text-sm font-medium break-all">
-                    {template.name}
-                  </h3>
-                  <span
-                    className={`ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${catColor}`}
-                  >
-                    {template.category}
-                  </span>
-                </div>
-                <p className="text-muted-foreground line-clamp-3 text-xs">
-                  {template.body_text}
-                </p>
-                <div className="text-muted-foreground flex items-center gap-2 text-[10px]">
-                  <span>{template.language ?? 'en_US'}</span>
-                  {/* Status is omitted on purpose — every template
-                      shown here is already filtered to APPROVED,
-                      so the chip carried no information. */}
-                </div>
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={template.id}
+                  onClick={() => onSelect(template)}
+                  className={`flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
+                    isSelected
+                      ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
+                      : 'border-border bg-card/50 hover:border-border hover:bg-card'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <h3 className="text-foreground text-sm font-medium break-all">
+                      {template.name}
+                    </h3>
+                    <span
+                      className={`ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${catColor}`}
+                    >
+                      {template.category}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground line-clamp-3 text-xs">
+                    {template.body_text}
+                  </p>
+                  <div className="text-muted-foreground flex items-center gap-2 text-[10px]">
+                    <span>{template.language ?? 'en_US'}</span>
+                    {/* Status is omitted on purpose — every template
+                        shown here is already filtered to APPROVED,
+                        so the chip carried no information. */}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

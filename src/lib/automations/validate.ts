@@ -1,5 +1,10 @@
 import type { AutomationTriggerType } from '@/types';
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
+import {
+  MAX_MARGIN_MINUTES,
+  MIN_MARGIN_MINUTES,
+  isValidMarginMinutes,
+} from './window-trigger';
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -71,6 +76,7 @@ function validateOne(
           message: 'message text is required',
         });
       }
+      validateWindowGuard(c, path, issues);
       break;
     case 'send_buttons':
     case 'send_list': {
@@ -80,6 +86,7 @@ function validateOne(
       if (!result.ok) {
         issues.push({ path: `${path}.interactive`, message: result.error });
       }
+      validateWindowGuard(c, path, issues);
       break;
     }
     case 'send_template':
@@ -242,6 +249,17 @@ export function validateTriggerForActivation(
     if (!nonEmpty(cfg.tag_id)) {
       issues.push({ path: 'trigger.tag_id', message: 'tag is required' });
     }
+  } else if (triggerType === 'session_window_expiring') {
+    // Ausente é válido: cai no default de 240 min na varredura. Presente
+    // tem de estar na faixa útil — ver window-trigger.ts para por que o
+    // piso é 15 e não 1 (uma margem menor que 3 ticks de cron produz uma
+    // automação que dispara "às vezes", sem o autor descobrir por quê).
+    if (cfg.margin_minutes != null && !isValidMarginMinutes(cfg.margin_minutes)) {
+      issues.push({
+        path: 'trigger.margin_minutes',
+        message: `margin must be a whole number of minutes between ${MIN_MARGIN_MINUTES} and ${MAX_MARGIN_MINUTES}`,
+      });
+    }
   } else if (triggerType === 'interactive_reply') {
     const ids = cfg.reply_ids;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -262,4 +280,26 @@ export function validateTriggerForActivation(
 
 function nonEmpty(v: unknown): boolean {
   return typeof v === 'string' && v.trim().length > 0;
+}
+
+/**
+ * SPEC 045 §5.3.4: activating a step configured to fall back to a
+ * template when the session window closes, without actually naming a
+ * template, would only fail at runtime — at the exact moment the
+ * fallback was supposed to save the send. Mirrors the `send_template`
+ * check above, applied to the nested `fallback_template` config.
+ */
+function validateWindowGuard(
+  c: Record<string, unknown>,
+  path: string,
+  issues: ValidationIssue[]
+): void {
+  if (c.on_window_closed !== 'fallback_template') return;
+  const fallback = (c.fallback_template ?? {}) as Record<string, unknown>;
+  if (!nonEmpty(fallback.template_name)) {
+    issues.push({
+      path: `${path}.fallback_template.template_name`,
+      message: 'fallback template name is required when on_window_closed is "fallback_template"',
+    });
+  }
 }

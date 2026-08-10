@@ -1,19 +1,49 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { resumePendingExecution } from '@/lib/automations/engine';
 import type { AutomationContext } from '@/lib/automations/engine';
+import { scanSessionWindows } from '@/lib/automations/window-scan';
 
 /**
- * Drain due `automation_pending_executions` rows. Meant to be hit
- * on a schedule (Vercel Cron / external pinger) — requires a shared
- * secret via the `x-cron-secret` header to match
- * `AUTOMATION_CRON_SECRET`.
+ * Duas fases, um único agendamento:
  *
- * The claim step (status = 'running') serves as a simple lock so
- * overlapping invocations don't double-process rows. Best-effort
- * only; expensive SELECT ... FOR UPDATE is avoided in favor of a
- * two-step UPDATE-by-id.
+ *   1. **Drenar** as `automation_pending_executions` vencidas (o step
+ *      `wait`). Comportamento original desta rota.
+ *   2. **Varrer** as janelas de 24h prestes a fechar (SPEC 045 §5.5).
+ *
+ * Por que a varredura mora AQUI e não numa rota nova (§5.5.1)
+ *
+ *   O agendamento não é código: vive em `supabase/setup/cron-jobs.sql`,
+ *   que não é uma migração — é configuração de ambiente, carrega a URL e
+ *   o segredo do deploy, e instrui o operador a preencher, rodar e
+ *   descartar sem commitar. Uma rota nova significaria um quarto
+ *   `cron.schedule` e, portanto, uma ação MANUAL de todo operador já em
+ *   produção (incluindo forks). Quem não fizesse essa ação teria a
+ *   feature aparecendo na UI, salvando automação, ativando — e nunca
+ *   disparando, sem nenhum erro em lugar nenhum. É o pior modo de falha
+ *   possível para uma feature de automação. Pendurando na rota que já é
+ *   pingada a cada 5 min, quem já configurou o cron ganha a feature no
+ *   deploy.
+ *
+ * Auth: segredo compartilhado via header `x-cron-secret`, conferido
+ * contra `AUTOMATION_CRON_SECRET`.
+ *
+ * O claim (status = 'running') serve de lock simples para que
+ * invocações sobrepostas não processem a mesma linha duas vezes.
+ * Best-effort: um `SELECT ... FOR UPDATE` caro é evitado em favor de um
+ * UPDATE-por-id em dois passos. A varredura da fase 2 tem seu próprio
+ * lock, pelo mesmo motivo e com o mesmo formato (§5.5.2).
  */
+
+/**
+ * Mesmo teto de `/api/broadcasts/cron`, e pela mesma razão: a fase 2
+ * roda em `after()` e pode encostar em dezenas de envios pela Meta em
+ * série. Sem declarar isto, valeria o padrão da plataforma e o corte
+ * aconteceria NO MEIO de um envio — deixando a dúvida mais cara
+ * possível: a mensagem saiu para a Meta e o INSERT local não aconteceu?
+ */
+export const maxDuration = 300;
+
 export async function GET(request: Request) {
   const expected = process.env.AUTOMATION_CRON_SECRET;
   if (!expected) {
@@ -35,10 +65,14 @@ export async function GET(request: Request) {
 
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!due || due.length === 0) return NextResponse.json({ processed: 0 });
 
+  // ── Fase 1: drenagem ──────────────────────────────────────────────
+  //
+  // Nada de `return` antecipado quando a fila está vazia: fila vazia é o
+  // caso COMUM, e sair aqui pularia a varredura quase sempre — a feature
+  // inteira nunca dispararia.
   let processed = 0;
-  for (const row of due) {
+  for (const row of due ?? []) {
     const { data: claim } = await admin
       .from('automation_pending_executions')
       .update({ status: 'running' })
@@ -65,5 +99,22 @@ export async function GET(request: Request) {
     processed++;
   }
 
-  return NextResponse.json({ processed });
+  // ── Fase 2: varredura de janela (SPEC 045 §5.5) ───────────────────
+  //
+  // Depois da drenagem (a ordem que §5.5.1 pede) e FORA do caminho da
+  // resposta. `after()` casa com o `timeout_milliseconds := 20000` do
+  // job de pg_cron, que corta apenas a ESPERA pela resposta, não o
+  // trabalho no servidor: o HTTP responde assim que a drenagem termina e
+  // a varredura segue dentro do `maxDuration` acima.
+  //
+  // `scanSessionWindows` nunca lança — aqui dentro não há quem leia uma
+  // exceção.
+  after(async () => {
+    const result = await scanSessionWindows();
+    if (result.dispatched > 0 || result.failed > 0) {
+      console.log('[automations-cron] window scan:', JSON.stringify(result));
+    }
+  });
+
+  return NextResponse.json({ processed, scan: 'scheduled' });
 }

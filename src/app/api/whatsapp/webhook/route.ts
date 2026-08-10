@@ -742,6 +742,15 @@ async function processMessage(
     .eq('sender_type', 'customer');
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0;
 
+  // Instante DA META, não do nosso servidor — usado tanto para o
+  // `created_at` da mensagem quanto para a âncora da janela de sessão
+  // logo abaixo (SPEC 045 §5.2.1). Extraído para uma const para que os
+  // dois nunca divirjam: `new Date()` no segundo produziria uma âncora
+  // no futuro sempre que o webhook chegar atrasado (fila da Meta,
+  // reentrega após 5xx nosso), fazendo o CRM achar que a janela ainda
+  // está aberta quando a Meta já a fechou.
+  const metaMessageAt = new Date(parseInt(message.timestamp) * 1000);
+
   const { error: msgError } = await supabaseAdmin()
     .from('messages')
     .insert({
@@ -756,7 +765,7 @@ async function processMessage(
       media_id: mediaId,
       message_id: message.id,
       status: 'delivered',
-      created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      created_at: metaMessageAt.toISOString(),
       reply_to_message_id: replyToInternalId,
       // Only populated for content_type='interactive'. Migration 010 added
       // the column; null for every other content_type so existing inserts
@@ -782,6 +791,70 @@ async function processMessage(
 
   if (convError) {
     console.error('Error updating conversation:', convError);
+  }
+
+  // ============================================================
+  // Âncora da janela de sessão de 24h (SPEC 045 §5.2.1) — UPDATE
+  // separado do que já existe acima, de propósito: `last_message_at`
+  // é um rótulo de UI e pode usar o instante do nosso servidor, mas a
+  // âncora da janela tem de usar o instante DA META (`metaMessageAt`,
+  // a mesma const do INSERT logo acima) e tem de ser monotônica.
+  //
+  // A Meta reentrega webhooks sem garantir ordem; um UPDATE cego
+  // aceitaria um timestamp mais antigo que o já gravado e puxaria a
+  // âncora PARA TRÁS — reabrindo elegibilidade de uma janela já
+  // reengajada e encurtando artificialmente a janela vigente. O filtro
+  // abaixo só deixa a escrita passar quando avança a âncora (ou quando
+  // ainda não há nenhuma).
+  // ============================================================
+  const { data: anchorMoved, error: anchorError } = await supabaseAdmin()
+    .from('conversations')
+    .update({ last_customer_message_at: metaMessageAt.toISOString() })
+    .eq('id', conversation.id)
+    .or(
+      `last_customer_message_at.is.null,last_customer_message_at.lt.${metaMessageAt.toISOString()}`
+    )
+    // O `.select()` existe para sabermos se a âncora AVANÇOU: numa
+    // reentrega fora de ordem o filtro acima não casa e o resultado vem
+    // vazio. É esse sinal que decide o bloco de `reopened_at` abaixo —
+    // marcar reabertura com um timestamp velho contaria uma resposta
+    // que não aconteceu agora.
+    .select('id');
+
+  if (anchorError) {
+    console.error('Error updating session window anchor:', anchorError);
+  }
+
+  // ============================================================
+  // Reengajamento que FUNCIONOU (SPEC 045 §5.5.5 / §7).
+  //
+  // O cliente acabou de escrever. Se existe um claim desta conversa que
+  // já enviou um reengajamento nas últimas 24h e ainda não foi marcado,
+  // então foi este reengajamento que trouxe a pessoa de volta — e é
+  // exatamente essa a definição da métrica de reabertura da §7.
+  //
+  // Marcar aqui é o que transforma "cruzar automation_logs com messages
+  // por contact_id e faixa de tempo" (a consulta que ninguém escreve
+  // depois do deploy) em um count sobre uma coluna. O índice parcial da
+  // migração 053 cobre exatamente este filtro.
+  //
+  // Best-effort e fora do caminho crítico: perder a marcação custa a
+  // métrica, nunca a entrega da mensagem.
+  // ============================================================
+  if (!anchorError && anchorMoved && anchorMoved.length > 0) {
+    const reopenCutoff = new Date(
+      metaMessageAt.getTime() - 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { error: reopenError } = await supabaseAdmin()
+      .from('automation_window_claims')
+      .update({ reopened_at: metaMessageAt.toISOString() })
+      .eq('conversation_id', conversation.id)
+      .not('sent_at', 'is', null)
+      .is('reopened_at', null)
+      .gte('sent_at', reopenCutoff);
+    if (reopenError) {
+      console.error('Error marking window reopen:', reopenError);
+    }
   }
 
   // If this contact was a recent broadcast recipient, flag the reply

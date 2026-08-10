@@ -18,12 +18,51 @@ import {
 import { AudienceParseError, MAX_AUDIENCE_ROWS } from './types';
 import type { RawAudienceRow } from './types';
 
-/** Cabeçalhos aceitos para a coluna de telefone, em ordem de preferência. */
-const PHONE_ALIASES = ['phone', 'telefone', 'celular', 'whatsapp', 'numero'];
-const NAME_ALIASES = ['name', 'nome'];
-const EMAIL_ALIASES = ['email', 'e-mail'];
-const COMPANY_ALIASES = ['company', 'empresa'];
-const TAG_ALIASES = ['tags', 'etiquetas'];
+export interface AudienceColumnMap {
+  phone: number;
+  name: number;
+  email: number;
+  company: number;
+  tags: number;
+}
+
+export interface AudienceColumnSpec {
+  key: keyof AudienceColumnMap;
+  /** Só o telefone é obrigatório — o resto enriquece a personalização. */
+  required: boolean;
+  /**
+   * Cabeçalhos aceitos, em ordem de preferência. O primeiro é o
+   * canônico: é o que o modelo de planilha escreve e o único que o
+   * import de contatos (`parseContactCsv`) também entende, então um
+   * arquivo montado a partir do modelo serve aos dois caminhos.
+   */
+  aliases: string[];
+}
+
+/**
+ * As colunas conhecidas, na ordem em que saem no modelo de planilha.
+ *
+ * Aceita cabeçalhos em português além dos originais em inglês — uma
+ * planilha exportada de qualquer ferramenta brasileira traz
+ * "telefone", e obrigar o usuário a renomear a coluna para "phone" é
+ * atrito sem propósito.
+ *
+ * Fonte única: o mapeamento do parser, o modelo oferecido na UI
+ * (`buildAudienceTemplateCsv`) e a lista de colunas exibida no passo 2
+ * leem daqui. Duas listas seriam duas chances de o modelo sugerir um
+ * cabeçalho que o parser não reconhece.
+ */
+export const AUDIENCE_COLUMNS: AudienceColumnSpec[] = [
+  {
+    key: 'phone',
+    required: true,
+    aliases: ['phone', 'telefone', 'celular', 'whatsapp', 'numero'],
+  },
+  { key: 'name', required: false, aliases: ['name', 'nome'] },
+  { key: 'email', required: false, aliases: ['email', 'e-mail'] },
+  { key: 'company', required: false, aliases: ['company', 'empresa'] },
+  { key: 'tags', required: false, aliases: ['tags', 'etiquetas'] },
+];
 
 /** Primeiro índice cujo cabeçalho casa com um dos apelidos. */
 function findColumn(headers: string[], aliases: string[]): number {
@@ -34,28 +73,19 @@ function findColumn(headers: string[], aliases: string[]): number {
   return -1;
 }
 
-export interface AudienceColumnMap {
-  phone: number;
-  name: number;
-  email: number;
-  company: number;
-  tags: number;
-}
-
-/**
- * Localiza as colunas conhecidas. Aceita cabeçalhos em português além
- * dos originais em inglês — uma planilha exportada de qualquer
- * ferramenta brasileira traz "telefone", e obrigar o usuário a
- * renomear a coluna para "phone" é atrito sem propósito.
- */
+/** Localiza as colunas conhecidas no cabeçalho lido. */
 export function mapAudienceColumns(headers: string[]): AudienceColumnMap {
-  return {
-    phone: findColumn(headers, PHONE_ALIASES),
-    name: findColumn(headers, NAME_ALIASES),
-    email: findColumn(headers, EMAIL_ALIASES),
-    company: findColumn(headers, COMPANY_ALIASES),
-    tags: findColumn(headers, TAG_ALIASES),
+  const map: AudienceColumnMap = {
+    phone: -1,
+    name: -1,
+    email: -1,
+    company: -1,
+    tags: -1,
   };
+  for (const column of AUDIENCE_COLUMNS) {
+    map[column.key] = findColumn(headers, column.aliases);
+  }
+  return map;
 }
 
 /**

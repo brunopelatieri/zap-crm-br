@@ -288,4 +288,41 @@ describe('validateTriggerForActivation', () => {
   it('does not flag unknown trigger types (handled elsewhere)', () => {
     expect(validateTriggerForActivation('some_future_trigger', {})).toEqual([]);
   });
+
+  // SPEC 045 §5.7.1 — a faixa existe porque a margem é também a LARGURA
+  // da faixa de elegibilidade, e o cron pinga a cada ~5 min.
+  describe('session_window_expiring margin_minutes', () => {
+    const check = (cfg: unknown) =>
+      validateTriggerForActivation('session_window_expiring', cfg);
+
+    it('accepts an absent margin (the scan falls back to 240)', () => {
+      expect(check({})).toEqual([]);
+    });
+
+    it('rejects margins narrower than 3 cron ticks', () => {
+      // Uma faixa de 1 min só é acertada por ~1 tick em cada 5: a
+      // automação "funciona", dispara às vezes, e o autor não tem como
+      // descobrir por quê.
+      expect(check({ margin_minutes: 1 })).toHaveLength(1);
+      expect(check({ margin_minutes: 14 })).toHaveLength(1);
+      expect(check({ margin_minutes: 15 })).toEqual([]);
+    });
+
+    it('rejects margins beyond 24h', () => {
+      expect(check({ margin_minutes: 1440 })).toEqual([]);
+      expect(check({ margin_minutes: 1441 })).toHaveLength(1);
+    });
+
+    it('rejects non-integer and non-numeric margins', () => {
+      expect(check({ margin_minutes: 30.5 })).toHaveLength(1);
+      expect(check({ margin_minutes: '240' })).toHaveLength(1);
+      expect(check({ margin_minutes: Number.NaN })).toHaveLength(1);
+    });
+
+    it('points the issue at the field the UI can highlight', () => {
+      expect(check({ margin_minutes: 0 })[0].path).toBe(
+        'trigger.margin_minutes'
+      );
+    });
+  });
 });

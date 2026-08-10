@@ -24,9 +24,11 @@ import {
   engineSendInteractive,
 } from './meta-send';
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
+import { computeSessionWindow } from '@/lib/whatsapp/session-window';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import { ASSIGNABLE_ACCOUNT_ROLES } from '@/lib/auth/roles';
 import { isAssignableMember } from '@/lib/inbox/assignment';
+import { excludesOptedOut, isOptedOut } from '@/lib/contacts/consent';
 
 // ------------------------------------------------------------
 // Public API
@@ -124,6 +126,42 @@ export async function runAutomationsForTrigger(
   } catch (err) {
     console.error('[automations] dispatch failed:', err);
   }
+}
+
+/**
+ * Execute ONE already-resolved automation. Exists for the session-window
+ * scan (SPEC 045 §5.5.3), which enumerates the automations itself and
+ * claims per (automation × conversation × window anchor).
+ *
+ * ⚠️ Do NOT "simplify" this back into `runAutomationsForTrigger`. That
+ * function fetches and runs EVERY active automation of the trigger in
+ * the account — the right contract for a webhook event, and the wrong
+ * one for the scan. With two automations of this trigger in an account,
+ * a per-automation claim loop calling it would run both on each claim:
+ * 4 executions for 2 intended, 2 duplicate messages to the customer,
+ * and a claims table showing exactly 2 rows — i.e. an audit trail that
+ * says everything is fine. The regression is invisible in the claims
+ * table, invisible in EXPLAIN, and only shows up in an account that has
+ * a second automation.
+ *
+ * Tenancy is the CALLER's responsibility — there's no ownership check
+ * here because the scan's contact and conversation both come out of a
+ * query already scoped by `account_id`. Any other caller must provide
+ * the same guarantee.
+ *
+ * Unlike `runAutomationsForTrigger`, this THROWS on failure: the caller
+ * records the outcome on the claim row (`sent_at` / `failed_at`, §5.5.5)
+ * and has nothing to record if failures are swallowed here.
+ */
+export async function runSingleAutomation(
+  automation: Automation,
+  input: DispatchInput
+): Promise<void> {
+  // Falls through to the final `return true` for this trigger today,
+  // but calling it keeps the new path equivalent to the old one if the
+  // trigger ever grows a filterable trigger_config.
+  if (!triggerMatches(automation, input.context)) return;
+  await executeAutomation(automation, input);
 }
 
 /**
@@ -335,12 +373,12 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         continue;
       }
 
-      const detail = await runStep(step, args);
+      const stepResult = await runStep(step, args);
       results.push({
         step_id: step.id,
         step_type: step.step_type,
-        status: 'success',
-        detail,
+        status: stepResult.status,
+        detail: stepResult.detail,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -364,10 +402,21 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   }
 }
 
+interface StepResult {
+  status: 'success' | 'skipped';
+  detail: string;
+}
+function success(detail: string): StepResult {
+  return { status: 'success', detail };
+}
+function skipped(detail: string): StepResult {
+  return { status: 'skipped', detail };
+}
+
 async function runStep(
   step: AutomationStep,
   args: ExecuteArgs
-): Promise<string> {
+): Promise<StepResult> {
   const db = supabaseAdmin();
 
   switch (step.step_type) {
@@ -377,6 +426,13 @@ async function runStep(
       const text = interpolate(cfg.text, args);
       if (!text.trim()) throw new Error('send_message has empty text');
       const conversationId = await resolveConversationId(args);
+      const guard = await checkWindowGuard(cfg, conversationId, args);
+      if (guard.kind === 'skip') return skipped(guard.detail);
+      if (guard.kind === 'fallback') {
+        return success(
+          await sendFallbackTemplate(guard.template, conversationId, args)
+        );
+      }
       const { whatsapp_message_id } = await engineSendText({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
@@ -384,7 +440,7 @@ async function runStep(
         contactId: args.contactId,
         text,
       });
-      return `sent via Meta (${whatsapp_message_id})`;
+      return success(`sent via Meta (${whatsapp_message_id})`);
     }
 
     case 'send_buttons':
@@ -398,6 +454,13 @@ async function runStep(
       const check = validateInteractivePayload(payload);
       if (!check.ok) throw new Error(check.error);
       const conversationId = await resolveConversationId(args);
+      const guard = await checkWindowGuard(payload, conversationId, args);
+      if (guard.kind === 'skip') return skipped(guard.detail);
+      if (guard.kind === 'fallback') {
+        return success(
+          await sendFallbackTemplate(guard.template, conversationId, args)
+        );
+      }
       const { whatsapp_message_id } = await engineSendInteractive({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
@@ -405,43 +468,13 @@ async function runStep(
         contactId: args.contactId,
         payload,
       });
-      return `interactive sent via Meta (${whatsapp_message_id})`;
+      return success(`interactive sent via Meta (${whatsapp_message_id})`);
     }
 
     case 'send_template': {
       const cfg = step.step_config as SendTemplateStepConfig;
-      if (!args.contactId) throw new Error('send_template needs a contact');
-      if (!cfg.template_name)
-        throw new Error('send_template needs template_name');
       const conversationId = await resolveConversationId(args);
-      // Meta templates use positional {{1}}, {{2}}, … placeholders, so
-      // we MUST emit params in strict numeric order. Lexicographic sort
-      // of "1", "2", …, "10" yields "1", "10", "2", … which silently
-      // scrambles every template with ≥10 variables.
-      const params = cfg.variables
-        ? Object.keys(cfg.variables)
-            .sort((a, b) => {
-              const na = Number(a);
-              const nb = Number(b);
-              const aNum = Number.isFinite(na);
-              const bNum = Number.isFinite(nb);
-              if (aNum && bNum) return na - nb;
-              if (aNum) return -1;
-              if (bNum) return 1;
-              return a.localeCompare(b);
-            })
-            .map((k) => String(cfg.variables![k]))
-        : [];
-      const { whatsapp_message_id } = await engineSendTemplate({
-        accountId: args.automation.account_id,
-        userId: args.automation.user_id,
-        conversationId,
-        contactId: args.contactId,
-        templateName: cfg.template_name,
-        language: cfg.language,
-        params,
-      });
-      return `template sent via Meta (${whatsapp_message_id})`;
+      return success(await sendTemplateStep(cfg, conversationId, args));
     }
 
     case 'add_tag': {
@@ -457,7 +490,7 @@ async function runStep(
           { contact_id: args.contactId, tag_id: cfg.tag_id },
           { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
         );
-      return `tag ${cfg.tag_id} added`;
+      return success(`tag ${cfg.tag_id} added`);
     }
 
     case 'remove_tag': {
@@ -471,7 +504,7 @@ async function runStep(
         .delete()
         .eq('contact_id', args.contactId)
         .eq('tag_id', cfg.tag_id);
-      return `tag ${cfg.tag_id} removed`;
+      return success(`tag ${cfg.tag_id} removed`);
     }
 
     case 'assign_conversation': {
@@ -512,7 +545,7 @@ async function runStep(
           .limit(1);
         agentId = profiles?.[0]?.user_id;
       }
-      if (!agentId) return 'no agent resolved';
+      if (!agentId) return success('no agent resolved');
 
       // O destino tem de ser membro DESTA conta com papel que possa
       // atender. Mesmo predicado que a 039 usa no backfill (seção 12),
@@ -529,7 +562,9 @@ async function runStep(
         // `update_contact_field` dá a um custom field de outra conta.
         // Uma automação configurada com um agente que saiu da conta
         // passa a aparecer no log em vez de sumir com a conversa.
-        return `agent ${agentId} is not an eligible member of this account`;
+        return success(
+          `agent ${agentId} is not an eligible member of this account`
+        );
       }
 
       await db
@@ -537,7 +572,7 @@ async function runStep(
         .update({ assigned_agent_id: agentId })
         .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId);
-      return `assigned to ${agentId}`;
+      return success(`assigned to ${agentId}`);
     }
 
     case 'update_contact_field': {
@@ -553,7 +588,7 @@ async function runStep(
       if (cfg.field.startsWith('custom:')) {
         const customFieldId = cfg.field.slice('custom:'.length);
         if (!customFieldId) {
-          return `field ${cfg.field} not writable from automations`;
+          return success(`field ${cfg.field} not writable from automations`);
         }
         // Defense in depth: the service-role client bypasses RLS, so confirm
         // the field definition belongs to this account before writing.
@@ -564,7 +599,7 @@ async function runStep(
           .eq('account_id', args.automation.account_id)
           .maybeSingle();
         if (!field) {
-          return `field ${cfg.field} not writable from automations`;
+          return success(`field ${cfg.field} not writable from automations`);
         }
         // Upsert on the table's UNIQUE(contact_id, custom_field_id) so repeated
         // runs overwrite rather than duplicate. Tenancy is enforced above and,
@@ -577,12 +612,12 @@ async function runStep(
           },
           { onConflict: 'contact_id,custom_field_id' }
         );
-        return `custom field updated`;
+        return success(`custom field updated`);
       }
 
       const allowed = new Set(['name', 'email', 'company']);
       if (!allowed.has(cfg.field)) {
-        return `field ${cfg.field} not writable from automations`;
+        return success(`field ${cfg.field} not writable from automations`);
       }
       // Defense in depth: scope the service-role write to the account so
       // a future caller that skips the entry-point ownership guard still
@@ -592,7 +627,7 @@ async function runStep(
         .update({ [cfg.field]: value, updated_at: new Date().toISOString() })
         .eq('id', args.contactId)
         .eq('account_id', args.automation.account_id);
-      return `${cfg.field} updated`;
+      return success(`${cfg.field} updated`);
     }
 
     case 'create_deal': {
@@ -621,7 +656,7 @@ async function runStep(
         currency: acct?.default_currency ?? 'USD',
         status: 'open',
       });
-      return 'deal created';
+      return success('deal created');
     }
 
     case 'send_webhook': {
@@ -648,7 +683,7 @@ async function runStep(
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) throw new Error(`webhook returned ${res.status}`);
-      return `webhook ${res.status}`;
+      return success(`webhook ${res.status}`);
     }
 
     case 'close_conversation': {
@@ -659,11 +694,11 @@ async function runStep(
         .update({ status: 'closed', updated_at: new Date().toISOString() })
         .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId);
-      return 'conversation closed';
+      return success('conversation closed');
     }
 
     default:
-      return `unknown step: ${step.step_type}`;
+      return success(`unknown step: ${step.step_type}`);
   }
 }
 
@@ -692,6 +727,150 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   if (error) throw new Error(`conversation lookup failed: ${error.message}`);
   if (!data?.id) throw new Error('no conversation for contact');
   return data.id as string;
+}
+
+type WindowGuardOutcome =
+  | { kind: 'send' }
+  | { kind: 'skip'; detail: string }
+  | { kind: 'fallback'; template: SendTemplateStepConfig };
+
+/**
+ * The guard SPEC 045 §5.3 requires before any session-message send
+ * (`send_message` / `send_buttons` / `send_list` — never
+ * `send_template`, which is already the correct path outside the
+ * window). Recomputes the window AT SEND TIME, not at the time a
+ * `wait` step was enqueued — that's what fixes the
+ * `follow_up_reminder` bug (§2.4): a `wait` can sit for a day, during
+ * which the customer may have written again and moved the anchor.
+ */
+async function checkWindowGuard(
+  cfg: { on_window_closed?: 'skip' | 'fail' | 'fallback_template'; fallback_template?: SendTemplateStepConfig },
+  conversationId: string,
+  args: ExecuteArgs
+): Promise<WindowGuardOutcome> {
+  const db = supabaseAdmin();
+  const { data: conv } = await db
+    .from('conversations')
+    .select('last_customer_message_at')
+    .eq('id', conversationId)
+    .eq('account_id', args.automation.account_id)
+    .maybeSingle();
+
+  const { isOpen } = computeSessionWindow(
+    conv?.last_customer_message_at
+      ? new Date(conv.last_customer_message_at)
+      : null
+  );
+  if (isOpen) return { kind: 'send' };
+
+  // Read default is 'fail', not 'skip': a step_config written before
+  // this guard existed has no on_window_closed key, and the deploy
+  // must not silently change what that automation does (§5.3.2/§5.3.3).
+  const action = cfg.on_window_closed ?? 'fail';
+
+  if (action === 'skip') {
+    return { kind: 'skip', detail: 'session window closed — skipped' };
+  }
+
+  if (action === 'fallback_template') {
+    if (!cfg.fallback_template?.template_name) {
+      throw new Error('fallback_template needs template_name');
+    }
+    return { kind: 'fallback', template: cfg.fallback_template };
+  }
+
+  throw new Error(
+    '24h session window closed — Meta would reject a free-form message'
+  );
+}
+
+/**
+ * `fallback_template` is the one send this guard introduces that's
+ * paid AND categorized (§5.3.4) — unlike a manually-configured
+ * `send_template` step, which no path in the engine checks consent
+ * for today. This is the only opt-out check on the fallback path,
+ * deliberately asymmetric with manual `send_template` (out of scope
+ * per §4 item 2): utility/authentication templates still reach an
+ * opted-out contact, same rule `excludesOptedOut` already applies to
+ * broadcasts.
+ */
+async function fallbackTemplateAllowed(
+  templateName: string,
+  language: string | undefined,
+  args: ExecuteArgs
+): Promise<boolean> {
+  if (!args.contactId) return true;
+  const db = supabaseAdmin();
+  const { data: contact } = await db
+    .from('contacts')
+    .select('opt_in_status')
+    .eq('id', args.contactId)
+    .eq('account_id', args.automation.account_id)
+    .maybeSingle();
+  if (!contact || !isOptedOut(contact)) return true;
+
+  let query = db
+    .from('message_templates')
+    .select('category')
+    .eq('account_id', args.automation.account_id)
+    .eq('name', templateName);
+  if (language) query = query.eq('language', language);
+  const { data } = await query.limit(1);
+  return !excludesOptedOut(data?.[0]?.category ?? null);
+}
+
+async function sendFallbackTemplate(
+  template: SendTemplateStepConfig,
+  conversationId: string,
+  args: ExecuteArgs
+): Promise<string> {
+  const allowed = await fallbackTemplateAllowed(
+    template.template_name,
+    template.language,
+    args
+  );
+  if (!allowed) {
+    return 'opted out — template fallback suppressed';
+  }
+  return sendTemplateStep(template, conversationId, args);
+}
+
+async function sendTemplateStep(
+  cfg: SendTemplateStepConfig,
+  conversationId: string,
+  args: ExecuteArgs
+): Promise<string> {
+  if (!args.contactId) throw new Error('send_template needs a contact');
+  if (!cfg.template_name)
+    throw new Error('send_template needs template_name');
+  // Meta templates use positional {{1}}, {{2}}, … placeholders, so
+  // we MUST emit params in strict numeric order. Lexicographic sort
+  // of "1", "2", …, "10" yields "1", "10", "2", … which silently
+  // scrambles every template with ≥10 variables.
+  const params = cfg.variables
+    ? Object.keys(cfg.variables)
+        .sort((a, b) => {
+          const na = Number(a);
+          const nb = Number(b);
+          const aNum = Number.isFinite(na);
+          const bNum = Number.isFinite(nb);
+          if (aNum && bNum) return na - nb;
+          if (aNum) return -1;
+          if (bNum) return 1;
+          return a.localeCompare(b);
+        })
+        .map((k) => String(cfg.variables![k]))
+    : [];
+  const { whatsapp_message_id } = await engineSendTemplate({
+    accountId: args.automation.account_id,
+    userId: args.automation.user_id,
+    conversationId,
+    contactId: args.contactId,
+    templateName: cfg.template_name,
+    language: cfg.language,
+    params,
+  });
+  return `template sent via Meta (${whatsapp_message_id})`;
 }
 
 export function triggerMatches(
@@ -778,6 +957,41 @@ async function evaluateCondition(
       const f = parse(from);
       const t = parse(to);
       return f <= t ? mins >= f && mins < t : mins >= f || mins < t;
+    }
+    case 'session_window': {
+      // resolveConversationId THROWS when there's no conversation, and
+      // an exception here would abort the whole automation instead of
+      // taking the "no" branch (engine.ts, the `break` in
+      // executeStepsFrom's catch). A condition must answer yes/no,
+      // never blow up: contact with no conversation → window not open
+      // → false (SPEC 045 §5.4).
+      if (!args.contactId) return false;
+      let conversationId: string;
+      try {
+        conversationId = await resolveConversationId(args);
+      } catch {
+        return false;
+      }
+      const { data: conv } = await db
+        .from('conversations')
+        .select('last_customer_message_at')
+        .eq('id', conversationId)
+        .eq('account_id', args.automation.account_id)
+        .maybeSingle();
+      const { isOpen, minutesRemaining } = computeSessionWindow(
+        conv?.last_customer_message_at
+          ? new Date(conv.last_customer_message_at)
+          : null
+      );
+      switch (cfg.operand) {
+        case 'closed':
+          return !isOpen;
+        case 'closing_soon':
+          return isOpen && minutesRemaining <= Number(cfg.value ?? 240);
+        case 'open':
+        default:
+          return isOpen;
+      }
     }
     default:
       return false;

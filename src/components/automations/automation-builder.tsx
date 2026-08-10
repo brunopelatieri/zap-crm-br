@@ -61,6 +61,12 @@ import {
   blankListPayload,
 } from '@/components/interactive/interactive-builder';
 import { interactivePayloadPreviewText } from '@/lib/whatsapp/interactive';
+import {
+  MARGIN_WARN_ABOVE_MINUTES,
+  MAX_MARGIN_MINUTES,
+  MIN_MARGIN_MINUTES,
+  resolveMarginMinutes,
+} from '@/lib/automations/window-trigger';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
@@ -178,6 +184,7 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: 'conversation_assigned' },
   { value: 'tag_added' },
   { value: 'time_based' },
+  { value: 'session_window_expiring' },
 ];
 
 function cid(): string {
@@ -203,14 +210,20 @@ function asInteractive(
   return cfg as unknown as InteractiveMessagePayload;
 }
 
+// Write default for on_window_closed is 'skip', deliberately different
+// from the engine's read default of 'fail' for step_config JSONB that
+// predates this field (SPEC 045 §5.3.2). A step created fresh has no
+// legacy behaviour to preserve, so it shouldn't be born "failing".
+const WINDOW_GUARD_DEFAULT = { on_window_closed: 'skip' as const };
+
 function blankConfig(type: AutomationStepType): Record<string, unknown> {
   switch (type) {
     case 'send_message':
-      return { text: '' };
+      return { text: '', ...WINDOW_GUARD_DEFAULT };
     case 'send_buttons':
-      return toStepConfig(blankButtonsPayload());
+      return { ...toStepConfig(blankButtonsPayload()), ...WINDOW_GUARD_DEFAULT };
     case 'send_list':
-      return toStepConfig(blankListPayload());
+      return { ...toStepConfig(blankListPayload()), ...WINDOW_GUARD_DEFAULT };
     case 'send_template':
       return { template_name: '', language: 'en_US' };
     case 'add_tag':
@@ -675,6 +688,60 @@ function SendTemplateFields({
   );
 }
 
+/**
+ * Shared by send_message / send_buttons / send_list (SPEC 045 §5.3,
+ * §5.7). Lets the author decide what happens if the 24h session
+ * window is already closed when this step actually runs — the engine
+ * checks this at send time, not at the moment a `wait` step upstream
+ * was enqueued.
+ */
+function WindowGuardFields({
+  cfg,
+  onChange,
+  t,
+}: {
+  cfg: Record<string, unknown>;
+  onChange: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  // Mirrors the engine's read default (§5.3.2): a step_config saved
+  // before this field existed has no key here, and must display —
+  // and execute — as 'fail', not silently switch to 'skip'.
+  const action = (cfg.on_window_closed as string) ?? 'fail';
+  const fallback = (cfg.fallback_template as Record<string, unknown>) ?? {};
+
+  return (
+    <>
+      <FieldBlock label={t('config.onWindowClosedLabel')}>
+        <select
+          value={action}
+          onChange={(e) => onChange({ on_window_closed: e.target.value })}
+          className={SELECT_CLASS}
+        >
+          <option value="skip">{t('config.onWindowClosed.skip')}</option>
+          <option value="fail">{t('config.onWindowClosed.fail')}</option>
+          <option value="fallback_template">
+            {t('config.onWindowClosed.fallback_template')}
+          </option>
+        </select>
+        <p className="text-muted-foreground mt-1 text-[11px]">
+          {t('config.onWindowClosedHint')}
+        </p>
+      </FieldBlock>
+      {action === 'fallback_template' && (
+        <SendTemplateFields
+          templateName={(fallback.template_name as string) ?? ''}
+          language={(fallback.language as string) ?? ''}
+          onChange={(patch) =>
+            onChange({ fallback_template: { ...fallback, ...patch } })
+          }
+          t={t}
+        />
+      )}
+    </>
+  );
+}
+
 // ------------------------------------------------------------
 // Main builder component
 // ------------------------------------------------------------
@@ -955,9 +1022,73 @@ function TriggerCard({
                 </p>
               </div>
             )}
+            {type === 'session_window_expiring' && (
+              <SessionWindowMarginConfig
+                config={config}
+                onChange={onConfigChange}
+                t={t}
+              />
+            )}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Antecedência do trigger `session_window_expiring` (SPEC 045 §5.7).
+ *
+ * Editado em HORAS porque é assim que a decisão é tomada ("avise 4h
+ * antes"), mas gravado em MINUTOS: a margem também define a largura da
+ * faixa de elegibilidade, que o cron de 5 min precisa conseguir acertar,
+ * e minutos é a unidade em que esse raciocínio fecha. `step={0.25}`
+ * existe para o piso de 15 min continuar alcançável pela UI — múltiplos
+ * de 0,25h são exatos em ponto flutuante, então a conversão não perde
+ * nada.
+ */
+function SessionWindowMarginConfig({
+  config,
+  onChange,
+  t,
+}: {
+  config: Record<string, unknown>;
+  onChange: (c: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const minutes = resolveMarginMinutes(config);
+  const hours = minutes / 60;
+
+  return (
+    <div>
+      <label className="text-muted-foreground mb-1 block text-xs font-medium">
+        {t('marginLabel')}
+      </label>
+      <Input
+        type="number"
+        min={MIN_MARGIN_MINUTES / 60}
+        max={MAX_MARGIN_MINUTES / 60}
+        step={0.25}
+        value={hours}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          if (!Number.isFinite(next)) return;
+          onChange({
+            ...config,
+            margin_minutes: Math.min(
+              MAX_MARGIN_MINUTES,
+              Math.max(MIN_MARGIN_MINUTES, Math.round(next * 60))
+            ),
+          });
+        }}
+        className="bg-muted text-foreground"
+      />
+      <p className="text-muted-foreground mt-1 text-[11px]">
+        {t('marginHint', { minutes })}
+      </p>
+      {minutes > MARGIN_WARN_ABOVE_MINUTES && (
+        <p className="mt-1 text-[11px] text-amber-400">{t('marginWarn')}</p>
+      )}
     </div>
   );
 }
@@ -1397,26 +1528,43 @@ function StepEditor({
   switch (step.step_type) {
     case 'send_message':
       return (
-        <FieldBlock label={t('config.messageText')}>
-          <Textarea
-            value={(cfg.text as string) ?? ''}
-            onChange={(e) => set({ text: e.target.value })}
-            placeholder={t('config.placeholderMessageText')}
-            className="bg-muted text-foreground min-h-24"
-          />
-        </FieldBlock>
+        <>
+          <FieldBlock label={t('config.messageText')}>
+            <Textarea
+              value={(cfg.text as string) ?? ''}
+              onChange={(e) => set({ text: e.target.value })}
+              placeholder={t('config.placeholderMessageText')}
+              className="bg-muted text-foreground min-h-24"
+            />
+          </FieldBlock>
+          <WindowGuardFields cfg={cfg} onChange={set} t={t} />
+        </>
       );
     case 'send_buttons':
     case 'send_list':
       // The whole step_config IS the interactive payload; the shared
       // builder edits it in place (and enforces Meta's limits + preview).
+      //
+      // The onChange below MERGES instead of replacing step_config
+      // (SPEC 045 §5.3.1): InteractiveBuilder only knows about the
+      // InteractiveMessagePayload shape and hands back exactly that on
+      // every keystroke. A plain replace would silently drop
+      // on_window_closed / fallback_template — fields that live in the
+      // same JSONB but outside what InteractiveBuilder round-trips —
+      // the instant the author edited a button after setting them.
       return (
-        <InteractiveBuilder
-          value={asInteractive(cfg)}
-          onChange={(payload) =>
-            onChange({ ...step, step_config: toStepConfig(payload) })
-          }
-        />
+        <>
+          <InteractiveBuilder
+            value={asInteractive(cfg)}
+            onChange={(payload) =>
+              onChange({
+                ...step,
+                step_config: { ...cfg, ...toStepConfig(payload) },
+              })
+            }
+          />
+          <WindowGuardFields cfg={cfg} onChange={set} t={t} />
+        </>
       );
     case 'send_template':
       return (
@@ -1537,13 +1685,26 @@ function StepEditor({
           </FieldBlock>
         </div>
       );
-    case 'condition':
+    case 'condition': {
+      const subject = (cfg.subject as string) ?? 'tag_presence';
       return (
         <>
           <FieldBlock label={t('config.subjectLabel')}>
             <select
-              value={(cfg.subject as string) ?? 'tag_presence'}
-              onChange={(e) => set({ subject: e.target.value })}
+              value={subject}
+              onChange={(e) => {
+                const nextSubject = e.target.value;
+                // Switching subject resets operand/value (SPEC 045 §5.4
+                // item 1) — leaving a stale operand behind is invisible
+                // in the UI but not to the engine: a tag UUID left over
+                // from tag_presence would fall through session_window's
+                // switch default and silently read as "open".
+                set({
+                  subject: nextSubject,
+                  operand: nextSubject === 'session_window' ? 'open' : '',
+                  value: '',
+                });
+              }}
               className="border-border bg-muted text-foreground w-full rounded-md border px-2 py-1.5 text-sm"
             >
               <option value="tag_presence">
@@ -1558,28 +1719,62 @@ function StepEditor({
               <option value="time_of_day">
                 {t('config.subjects.time_of_day')}
               </option>
+              <option value="session_window">
+                {t('config.subjects.session_window')}
+              </option>
             </select>
           </FieldBlock>
-          <FieldBlock label={t('config.operandLabel')}>
-            <Input
-              placeholder={
-                cfg.subject === 'time_of_day'
-                  ? t('config.placeholderTime')
-                  : cfg.subject === 'contact_field'
-                    ? t('config.placeholderContact')
-                    : cfg.subject === 'tag_presence'
-                      ? t('config.placeholderTag')
-                      : ''
-              }
-              value={(cfg.operand as string) ?? ''}
-              onChange={(e) => set({ operand: e.target.value })}
-              className="bg-muted text-foreground"
-            />
-          </FieldBlock>
-          {(cfg.subject === 'contact_field' ||
-            cfg.subject === 'message_content') && (
-            <FieldBlock label="Value">
+          {subject === 'session_window' ? (
+            <FieldBlock label={t('config.operandLabel')}>
+              <select
+                value={(cfg.operand as string) || 'open'}
+                onChange={(e) => set({ operand: e.target.value })}
+                className={SELECT_CLASS}
+              >
+                <option value="open">
+                  {t('config.sessionWindowOperand.open')}
+                </option>
+                <option value="closed">
+                  {t('config.sessionWindowOperand.closed')}
+                </option>
+                <option value="closing_soon">
+                  {t('config.sessionWindowOperand.closing_soon')}
+                </option>
+              </select>
+            </FieldBlock>
+          ) : (
+            <FieldBlock label={t('config.operandLabel')}>
               <Input
+                placeholder={
+                  subject === 'time_of_day'
+                    ? t('config.placeholderTime')
+                    : subject === 'contact_field'
+                      ? t('config.placeholderContact')
+                      : subject === 'tag_presence'
+                        ? t('config.placeholderTag')
+                        : ''
+                }
+                value={(cfg.operand as string) ?? ''}
+                onChange={(e) => set({ operand: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+            </FieldBlock>
+          )}
+          {(subject === 'contact_field' || subject === 'message_content') && (
+            <FieldBlock label={t('config.valueLabel')}>
+              <Input
+                value={(cfg.value as string) ?? ''}
+                onChange={(e) => set({ value: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+            </FieldBlock>
+          )}
+          {subject === 'session_window' && cfg.operand === 'closing_soon' && (
+            <FieldBlock label={t('config.sessionWindowMinutesLabel')}>
+              <Input
+                type="number"
+                min={1}
+                placeholder="240"
                 value={(cfg.value as string) ?? ''}
                 onChange={(e) => set({ value: e.target.value })}
                 className="bg-muted text-foreground"
@@ -1588,6 +1783,7 @@ function StepEditor({
           )}
         </>
       );
+    }
     case 'send_webhook':
       return (
         <>

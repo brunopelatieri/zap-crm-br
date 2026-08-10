@@ -30,7 +30,7 @@ import {
   PanelRightClose,
   AlertTriangle,
 } from 'lucide-react';
-import { format, isToday, isYesterday, differenceInHours } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -49,6 +49,7 @@ import {
   CHAT_MEDIA_BUCKET,
   type SendMediaPayload,
 } from './message-composer';
+import { computeSessionWindow } from '@/lib/whatsapp/session-window';
 import { deleteAccountMedia } from '@/lib/storage/upload-media';
 import { TemplatePicker } from './template-picker';
 import { AiThreadBanner } from './ai-thread-banner';
@@ -225,35 +226,35 @@ export function MessageThread({
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
 
-  // 24-hour session timer
+  // 24-hour session timer (SPEC 045 §5.1/§5.9). `computeSessionWindow`
+  // is the single source of truth shared with the server-side guard in
+  // the automations engine — no more local truncated-hours math here.
+  //
+  // While the thread is still loading, `messages` is empty and there's
+  // no last-customer-message to find; that resolves to `null`, which
+  // `computeSessionWindow` treats as CLOSED. That's the safe default
+  // for "don't know yet" — the previous local calculation defaulted to
+  // OPEN here, letting an agent type and send free-form text before the
+  // real state loaded, only to get a 400 from Meta.
   const sessionInfo = useMemo(() => {
-    if (!messages.length) return { expired: false, remaining: '' };
-
-    // Find last customer message
     const lastCustomerMsg = [...messages]
       .reverse()
       .find((m) => m.sender_type === 'customer');
 
-    if (!lastCustomerMsg)
-      return { expired: true, remaining: 'Sem mensagem' };
-
-    const hoursSince = differenceInHours(
-      new Date(),
-      new Date(lastCustomerMsg.created_at)
+    const { isOpen, minutesRemaining } = computeSessionWindow(
+      lastCustomerMsg ? new Date(lastCustomerMsg.created_at) : null
     );
-    const expired = hoursSince >= 24;
 
-    if (expired) {
+    if (!isOpen) {
       return { expired: true, remaining: tTimer('expired') };
     }
 
-    const hoursLeft = 24 - hoursSince;
     const remaining =
-      hoursLeft >= 1
-        ? tTimer('xhRemaining', { hours: Math.floor(hoursLeft) })
-        : tTimer('xmRemaining', { minutes: Math.floor(hoursLeft * 60) });
+      minutesRemaining >= 60
+        ? tTimer('xhRemaining', { hours: Math.floor(minutesRemaining / 60) })
+        : tTimer('xmRemaining', { minutes: minutesRemaining });
 
-    return { expired, remaining };
+    return { expired: false, remaining };
   }, [messages, tTimer]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to

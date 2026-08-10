@@ -40,6 +40,10 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     label: 'Button / List Reply',
     pillClass: 'border-pink-500/30 bg-pink-500/10 text-pink-300',
   },
+  session_window_expiring: {
+    label: '24h Window Closing',
+    pillClass: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
+  },
 };
 
 export function triggerMeta(t: AutomationTriggerType | string): TriggerMeta {

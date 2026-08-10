@@ -103,6 +103,21 @@ Aparência → Idioma**; a escolha fica salva no navegador.
 - **Automações no-code** — gatilhos por mensagem recebida, novo
   contato, palavra-chave ou horário; ramificações, esperas, etiquetas
   e webhooks. Construtor visual com rótulos em português.
+- **Reengajamento automático antes da janela de 24h fechar** — 🆕
+  _recurso exclusivo do ZAP CRM BR, ausente no
+  [wacrm](https://github.com/ArnasDon/wacrm) original._ O WhatsApp só
+  deixa mandar mensagem de texto livre até 24h depois da última
+  mensagem do cliente — depois disso, só template pago e aprovado pela
+  Meta. Um novo gatilho de automação ("Janela de 24h fechando") detecta
+  sozinho as conversas paradas a poucas horas de cair fora da janela e
+  manda um lembrete automaticamente, sem ninguém precisar lembrar. Vem
+  com guarda-corpo: nunca fala por cima de um atendente humano ou de um
+  menu de automação em andamento, respeita quem pediu para não receber
+  mensagem e nunca dispara fora do horário comercial. Um painel mostra
+  quantas conversas voltaram a responder e avisa se a taxa de
+  descadastro subir — o sinal mais cedo de que o texto precisa mudar.
+  Detalhes técnicos em
+  [docs/spec-045-reengajamento-janela-24h.md](./docs/spec-045-reengajamento-janela-24h.md).
 - **Assistente de respostas com IA** — traga sua chave OpenAI ou
   Anthropic (criptografada; sem taxa por assento). Gere rascunhos na
   caixa de entrada, resposta automática opcional com limite por

@@ -6,7 +6,11 @@ import type {
 } from '@/types';
 
 export type TemplateSlug =
-  'welcome_message' | 'out_of_office' | 'lead_qualifier' | 'follow_up_reminder';
+  | 'welcome_message'
+  | 'out_of_office'
+  | 'lead_qualifier'
+  | 'follow_up_reminder'
+  | 'reengagement_before_window_closes';
 
 export interface TemplateStepSeed {
   step_type: AutomationStepType;
@@ -118,6 +122,54 @@ export const AUTOMATION_TEMPLATES: Record<
         step_type: 'send_message',
         step_config: {
           text: 'Just circling back — did you have any other questions for us? Happy to help!',
+        },
+      },
+    ],
+  },
+  // SPEC 045 §5.8 — a versão correta do que `follow_up_reminder` tenta
+  // fazer. Aquele ancora a espera na mensagem que disparou o trigger e
+  // manda o lembrete `wait 1 day` depois, ou seja, EXATAMENTE no
+  // instante em que a janela de 24h fecha: a pior hora possível para
+  // tentar reengajar sem template. Este dispara com antecedência
+  // configurável, recalculada contra a mensagem mais recente do cliente.
+  reengagement_before_window_closes: {
+    slug: 'reengagement_before_window_closes',
+    name: 'Re-engage Before the 24h Window Closes',
+    description:
+      'Ask an open question while a free-form reply is still allowed, so the conversation does not fall out of the 24-hour session window.',
+    trigger_type: 'session_window_expiring',
+    trigger_config: { margin_minutes: 240 },
+    steps: [
+      {
+        step_type: 'send_buttons',
+        step_config: {
+          kind: 'buttons',
+          // ⚠️ Este texto é a principal peça PEDAGÓGICA da feature, e
+          // por isso não é um "oi, ainda está aí?" (§8.1). Mensagem de
+          // sessão NÃO passa por revisão prévia da Meta — não há
+          // categoria, não há aprovação, e o erro aparece depois do
+          // fato, como reclamação e queda de quality rating. Um texto
+          // sem valor real que saísse no template pronto viraria o
+          // padrão de fato de toda conta nova, e o quality rating
+          // alimenta o TIER de disparo em lote: um reengajamento mal
+          // escrito encolhe a capacidade de broadcast da conta inteira.
+          //
+          // Daí uma pergunta de UTILIDADE (retomar um atendimento em
+          // aberto), com uma saída explícita para quem não precisa de
+          // nada — que é o que evita a reclamação.
+          body: 'Before we wrap up: is there anything still open on your side? Tap an option and we will pick it up right away.',
+          footer: 'You can also just reply with your question.',
+          buttons: [
+            { id: 'reengage_yes', title: 'Yes, I need help' },
+            { id: 'reengage_no', title: 'All sorted, thanks' },
+          ],
+          // Explícito, e não herdado do default: um template é CÓDIGO,
+          // não passa pelo `blankConfig()` do builder (§5.3.2), então o
+          // default de LEITURA que valeria aqui é 'fail'. Se o tick do
+          // cron atrasar e a janela fechar entre a varredura e o envio,
+          // pular em silêncio é melhor que um log de falha para algo
+          // que o autor não fez de errado.
+          on_window_closed: 'skip',
         },
       },
     ],
