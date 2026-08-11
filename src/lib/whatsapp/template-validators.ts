@@ -30,7 +30,8 @@ export const TEMPLATE_LIMITS = {
   maxUrlButtons: 2,
   maxPhoneButtons: 1,
   maxCopyCodeButtons: 1,
-  /** Meta: lowercase a-z, digits, underscore. Up to 512 chars. */
+  nameMaxLength: 512,
+  /** Meta: lowercase a-z, digits, underscore. Up to `nameMaxLength`. */
   nameRegex: /^[a-z0-9_]{1,512}$/,
 } as const;
 

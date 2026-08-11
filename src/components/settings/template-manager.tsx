@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCw,
   AlertCircle,
+  Check,
   X,
   Pencil,
   RotateCcw,
@@ -52,6 +53,12 @@ import {
   extractVariableIndices,
   TEMPLATE_LIMITS,
 } from '@/lib/whatsapp/template-validators';
+import {
+  isValidTemplateName,
+  sanitizeTemplateName,
+  tidyTemplateName,
+  type TemplateNameFix,
+} from '@/lib/whatsapp/template-name';
 
 const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
 type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
@@ -62,6 +69,13 @@ const HEADER_FORMATS: HeaderFormat[] = [
   'video',
   'document',
 ];
+
+/**
+ * Meta's 512-char name limit is far beyond any realistic template name,
+ * so the counter only appears once the user is close enough for it to
+ * matter — otherwise it's permanent noise under the field.
+ */
+const NAME_COUNTER_FROM = 400;
 
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-600/20 text-purple-400 border-purple-600/30',
@@ -176,6 +190,15 @@ export function TemplateManager() {
   const [uploadingHeader, setUploadingHeader] = useState(false);
   const headerFileRef = useRef<HTMLInputElement>(null);
 
+  // Template-name mask. `nameFixes` drives the "we adjusted this" hint,
+  // `nameDirty` keeps the empty-field error from firing on a dialog the
+  // user hasn't touched yet, and `nameCaretRef` carries the corrected
+  // caret offset from the change handler to the post-render effect.
+  const [nameFixes, setNameFixes] = useState<TemplateNameFix[]>([]);
+  const [nameDirty, setNameDirty] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const nameCaretRef = useRef<number | null>(null);
+
   // Body variable indices — `[1, 2, 3]` for "{{1}} {{2}} {{3}}". We
   // re-run the extractor on every render to keep the sample-value rows
   // in sync with what the user typed.
@@ -201,6 +224,16 @@ export function TemplateManager() {
       return { ...prev, body_samples: next };
     });
   }, [bodyVarCount]);
+
+  // The masked value comes back from state, which would otherwise park
+  // the caret at the end of the string after every keystroke. Restore
+  // the offset the change handler mapped onto the sanitized text.
+  useEffect(() => {
+    const caret = nameCaretRef.current;
+    if (caret === null) return;
+    nameCaretRef.current = null;
+    nameInputRef.current?.setSelectionRange(caret, caret);
+  }, [form.name]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -259,7 +292,43 @@ export function TemplateManager() {
     };
   }
 
+  function handleNameChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const el = e.currentTarget;
+    const { value, caret, fixes } = sanitizeTemplateName(
+      el.value,
+      el.selectionStart ?? el.value.length
+    );
+    // When the mask rejects everything the user just typed (e.g. an
+    // extra char past the 512 cap) the state value is unchanged, so
+    // React skips the re-render and the raw text would stay on screen.
+    if (value === form.name) el.value = value;
+    nameCaretRef.current = caret;
+    setNameFixes(fixes);
+    setNameDirty(true);
+    setForm({ ...form, name: value });
+  }
+
+  function handleNameBlur() {
+    const tidied = tidyTemplateName(form.name);
+    if (tidied !== form.name) setForm((f) => ({ ...f, name: tidied }));
+  }
+
+  function nameFixLabel(fix: TemplateNameFix): string {
+    switch (fix) {
+      case 'uppercase':
+        return t('nameFixUppercase');
+      case 'accents':
+        return t('nameFixAccents');
+      case 'separators':
+        return t('nameFixSeparators');
+      case 'truncated':
+        return t('nameFixTruncated');
+    }
+  }
+
   function openEdit(template: MessageTemplate) {
+    setNameFixes([]);
+    setNameDirty(false);
     setEditingId(template.id);
     setForm({
       name: template.name,
@@ -278,6 +347,8 @@ export function TemplateManager() {
   }
 
   function openCreate() {
+    setNameFixes([]);
+    setNameDirty(false);
     setEditingId(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -287,6 +358,15 @@ export function TemplateManager() {
     // AUTHENTICATION is blocked by the persistent banner + disabled
     // submit button; this is a defensive second line of defense.
     if (form.category === 'Authentication') return;
+    // On edit the name is read-only (and comes from Meta), so only the
+    // create path has to answer for it. Mirrors validateTemplateName on
+    // the server so an empty name never reaches the route handler.
+    if (editingId === null && !isValidTemplateName(form.name)) {
+      setNameDirty(true);
+      toast.error(t('nameRequired'));
+      nameInputRef.current?.focus();
+      return;
+    }
     try {
       setSubmitting(true);
       const isEdit = editingId !== null;
@@ -352,8 +432,7 @@ export function TemplateManager() {
             : '')
       );
       const errors = data.errors as
-        | { name: string; language: string; message: string }[]
-        | undefined;
+        { name: string; language: string; message: string }[] | undefined;
       if (Array.isArray(errors) && errors.length > 0) {
         const preview = errors
           .slice(0, 3)
@@ -361,8 +440,7 @@ export function TemplateManager() {
             (e: { name: string; language: string; message: string }) =>
               `${e.name} (${e.language})`
           );
-        const suffix =
-          errors.length > 3 ? `, +${errors.length - 3} more` : '';
+        const suffix = errors.length > 3 ? `, +${errors.length - 3} more` : '';
         toast.error(
           t('toastSyncFailed', { preview: preview.join(', ') + suffix })
         );
@@ -501,6 +579,12 @@ export function TemplateManager() {
 
   const headerNeedsMedia =
     form.header_format !== 'none' && form.header_format !== 'text';
+
+  const isCreating = editingId === null;
+  const nameIsValid = isValidTemplateName(form.name);
+  // Only after the user has typed — an untouched dialog shouldn't open
+  // with a red field.
+  const nameHasError = isCreating && nameDirty && !nameIsValid;
 
   async function handleHeaderImageFile(file: File) {
     if (!['image/jpeg', 'image/png'].includes(file.type)) {
@@ -696,6 +780,8 @@ export function TemplateManager() {
           if (!open) {
             setEditingId(null);
             setForm(emptyForm);
+            setNameFixes([]);
+            setNameDirty(false);
           }
         }}
       >
@@ -722,19 +808,64 @@ export function TemplateManager() {
 
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label className="text-muted-foreground">
-                {t('templateName')}
-              </Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-muted-foreground">
+                  {t('templateName')}
+                </Label>
+                {isCreating && nameIsValid && (
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                    <Check className="size-3" />
+                    {t('nameValid')}
+                  </span>
+                )}
+              </div>
+              {/* The value is masked on every keystroke (lowercase,
+                  accent-stripped, `_` for anything else), so the field
+                  can never hold a name Meta would reject. The hint line
+                  below reports what the mask changed — a silent rewrite
+                  would leave the user guessing. */}
               <Input
+                ref={nameInputRef}
                 placeholder={t('namePlaceholder')}
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                disabled={editingId !== null}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                onChange={handleNameChange}
+                onBlur={handleNameBlur}
+                disabled={!isCreating}
+                maxLength={TEMPLATE_LIMITS.nameMaxLength}
+                autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="none"
+                aria-invalid={nameHasError}
+                aria-describedby="template-name-hint"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground font-mono disabled:cursor-not-allowed disabled:opacity-60"
               />
-              <p className="text-muted-foreground text-[11px]">
-                {editingId ? t('nameFixed') : t('nameHint')}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p
+                  id="template-name-hint"
+                  className={`text-[11px] ${
+                    nameHasError
+                      ? 'text-red-400'
+                      : nameFixes.length > 0
+                        ? 'text-amber-400'
+                        : 'text-muted-foreground'
+                  }`}
+                >
+                  {!isCreating
+                    ? t('nameFixed')
+                    : nameHasError
+                      ? t('nameRequired')
+                      : nameFixes.length > 0
+                        ? t('nameAutoFixed', {
+                            fixes: nameFixes.map(nameFixLabel).join(' · '),
+                          })
+                        : t('nameHint')}
+                </p>
+                {isCreating && form.name.length >= NAME_COUNTER_FROM && (
+                  <span className="text-muted-foreground shrink-0 text-[11px] tabular-nums">
+                    {form.name.length}/{TEMPLATE_LIMITS.nameMaxLength}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -1135,7 +1266,11 @@ export function TemplateManager() {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={submitting || form.category === 'Authentication'}
+              disabled={
+                submitting ||
+                form.category === 'Authentication' ||
+                (isCreating && !nameIsValid)
+              }
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {submitting ? (
