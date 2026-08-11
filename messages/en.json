@@ -12,7 +12,16 @@
     "signingIn": "Signing in...",
     "signIn": "Sign in",
     "noAccount": "Don't have an account?",
-    "createAccount": "Create account"
+    "createAccount": "Create account",
+    "errorInvalidCredentials": "Invalid email or password.",
+    "errorUserBanned": "This account is temporarily blocked. Please contact support.",
+    "errorEmailNotConfirmed": "Please confirm your email before signing in. Check your inbox.",
+    "errorRateLimit": "Too many attempts in a short time. Please wait a few minutes and try again.",
+    "errorUserExists": "An account with this email already exists.",
+    "errorWeakPassword": "This password is too weak. Please choose a stronger one.",
+    "errorInvalidEmail": "This email is invalid or cannot be used.",
+    "errorSignupDisabled": "This feature is temporarily unavailable. Please try again later.",
+    "errorGeneric": "We couldn't sign you in right now. Please try again shortly or contact support."
   },
   "SignupPage": {
     "title": "Create account",
@@ -33,6 +42,15 @@
     "signIn": "Sign in",
     "passwordsMismatch": "Passwords do not match",
     "passwordTooShort": "Password must be at least 6 characters",
+    "errorUserExists": "An account with this email already exists. Try signing in or resetting your password.",
+    "errorWeakPassword": "This password is too weak. Please choose a stronger one.",
+    "errorInvalidEmail": "This email is invalid or cannot be used.",
+    "errorRateLimit": "Too many attempts in a short time. Please wait a few minutes and try again.",
+    "errorSignupDisabled": "Sign up is temporarily unavailable. Please try again later.",
+    "errorInvalidCredentials": "Invalid email or password.",
+    "errorUserBanned": "This account is temporarily blocked. Please contact support.",
+    "errorEmailNotConfirmed": "Please confirm your email before continuing. Check your inbox.",
+    "errorGeneric": "We couldn't create your account right now. Please try again shortly or contact support.",
     "successTitle": "Check your email",
     "successDesc": "We've sent a confirmation link to <highlight>{email}</highlight>. Please check your inbox and click the link to verify your account.",
     "backToSignIn": "Back to sign in"

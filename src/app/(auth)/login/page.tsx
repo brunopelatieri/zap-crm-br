@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
+import {
+  getAuthErrorMessageKey,
+  getAuthErrorLogDetails,
+} from '@/lib/auth/error-messages';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,7 +60,8 @@ function LoginPageInner() {
     });
 
     if (error) {
-      setError(error.message);
+      console.error('[login] auth.signInWithPassword failed:', getAuthErrorLogDetails(error));
+      setError(t(getAuthErrorMessageKey(error)));
       setLoading(false);
       return;
     }

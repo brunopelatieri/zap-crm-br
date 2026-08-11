@@ -12,7 +12,16 @@
     "signingIn": "Entrando...",
     "signIn": "Entrar",
     "noAccount": "Não tem uma conta?",
-    "createAccount": "Criar conta"
+    "createAccount": "Criar conta",
+    "errorInvalidCredentials": "E-mail ou senha inválidos.",
+    "errorUserBanned": "Esta conta está temporariamente bloqueada. Fale com o suporte.",
+    "errorEmailNotConfirmed": "Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.",
+    "errorRateLimit": "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.",
+    "errorUserExists": "Já existe uma conta com este e-mail.",
+    "errorWeakPassword": "Esta senha é muito fraca. Escolha uma senha mais forte.",
+    "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
+    "errorSignupDisabled": "Este recurso está temporariamente indisponível. Tente novamente mais tarde.",
+    "errorGeneric": "Não foi possível entrar agora. Tente novamente em instantes ou fale com o suporte."
   },
   "SignupPage": {
     "title": "Criar conta",
@@ -33,6 +42,15 @@
     "signIn": "Entrar",
     "passwordsMismatch": "As senhas não coincidem",
     "passwordTooShort": "A senha deve ter pelo menos 6 caracteres",
+    "errorUserExists": "Já existe uma conta com este e-mail. Tente entrar ou recuperar sua senha.",
+    "errorWeakPassword": "Esta senha é muito fraca. Escolha uma senha mais forte.",
+    "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
+    "errorRateLimit": "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.",
+    "errorSignupDisabled": "O cadastro está temporariamente indisponível. Tente novamente mais tarde.",
+    "errorInvalidCredentials": "E-mail ou senha inválidos.",
+    "errorUserBanned": "Esta conta está temporariamente bloqueada. Fale com o suporte.",
+    "errorEmailNotConfirmed": "Confirme seu e-mail antes de continuar. Verifique sua caixa de entrada.",
+    "errorGeneric": "Não foi possível criar sua conta agora. Tente novamente em instantes ou fale com o suporte.",
     "successTitle": "Verifique seu e-mail",
     "successDesc": "Enviamos um link de confirmação para <highlight>{email}</highlight>. Verifique sua caixa de entrada e clique no link para verificar sua conta.",
     "backToSignIn": "Voltar para o login"

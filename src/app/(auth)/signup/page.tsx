@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
+import {
+  getAuthErrorMessageKey,
+  getAuthErrorLogDetails,
+} from '@/lib/auth/error-messages';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -82,7 +86,8 @@ function SignupPageInner() {
     });
 
     if (error) {
-      setError(error.message);
+      console.error('[signup] auth.signUp failed:', getAuthErrorLogDetails(error));
+      setError(t(getAuthErrorMessageKey(error)));
       setLoading(false);
       return;
     }
