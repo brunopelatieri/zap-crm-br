@@ -21,7 +21,8 @@
     "errorWeakPassword": "This password is too weak. Please choose a stronger one.",
     "errorInvalidEmail": "This email is invalid or cannot be used.",
     "errorSignupDisabled": "This feature is temporarily unavailable. Please try again later.",
-    "errorGeneric": "We couldn't sign you in right now. Please try again shortly or contact support."
+    "errorGeneric": "We couldn't sign you in right now. Please try again shortly or contact support.",
+    "errorCallbackFailed": "This link has expired or was already used. Please request a new password reset link."
   },
   "SignupPage": {
     "title": "Create account",
@@ -65,6 +66,30 @@
     "successTitle": "Check your email",
     "successDesc": "We've sent a password reset link to <highlight>{email}</highlight>. Please check your inbox.",
     "backToSignIn": "Back to sign in"
+  },
+  "ResetPasswordPage": {
+    "title": "Set your new password",
+    "desc": "Choose a new password for your account",
+    "passwordLabel": "New password",
+    "passwordPlaceholder": "At least 6 characters",
+    "confirmPasswordLabel": "Confirm new password",
+    "confirmPasswordPlaceholder": "Repeat the new password",
+    "savePassword": "Save new password",
+    "saving": "Saving...",
+    "passwordsMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "errorWeakPassword": "This password is too weak. Please choose a stronger one.",
+    "errorRateLimit": "Too many attempts in a short time. Please wait a few minutes and try again.",
+    "errorUserBanned": "This account is temporarily blocked. Please contact support.",
+    "errorEmailNotConfirmed": "Please confirm your email before resetting your password. Check your inbox.",
+    "errorInvalidCredentials": "We couldn't verify your identity. Please request a new reset link.",
+    "errorInvalidEmail": "This email is invalid or cannot be used.",
+    "errorUserExists": "An account with this email already exists.",
+    "errorSignupDisabled": "This feature is temporarily unavailable. Please try again later.",
+    "errorGeneric": "We couldn't save your new password right now. Please request a new link and try again.",
+    "successTitle": "Password reset",
+    "successDesc": "Your password has been changed successfully. Please sign in again with your new password.",
+    "goToSignIn": "Go to sign in"
   },
   "JoinPage": {
     "verifying": "Verifying invitation…",

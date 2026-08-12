@@ -74,8 +74,14 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url));
   }
 
-  // Protected pages - redirect to login if not authenticated
+  // Protected pages - redirect to login if not authenticated.
+  // `/reset-password` belongs here even though it's an auth page: it is
+  // only reachable with the recovery session that /auth/callback just
+  // established, and `updateUser({ password })` cannot work without it.
+  // Gating it keeps a sessionless visitor from meeting a form that is
+  // guaranteed to fail on submit.
   const protectedPaths = [
+    '/reset-password',
     '/dashboard',
     '/inbox',
     '/contacts',

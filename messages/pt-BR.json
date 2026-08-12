@@ -21,7 +21,8 @@
     "errorWeakPassword": "Esta senha é muito fraca. Escolha uma senha mais forte.",
     "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
     "errorSignupDisabled": "Este recurso está temporariamente indisponível. Tente novamente mais tarde.",
-    "errorGeneric": "Não foi possível entrar agora. Tente novamente em instantes ou fale com o suporte."
+    "errorGeneric": "Não foi possível entrar agora. Tente novamente em instantes ou fale com o suporte.",
+    "errorCallbackFailed": "Este link expirou ou já foi utilizado. Solicite um novo link de redefinição de senha."
   },
   "SignupPage": {
     "title": "Criar conta",
@@ -65,6 +66,30 @@
     "successTitle": "Verifique seu e-mail",
     "successDesc": "Enviamos um link de redefinição de senha para <highlight>{email}</highlight>. Verifique sua caixa de entrada.",
     "backToSignIn": "Voltar para o login"
+  },
+  "ResetPasswordPage": {
+    "title": "Defina sua nova senha",
+    "desc": "Escolha uma nova senha para sua conta",
+    "passwordLabel": "Nova senha",
+    "passwordPlaceholder": "Pelo menos 6 caracteres",
+    "confirmPasswordLabel": "Confirmar nova senha",
+    "confirmPasswordPlaceholder": "Repita a nova senha",
+    "savePassword": "Salvar nova senha",
+    "saving": "Salvando...",
+    "passwordsMismatch": "As senhas não coincidem",
+    "passwordTooShort": "A senha deve ter pelo menos 6 caracteres",
+    "errorWeakPassword": "Esta senha é muito fraca. Escolha uma senha mais forte.",
+    "errorRateLimit": "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.",
+    "errorUserBanned": "Esta conta está temporariamente bloqueada. Fale com o suporte.",
+    "errorEmailNotConfirmed": "Confirme seu e-mail antes de redefinir a senha. Verifique sua caixa de entrada.",
+    "errorInvalidCredentials": "Não foi possível validar sua identidade. Solicite um novo link de redefinição.",
+    "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
+    "errorUserExists": "Já existe uma conta com este e-mail.",
+    "errorSignupDisabled": "Este recurso está temporariamente indisponível. Tente novamente mais tarde.",
+    "errorGeneric": "Não foi possível salvar sua nova senha agora. Solicite um novo link e tente novamente.",
+    "successTitle": "Senha redefinida",
+    "successDesc": "Sua senha foi alterada com sucesso. Entre novamente com a nova senha.",
+    "goToSignIn": "Ir para o login"
   },
   "JoinPage": {
     "verifying": "Verificando convite…",

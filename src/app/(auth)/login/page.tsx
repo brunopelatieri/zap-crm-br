@@ -49,6 +49,17 @@ function LoginPageInner() {
   const router = useRouter();
   const supabase = createClient();
 
+  // Set when /auth/callback couldn't exchange the recovery/confirmation
+  // code for a session (expired or already-used link) and bounced here.
+  // Derived at render time rather than via effect so it shows on first
+  // paint without a synchronous setState-in-effect render cascade;
+  // `error` (set on submit) takes priority once the user retries.
+  const callbackError =
+    searchParams.get('error') === 'auth_callback_failed'
+      ? t('errorCallbackFailed')
+      : null;
+  const displayError = error ?? callbackError;
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -93,9 +104,9 @@ function LoginPageInner() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            {error && (
+            {displayError && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
+                {displayError}
               </div>
             )}
 
