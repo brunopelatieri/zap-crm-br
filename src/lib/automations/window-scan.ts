@@ -53,6 +53,8 @@ import {
 } from '@/lib/broadcasts/send-window';
 import { isOptedOut } from '@/lib/contacts/consent';
 import { SESSION_WINDOW_MS } from '@/lib/whatsapp/session-window';
+import { shouldTrackSessionWindow } from '@/lib/channels/session-window';
+import type { ChannelType } from '@/lib/channels/types';
 import { supabaseAdmin } from './admin-client';
 import { runSingleAutomation } from './engine';
 import { resolveMarginMinutes } from './window-trigger';
@@ -227,6 +229,24 @@ async function scanForAutomation(
   }
   if (!rows || rows.length === 0) return;
 
+  // ── Guardrail de canal (PRD 047 §7.1.2) ─────────────────────────
+  //
+  // Reengajamento é conversa de janela: só existe onde a Meta impõe a
+  // janela. Numa conversa de canal QRCode a âncora fica NULL para
+  // sempre (`shouldTrackSessionWindow`), então o range seek acima já
+  // não a traria — MAS depender disso é depender de uma invariante que
+  // o próximo backfill quebra sem perceber. O filtro abaixo torna a
+  // exclusão intenção declarada, e não efeito colateral de um NULL.
+  const eligibleChannelIds = await channelsWithSessionWindow(
+    automation.account_id
+  );
+  const scoped = eligibleChannelIds
+    ? (rows as (ConversationRow & { channel_id?: string | null })[]).filter(
+        (c) => !c.channel_id || eligibleChannelIds.has(c.channel_id)
+      )
+    : (rows as ConversationRow[]);
+  if (scoped.length === 0) return;
+
   // ── Guardrail 6: não reengajar com a bola do NOSSO lado ──────────
   //
   // O caso: o cliente perguntou algo às 10h, ninguém respondeu, e às
@@ -244,7 +264,7 @@ async function scanForAutomation(
   // é que o LIMIT se aplica antes deste filtro, e um tick pode
   // processar menos que o teto. Aceitável: a margem tem horas de
   // largura e o tick seguinte pega o resto.
-  const awaitingUs = (rows as ConversationRow[]).filter(
+  const awaitingUs = scoped.filter(
     (c) =>
       c.last_message_at !== null &&
       new Date(c.last_message_at) > new Date(c.last_customer_message_at)
@@ -361,11 +381,40 @@ async function scanForAutomation(
       // não tem desfazer; um envio perdido custa uma janela.
       // `failed_at` é o que torna os dois casos distinguíveis depois
       // (e habilita uma retentativa opcional no futuro, §5.5.5).
-      console.error('[window-scan] dispatch failed:', automation.id, conv.id, err);
+      console.error(
+        '[window-scan] dispatch failed:',
+        automation.id,
+        conv.id,
+        err
+      );
       await markClaim(claimId, 'failed_at');
       result.failed++;
     }
   }
+}
+
+/**
+ * Ids dos canais da conta que TÊM janela de 24h (PRD 047 §7.1.2).
+ *
+ * Devolve `null` quando a tabela `channels` ainda não existe (antes da
+ * migração 055) — nesse caso não há o que filtrar, toda conversa é do
+ * canal oficial e o comportamento é idêntico ao de antes.
+ */
+async function channelsWithSessionWindow(
+  accountId: string
+): Promise<Set<string> | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('channels')
+    .select('id, type')
+    .eq('account_id', accountId);
+
+  if (error || !data) return null;
+
+  return new Set(
+    (data as { id: string; type: string }[])
+      .filter((c) => shouldTrackSessionWindow(c.type as ChannelType))
+      .map((c) => c.id)
+  );
 }
 
 /**

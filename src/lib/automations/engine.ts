@@ -16,7 +16,9 @@ import type {
   WaitStepConfig,
   CreateDealStepConfig,
   AssignConversationStepConfig,
+  WindowGuardConfig,
 } from '@/types';
+import { resolveWindowRoute, type FallbackChannel } from './window-fallback';
 import { supabaseAdmin } from './admin-client';
 import {
   engineSendText,
@@ -24,7 +26,8 @@ import {
   engineSendInteractive,
 } from './meta-send';
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
-import { computeSessionWindow } from '@/lib/whatsapp/session-window';
+import { resolveSessionWindow } from '@/lib/channels/session-window';
+import type { ChannelType } from '@/lib/channels/types';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import { ASSIGNABLE_ACCOUNT_ROLES } from '@/lib/auth/roles';
 import { isAssignableMember } from '@/lib/inbox/assignment';
@@ -433,6 +436,11 @@ async function runStep(
           await sendFallbackTemplate(guard.template, conversationId, args)
         );
       }
+      if (guard.kind === 'fallback_channel') {
+        return success(
+          await sendViaFallbackChannel(guard, text, conversationId, args)
+        );
+      }
       const { whatsapp_message_id } = await engineSendText({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
@@ -459,6 +467,14 @@ async function runStep(
       if (guard.kind === 'fallback') {
         return success(
           await sendFallbackTemplate(guard.template, conversationId, args)
+        );
+      }
+      if (guard.kind === 'fallback_channel') {
+        // `validate.ts` já barra esta combinação na ativação; isto cobre
+        // um step_config escrito à mão direto no banco. Falhar é o certo:
+        // entregar um menu sem as opções é pior que não entregar.
+        throw new Error(
+          `"fallback_channel" is not available for ${step.step_type} — a QR code instance cannot render buttons or lists`
         );
       }
       const { whatsapp_message_id } = await engineSendInteractive({
@@ -732,7 +748,8 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
 type WindowGuardOutcome =
   | { kind: 'send' }
   | { kind: 'skip'; detail: string }
-  | { kind: 'fallback'; template: SendTemplateStepConfig };
+  | { kind: 'fallback'; template: SendTemplateStepConfig }
+  | { kind: 'fallback_channel'; channelId: string; channelName: string };
 
 /**
  * The guard SPEC 045 §5.3 requires before any session-message send
@@ -742,9 +759,14 @@ type WindowGuardOutcome =
  * `wait` step was enqueued — that's what fixes the
  * `follow_up_reminder` bug (§2.4): a `wait` can sit for a day, during
  * which the customer may have written again and moved the anchor.
+ *
+ * A DECISÃO em si vive em `window-fallback.ts` (módulo puro, testado
+ * sem banco). Esta função só reúne os fatos e executa o veredito — o
+ * que mantém as doze combinações de rota cobertas por teste unitário e
+ * esta camada com uma responsabilidade só.
  */
 async function checkWindowGuard(
-  cfg: { on_window_closed?: 'skip' | 'fail' | 'fallback_template'; fallback_template?: SendTemplateStepConfig },
+  cfg: WindowGuardConfig,
   conversationId: string,
   args: ExecuteArgs
 ): Promise<WindowGuardOutcome> {
@@ -756,32 +778,150 @@ async function checkWindowGuard(
     .eq('account_id', args.automation.account_id)
     .maybeSingle();
 
-  const { isOpen } = computeSessionWindow(
+  // PRD 047 §7.1.1: a janela é uma restrição da META. Num canal sem
+  // essa regra, `resolveSessionWindow` devolve `applicable:false` e o
+  // envio segue livre — sem isto, a âncora nula de uma conversa de
+  // canal QRCode reprovaria TODO envio (o default de leitura é 'fail').
+  //
+  // `channelForConversation` devolve 'whatsapp_cloud' enquanto a 057 não
+  // popular `conversations.channel_id` — comportamento idêntico ao de
+  // hoje até lá.
+  const { isOpen } = resolveSessionWindow(
+    await channelForConversation(conversationId, args.automation.account_id),
     conv?.last_customer_message_at
       ? new Date(conv.last_customer_message_at)
       : null
   );
-  if (isOpen) return { kind: 'send' };
 
-  // Read default is 'fail', not 'skip': a step_config written before
-  // this guard existed has no on_window_closed key, and the deploy
-  // must not silently change what that automation does (§5.3.2/§5.3.3).
   const action = cfg.on_window_closed ?? 'fail';
 
-  if (action === 'skip') {
-    return { kind: 'skip', detail: 'session window closed — skipped' };
-  }
+  // As duas consultas abaixo custam caro e só importam para o desvio
+  // por canal com a janela JÁ fechada — o caminho raro. Mantê-las atrás
+  // desta condição preserva o custo atual do guard (uma query) para
+  // todos os outros envios.
+  const needsChannelFacts = !isOpen && action === 'fallback_channel';
+  const [contactOptedOut, availableChannels] = needsChannelFacts
+    ? await Promise.all([
+        isContactOptedOut(args),
+        loadFallbackChannels(args.automation.account_id),
+      ])
+    : [false, [] as FallbackChannel[]];
 
-  if (action === 'fallback_template') {
-    if (!cfg.fallback_template?.template_name) {
-      throw new Error('fallback_template needs template_name');
-    }
-    return { kind: 'fallback', template: cfg.fallback_template };
-  }
+  const route = resolveWindowRoute({
+    action: cfg.on_window_closed,
+    // PRD 047 §7.1.1: enquanto só existe canal Cloud, toda conversa tem
+    // janela. Na F1 isto passa a vir de
+    // `capabilities(channel.type).sessionWindow24h` — é o único ponto
+    // desta função que muda.
+    windowApplicable: true,
+    windowOpen: isOpen,
+    fallbackTemplate: cfg.fallback_template,
+    fallbackChannelId: cfg.fallback_channel_id,
+    availableChannels,
+    contactOptedOut,
+  });
 
-  throw new Error(
-    '24h session window closed — Meta would reject a free-form message'
-  );
+  switch (route.kind) {
+    case 'send':
+      return { kind: 'send' };
+    case 'skip':
+      return { kind: 'skip', detail: route.detail };
+    case 'fallback_template':
+      return { kind: 'fallback', template: route.template };
+    case 'fallback_channel':
+      return {
+        kind: 'fallback_channel',
+        channelId: route.channelId,
+        channelName: route.channelName,
+      };
+    case 'fail':
+      // Lançar (em vez de devolver) preserva o contrato que a SPEC 045
+      // já tinha: o step vira `failed` com esta mensagem em
+      // `automation_logs`, e a automação para. As mensagens de 'fail'
+      // são as mesmas de antes, palavra por palavra.
+      throw new Error(route.reason);
+  }
+}
+
+/**
+ * Tipo do canal de uma conversa (PRD 047 §7.1.1).
+ *
+ * Enquanto a migração 057 não popular `conversations.channel_id`, a
+ * coluna não existe e a query erra — caímos em `'whatsapp_cloud'`, que
+ * é a verdade de hoje: só existe canal oficial. Isso mantém o
+ * comportamento atual byte a byte até a 057 rodar, e faz o roteamento
+ * por canal ligar sozinho depois, sem mudança de código aqui.
+ */
+async function channelForConversation(
+  conversationId: string,
+  accountId: string
+): Promise<ChannelType> {
+  const { data, error } = await supabaseAdmin()
+    .from('conversations')
+    .select('channels(type)')
+    .eq('id', conversationId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+
+  if (error || !data) return 'whatsapp_cloud';
+
+  const rel = (data as { channels?: { type?: string } | { type?: string }[] })
+    .channels;
+  const type = Array.isArray(rel) ? rel[0]?.type : rel?.type;
+
+  return type === 'whatsapp_qr' ? 'whatsapp_qr' : 'whatsapp_cloud';
+}
+
+/**
+ * Contato pediu para não receber contato automatizado?
+ *
+ * Sem contato resolvido, responde `false` — o passo falharia adiante por
+ * outro motivo, e inventar um opt-out aqui esconderia a causa real.
+ */
+async function isContactOptedOut(args: ExecuteArgs): Promise<boolean> {
+  if (!args.contactId) return false;
+  const { data: contact } = await supabaseAdmin()
+    .from('contacts')
+    .select('opt_in_status')
+    .eq('id', args.contactId)
+    .eq('account_id', args.automation.account_id)
+    .maybeSingle();
+  return contact ? isOptedOut(contact) : false;
+}
+
+/**
+ * Canais que a conta pode usar como desvio quando a janela fecha
+ * (PRD 047 §10.2).
+ *
+ * Enquanto a migração 055 não roda, a tabela `channels` não existe e a
+ * query erra — devolvemos lista vazia, e `resolveWindowRoute` recusa o
+ * desvio com "not found", que é exatamente a verdade: não há canal
+ * algum para desviar. Nenhum envio de hoje muda de comportamento.
+ *
+ * Assim que a 055 for aplicada, esta função passa a devolver dados sem
+ * alteração de código. A derivação de `freeformOutsideWindow` a partir
+ * do `type` migra para `capabilities()` na F1 — é o único ponto que
+ * duplica a matriz, e de propósito: um import de `@/lib/channels` aqui
+ * quebraria o build antes de a camada existir.
+ */
+async function loadFallbackChannels(
+  accountId: string
+): Promise<FallbackChannel[]> {
+  const { data, error } = await supabaseAdmin()
+    .from('channels')
+    .select('id, name, type, status')
+    .eq('account_id', accountId);
+
+  if (error || !data) return [];
+
+  return (
+    data as { id: string; name: string; type: string; status: string }[]
+  ).map((row) => ({
+    id: row.id,
+    name: row.name,
+    status: row.status as FallbackChannel['status'],
+    freeformOutsideWindow: row.type === 'whatsapp_qr',
+  }));
 }
 
 /**
@@ -819,6 +959,33 @@ async function fallbackTemplateAllowed(
   return !excludesOptedOut(data?.[0]?.category ?? null);
 }
 
+/**
+ * Executa o desvio por canal (PRD 047 §10.2): a MESMA mensagem, pelo
+ * canal escolhido, sem template e sem custo de Meta.
+ *
+ * O envio em si depende do adaptador da Evolution (PRD 047 F4), que
+ * ainda não existe. Enquanto isso, esta função LANÇA com um motivo
+ * explícito em vez de devolver sucesso silencioso — a rota só é
+ * alcançável depois que a migração 055 popular `channels`, e um
+ * "sucesso" que não entregou mensagem é a pior falha possível num CRM
+ * de atendimento.
+ *
+ * Na F4, o corpo vira uma chamada a `sendViaChannel({ channelId, … })`.
+ */
+async function sendViaFallbackChannel(
+  guard: { channelId: string; channelName: string },
+  text: string,
+  conversationId: string,
+  args: ExecuteArgs
+): Promise<string> {
+  void text;
+  void conversationId;
+  void args;
+  throw new Error(
+    `channel fallback to "${guard.channelName}" (${guard.channelId}) is configured but the channel send layer is not available yet — see PRD 047 phase F4`
+  );
+}
+
 async function sendFallbackTemplate(
   template: SendTemplateStepConfig,
   conversationId: string,
@@ -841,8 +1008,7 @@ async function sendTemplateStep(
   args: ExecuteArgs
 ): Promise<string> {
   if (!args.contactId) throw new Error('send_template needs a contact');
-  if (!cfg.template_name)
-    throw new Error('send_template needs template_name');
+  if (!cfg.template_name) throw new Error('send_template needs template_name');
   // Meta templates use positional {{1}}, {{2}}, … placeholders, so
   // we MUST emit params in strict numeric order. Lexicographic sort
   // of "1", "2", …, "10" yields "1", "10", "2", … which silently
@@ -978,7 +1144,15 @@ async function evaluateCondition(
         .eq('id', conversationId)
         .eq('account_id', args.automation.account_id)
         .maybeSingle();
-      const { isOpen, minutesRemaining } = computeSessionWindow(
+      // Mesma razão do `checkWindowGuard` (PRD 047 §7.1.1): num canal
+      // sem janela, "aberta" é a resposta correta — não há restrição a
+      // violar. Responder "fechada" faria a automação tomar o ramo
+      // errado em silêncio.
+      const { isOpen, minutesRemaining } = resolveSessionWindow(
+        await channelForConversation(
+          conversationId,
+          args.automation.account_id
+        ),
         conv?.last_customer_message_at
           ? new Date(conv.last_customer_message_at)
           : null

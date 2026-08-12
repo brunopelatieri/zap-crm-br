@@ -1738,9 +1738,14 @@
         "onWindowClosed": {
           "skip": "Skip this step",
           "fail": "Fail this step",
-          "fallback_template": "Send a template instead — billed by Meta"
+          "fallback_template": "Send a template instead — billed by Meta",
+          "fallback_channel": "Send through another channel instead — free, no template"
         },
-        "onWindowClosedHint": "This message is not reviewed by Meta before sending — it counts on account reputation, not template approval. Choosing to fail or skip avoids a rejected send once the 24h window is gone."
+        "onWindowClosedHint": "This message is not reviewed by Meta before sending — it counts on account reputation, not template approval. Choosing to fail or skip avoids a rejected send once the 24h window is gone.",
+        "fallbackChannelLabel": "Channel to send through",
+        "fallbackChannelPlaceholder": "Select a connected QR code instance",
+        "fallbackChannelWarning": "The contact will receive this from a different phone number than the one they wrote to. Unofficial instances carry a real risk of being banned — use it for genuine follow-ups, never for cold outreach.",
+        "coldSendPolicy": "Safety cap set by your system administrator: up to {perDay} messages per day and {perHour} per hour on each instance, at least {interval}s apart. Only messages to contacts silent for over {silence}h count toward it."
       }
     }
   },

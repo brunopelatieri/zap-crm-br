@@ -362,7 +362,7 @@ export async function loadActivity(
     items.push({
       id: `msg-${m.id}`,
       kind: 'message',
-      text: `New message from ${who}`,
+      text: `Nova msg de ${who}`,
       at: m.created_at,
       href: `/inbox?c=${m.conversation_id}`,
     });
@@ -377,7 +377,7 @@ export async function loadActivity(
     items.push({
       id: `contact-${c.id}`,
       kind: 'contact',
-      text: `New contact: ${c.name || c.phone}`,
+      text: `Novo contato: ${c.name || c.phone}`,
       at: c.created_at,
       href: '/contacts',
     });
@@ -394,8 +394,8 @@ export async function loadActivity(
       id: `deal-${d.id}`,
       kind: 'deal',
       text: stage?.name
-        ? `Deal "${d.title}" in ${stage.name}`
-        : `Deal "${d.title}" updated`,
+        ? `Negócio "${d.title}" - ${stage.name}`
+        : `Negócio "${d.title}" atualizado`,
       at: d.updated_at,
       href: '/pipelines',
     });
@@ -410,8 +410,8 @@ export async function loadActivity(
   }>) {
     const label =
       b.status === 'sent'
-        ? `sent to ${b.total_recipients} contacts`
-        : `${b.status} (${b.total_recipients} recipients)`;
+        ? `enviado para ${b.total_recipients} contatos`
+        : `${b.status} (${b.total_recipients} destinatários)`;
     items.push({
       id: `broadcast-${b.id}`,
       kind: 'broadcast',
@@ -441,7 +441,7 @@ export async function loadActivity(
     items.push({
       id: `auto-${l.id}`,
       kind: 'automation',
-      text: `Automation "${autoName}" ${l.status === 'failed' ? 'failed for' : 'triggered for'} ${who}`,
+      text: `Automação "${autoName}" ${l.status === 'failed' ? 'falhou para' : 'acionada para'} ${who}`,
       at: l.created_at,
     });
   }

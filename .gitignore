@@ -46,3 +46,6 @@ next-env.d.ts
 # Claude Code local — credenciais e configurações locais
 .claude/mcp.json
 .mcp.json
+
+# Evidência da sonda da Evolution Go (SPEC 048) — gerada localmente
+scripts/.evolution-*

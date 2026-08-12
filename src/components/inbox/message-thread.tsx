@@ -49,7 +49,7 @@ import {
   CHAT_MEDIA_BUCKET,
   type SendMediaPayload,
 } from './message-composer';
-import { computeSessionWindow } from '@/lib/whatsapp/session-window';
+import { resolveSessionWindow } from '@/lib/channels/session-window';
 import { deleteAccountMedia } from '@/lib/storage/upload-media';
 import { TemplatePicker } from './template-picker';
 import { AiThreadBanner } from './ai-thread-banner';
@@ -241,12 +241,25 @@ export function MessageThread({
       .reverse()
       .find((m) => m.sender_type === 'customer');
 
-    const { isOpen, minutesRemaining } = computeSessionWindow(
+    // PRD 047 §7.1.1. Num canal sem janela (instância QRCode), `applicable`
+    // vem `false` e a faixa some inteira — nem aberta, nem fechada.
+    // Mostrar "expirada" numa thread que não tem janela seria alarme
+    // falso sobre uma regra que não existe ali; mostrar contagem
+    // regressiva seria inventar um prazo.
+    //
+    // `channel` só é preenchido depois da migração 057; até lá toda
+    // conversa é do canal oficial, que é a verdade de hoje.
+    const { applicable, isOpen, minutesRemaining } = resolveSessionWindow(
+      conversation?.channel?.type ?? 'whatsapp_cloud',
       lastCustomerMsg ? new Date(lastCustomerMsg.created_at) : null
     );
 
+    if (!applicable) {
+      return { hidden: true, expired: false, remaining: '' };
+    }
+
     if (!isOpen) {
-      return { expired: true, remaining: tTimer('expired') };
+      return { hidden: false, expired: true, remaining: tTimer('expired') };
     }
 
     const remaining =
@@ -254,8 +267,8 @@ export function MessageThread({
         ? tTimer('xhRemaining', { hours: Math.floor(minutesRemaining / 60) })
         : tTimer('xmRemaining', { minutes: minutesRemaining });
 
-    return { expired: false, remaining };
-  }, [messages, tTimer]);
+    return { hidden: false, expired: false, remaining };
+  }, [messages, tTimer, conversation?.channel?.type]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -982,8 +995,8 @@ export function MessageThread({
         }
 
         const updatedAgentId =
-          (json?.conversation?.assigned_agent_id as string | null | undefined) ??
-          agentId;
+          (json?.conversation?.assigned_agent_id as
+            string | null | undefined) ?? agentId;
         onAssignChange(conversation.id, updatedAgentId);
       } catch (err) {
         console.error('Failed to update assignment:', err);
@@ -1073,17 +1086,20 @@ export function MessageThread({
             </p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              'border-border ml-1 hidden gap-1 text-[10px] sm:ml-2 sm:inline-flex',
-              sessionInfo.expired ? 'text-red-400' : 'text-primary'
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
+              the name + back arrow keep their room, e oculto por
+              completo em canal sem janela de 24h (PRD 047 §7.1.1). */}
+          {!sessionInfo.hidden && (
+            <Badge
+              variant="outline"
+              className={cn(
+                'border-border ml-1 hidden gap-1 text-[10px] sm:ml-2 sm:inline-flex',
+                sessionInfo.expired ? 'text-red-400' : 'text-primary'
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {sessionInfo.remaining}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

@@ -78,7 +78,7 @@ function validateOne(
           message: 'message text is required',
         });
       }
-      validateWindowGuard(c, path, issues);
+      validateWindowGuard(c, path, issues, 'send_message');
       break;
     case 'send_buttons':
     case 'send_list': {
@@ -88,7 +88,7 @@ function validateOne(
       if (!result.ok) {
         issues.push({ path: `${path}.interactive`, message: result.error });
       }
-      validateWindowGuard(c, path, issues);
+      validateWindowGuard(c, path, issues, step.step_type);
       break;
     }
     case 'send_template':
@@ -328,8 +328,35 @@ function nonEmpty(v: unknown): boolean {
 function validateWindowGuard(
   c: Record<string, unknown>,
   path: string,
-  issues: ValidationIssue[]
+  issues: ValidationIssue[],
+  stepType: 'send_message' | 'send_buttons' | 'send_list'
 ): void {
+  // PRD 047 §10.2: mesmo argumento do template, aplicado ao desvio por
+  // canal. Um desvio sem canal escolhido só falharia no runtime — no
+  // exato momento em que ele deveria salvar o envio.
+  if (c.on_window_closed === 'fallback_channel') {
+    // Um canal QRCode não renderiza botões nem listas (restrição do
+    // protocolo Multi-Device — PRD 047 §6.2). Desviar um step
+    // interativo para lá entregaria uma mensagem sem as opções, ou
+    // nenhuma. Barrar na ATIVAÇÃO é o que evita descobrir isso no meio
+    // de um atendimento.
+    if (stepType !== 'send_message') {
+      issues.push({
+        path: `${path}.on_window_closed`,
+        message: `"fallback_channel" is not available for ${stepType} — a QR code instance cannot render buttons or lists`,
+      });
+      return;
+    }
+    if (!nonEmpty(c.fallback_channel_id)) {
+      issues.push({
+        path: `${path}.fallback_channel_id`,
+        message:
+          'a fallback channel is required when on_window_closed is "fallback_channel"',
+      });
+    }
+    return;
+  }
+
   if (c.on_window_closed !== 'fallback_template') return;
   const fallback = (c.fallback_template ?? {}) as Record<string, unknown>;
   if (!nonEmpty(fallback.template_name)) {

@@ -67,6 +67,11 @@ import {
   MIN_MARGIN_MINUTES,
   resolveMarginMinutes,
 } from '@/lib/automations/window-trigger';
+import { eligibleFallbackChannels } from '@/lib/automations/window-fallback';
+import {
+  useFallbackChannels,
+  useColdSendPolicy,
+} from '@/hooks/use-fallback-channels';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { VisualCronBuilder } from './visual-cron-builder';
@@ -774,6 +779,14 @@ function WindowGuardFields({
   const action = (cfg.on_window_closed as string) ?? 'fail';
   const fallback = (cfg.fallback_template as Record<string, unknown>) ?? {};
 
+  // PRD 047 §10.2. A opção só aparece quando existe instância QRCode
+  // conectada: um item de menu que sempre falha é pior que a ausência
+  // do item. Hoje a lista é sempre vazia (a camada de canais chega na
+  // F1/F3), então nada muda na interface até lá.
+  const channels = eligibleFallbackChannels(useFallbackChannels());
+  const coldSend = useColdSendPolicy();
+  const canFallbackToChannel = channels.length > 0;
+
   return (
     <>
       <FieldBlock label={t('config.onWindowClosedLabel')}>
@@ -787,6 +800,11 @@ function WindowGuardFields({
           <option value="fallback_template">
             {t('config.onWindowClosed.fallback_template')}
           </option>
+          {canFallbackToChannel && (
+            <option value="fallback_channel">
+              {t('config.onWindowClosed.fallback_channel')}
+            </option>
+          )}
         </select>
         <p className="text-muted-foreground mt-1 text-[11px]">
           {t('config.onWindowClosedHint')}
@@ -801,6 +819,38 @@ function WindowGuardFields({
           }
           t={t}
         />
+      )}
+      {action === 'fallback_channel' && canFallbackToChannel && (
+        <FieldBlock label={t('config.fallbackChannelLabel')}>
+          <select
+            value={(cfg.fallback_channel_id as string) ?? ''}
+            onChange={(e) => onChange({ fallback_channel_id: e.target.value })}
+            className={SELECT_CLASS}
+          >
+            <option value="">{t('config.fallbackChannelPlaceholder')}</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-amber-500">
+            {t('config.fallbackChannelWarning')}
+          </p>
+          {/* PRD 047 §10.3. Quem configura os tetos é o dono do sistema,
+              no .env; quem precisa saber com que volume pode contar é
+              quem monta a automação. */}
+          {coldSend?.enabled && (
+            <p className="text-muted-foreground mt-1 text-[11px]">
+              {t('config.coldSendPolicy', {
+                perDay: coldSend.perDay,
+                perHour: coldSend.perHour,
+                interval: coldSend.minIntervalSeconds,
+                silence: coldSend.silenceHours,
+              })}
+            </p>
+          )}
+        </FieldBlock>
       )}
     </>
   );

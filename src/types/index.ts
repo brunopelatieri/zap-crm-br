@@ -1,5 +1,13 @@
 import type { AccountRole } from '@/lib/auth/roles';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
+import type { Channel } from '@/lib/channels/types';
+
+export type {
+  Channel,
+  ChannelType,
+  ChannelStatus,
+  ChannelCapabilities,
+} from '@/lib/channels/types';
 
 export type {
   InteractiveMessagePayload,
@@ -214,6 +222,18 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /**
+   * Canal por onde esta conversa acontece (PRD 047). NOT NULL no banco
+   * a partir da migração 057; opcional no tipo porque consultas
+   * anteriores a ela — e payloads em cache no cliente — não o trazem.
+   */
+  channel_id?: string;
+  /**
+   * Canal hidratado por queries que fazem embed de `channels(*)`.
+   * Ausente nas demais; quem lê deve assumir canal oficial na falta,
+   * que é a verdade de toda conversa criada antes da 057.
+   */
+  channel?: Channel;
 }
 
 // ============================================================
@@ -634,7 +654,21 @@ export type AutomationTriggerConfig =
  * automation born broken by default. §5.3.2 documents why these two
  * defaults are deliberately different.
  */
-export type OnWindowClosedAction = 'skip' | 'fail' | 'fallback_template';
+export type OnWindowClosedAction =
+  | 'skip'
+  | 'fail'
+  | 'fallback_template'
+  /**
+   * Manda a MESMA mensagem por outro canal, que não tem janela porque
+   * não fala com a Meta — na prática, uma instância WhatsApp via QRCode
+   * (PRD 047 §10.2). É a alternativa gratuita ao template pago para
+   * reengajar quem ficou 24h em silêncio no número oficial.
+   *
+   * Cuidado de produto: o contato recebe de um NÚMERO DIFERENTE daquele
+   * para o qual escreveu. Ver os guardrails em
+   * `lib/automations/window-fallback.ts`.
+   */
+  | 'fallback_channel';
 
 export interface WindowGuardConfig {
   on_window_closed?: OnWindowClosedAction;
@@ -643,6 +677,15 @@ export interface WindowGuardConfig {
    *  it can carry `variables` — most reengagement templates need at
    *  least one. */
   fallback_template?: SendTemplateStepConfig;
+  /**
+   * `channels.id` do canal de desvio. Obrigatório quando
+   * `on_window_closed === 'fallback_channel'` (PRD 047 §10.2).
+   *
+   * Guardado por id, e não por tipo ("qualquer instância QR"), porque a
+   * conta pode ter várias e o número de onde a mensagem sai é uma
+   * decisão do operador, não um detalhe de roteamento.
+   */
+  fallback_channel_id?: string;
 }
 
 export interface SendMessageStepConfig extends WindowGuardConfig {

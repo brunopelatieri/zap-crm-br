@@ -1738,9 +1738,14 @@
         "onWindowClosed": {
           "skip": "Pular esta etapa",
           "fail": "Falhar esta etapa",
-          "fallback_template": "Enviar um template — cobrado pela Meta"
+          "fallback_template": "Enviar um template — cobrado pela Meta",
+          "fallback_channel": "Enviar por outro canal — grátis, sem template"
         },
-        "onWindowClosedHint": "Esta mensagem não passa por revisão da Meta antes do envio — ela conta com a reputação da conta, não com aprovação de template. Escolher falhar ou pular evita um envio rejeitado depois que a janela de 24h fechar."
+        "onWindowClosedHint": "Esta mensagem não passa por revisão da Meta antes do envio — ela conta com a reputação da conta, não com aprovação de template. Escolher falhar ou pular evita um envio rejeitado depois que a janela de 24h fechar.",
+        "fallbackChannelLabel": "Canal de envio",
+        "fallbackChannelPlaceholder": "Selecione uma instância QRCode conectada",
+        "fallbackChannelWarning": "O contato vai receber de um número diferente daquele para o qual escreveu. Instâncias não oficiais têm risco real de banimento — use para retomada legítima, nunca para abordagem fria.",
+        "coldSendPolicy": "Limite de segurança definido pelo administrador do sistema: até {perDay} mensagens por dia e {perHour} por hora em cada instância, com pelo menos {interval}s entre elas. Só contam mensagens para contatos em silêncio há mais de {silence}h."
       }
     }
   },
