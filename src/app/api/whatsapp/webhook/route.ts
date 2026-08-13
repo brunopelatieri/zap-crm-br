@@ -393,6 +393,18 @@ async function handleStatusUpdate(status: {
   recipient_id: string;
   errors?: Array<{ code: number; title?: string; message?: string }>;
 }) {
+  // Meta's async "message undeliverable" callback — the only place this
+  // error ever surfaces, since the send call itself already returned
+  // 200. Computed once, up front, so both mirrors below (messages and
+  // broadcast_recipients) persist the same reason.
+  let errorMessage: string | null = null;
+  if (status.status === 'failed' && status.errors && status.errors[0]) {
+    const e = status.errors[0];
+    errorMessage = e.message
+      ? `(#${e.code}) ${e.title ?? ''}: ${e.message}`.trim()
+      : `(#${e.code}) ${e.title ?? 'Message undeliverable'}`;
+  }
+
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
   //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
@@ -400,7 +412,10 @@ async function handleStatusUpdate(status: {
   //    assume a single row.
   const { error: msgErr } = await supabaseAdmin()
     .from('messages')
-    .update({ status: status.status })
+    .update({
+      status: status.status,
+      ...(errorMessage ? { error_message: errorMessage } : {}),
+    })
     .eq('message_id', status.id);
 
   if (msgErr) {
@@ -436,20 +451,7 @@ async function handleStatusUpdate(status: {
       update.sent_at = tsIso;
     if (status.status === 'delivered') update.delivered_at = tsIso;
     if (status.status === 'read') update.read_at = tsIso;
-
-    // Meta's async "message undeliverable" callback — the only place
-    // this error ever surfaces, since the send call itself already
-    // returned 200. Captured so the dead-number detection below (§6.4)
-    // has the same signal the synchronous send path gets from
-    // `throwMetaError`.
-    let errorMessage: string | null = null;
-    if (status.status === 'failed' && status.errors && status.errors[0]) {
-      const e = status.errors[0];
-      errorMessage = e.message
-        ? `(#${e.code}) ${e.title ?? ''}: ${e.message}`.trim()
-        : `(#${e.code}) ${e.title ?? 'Message undeliverable'}`;
-      update.error_message = errorMessage;
-    }
+    if (errorMessage) update.error_message = errorMessage;
 
     const { error: recUpdateErr } = await supabaseAdmin()
       .from('broadcast_recipients')

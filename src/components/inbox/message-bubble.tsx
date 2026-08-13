@@ -23,6 +23,11 @@ import { InteractivePreview } from '@/components/interactive/interactive-preview
 import { TemplatePreview } from '@/components/interactive/template-preview';
 import { DownloadIconButton, useMediaSrc } from './media-download';
 import { useTranslations } from 'next-intl';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface MessageBubbleProps {
   message: Message;
@@ -37,7 +42,15 @@ interface MessageBubbleProps {
   onOpenMedia?: (messageId: string) => void;
 }
 
-function StatusIcon({ status }: { status: Message['status'] }) {
+function StatusIcon({
+  status,
+  errorMessage,
+  fallbackLabel,
+}: {
+  status: Message['status'];
+  errorMessage?: string | null;
+  fallbackLabel: string;
+}) {
   switch (status) {
     case 'sending':
       return <Clock className="text-muted-foreground h-3 w-3" />;
@@ -48,7 +61,14 @@ function StatusIcon({ status }: { status: Message['status'] }) {
     case 'read':
       return <CheckCheck className="h-3 w-3 text-blue-400" />;
     case 'failed':
-      return <XCircle className="h-3 w-3 text-red-400" />;
+      return (
+        <Tooltip>
+          <TooltipTrigger
+            render={<XCircle className="h-3 w-3 shrink-0 text-red-400" />}
+          />
+          <TooltipContent>{errorMessage || fallbackLabel}</TooltipContent>
+        </Tooltip>
+      );
     default:
       return null;
   }
@@ -456,7 +476,7 @@ export function MessageBubble({
           // from the accent color. Text/timestamp/badge below are all
           // dark neutrals chosen for contrast against that light fill.
           isAgent
-            ? 'bg-[#E1F7C9] text-neutral-900 rounded-br-md'
+            ? 'rounded-br-md bg-[#E1F7C9] text-neutral-900'
             : 'bg-muted text-foreground rounded-bl-md'
         )}
       >
@@ -514,7 +534,13 @@ export function MessageBubble({
           >
             {time}
           </span>
-          {isAgent && <StatusIcon status={message.status} />}
+          {isAgent && (
+            <StatusIcon
+              status={message.status}
+              errorMessage={message.error_message}
+              fallbackLabel={t('deliveryFailed')}
+            />
+          )}
         </div>
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (

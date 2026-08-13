@@ -299,6 +299,12 @@ export interface Message {
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
+  /**
+   * Motivo da falha de entrega reportado pela Meta, formatado como
+   * "(#code) title: message" (migração 058). Só preenchido quando
+   * `status === 'failed'`.
+   */
+  error_message?: string | null;
   created_at: string;
   reply_to_message_id?: string;
   /**

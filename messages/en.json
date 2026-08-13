@@ -410,6 +410,7 @@
       "customerFallback": "Customer",
       "download": "Download",
       "downloadFailed": "Failed to download this file",
+      "deliveryFailed": "Message delivery failed",
       "expand": "Expand",
       "mediaViewer": "Media viewer",
       "previous": "Previous",

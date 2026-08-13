@@ -410,6 +410,7 @@
       "customerFallback": "Cliente",
       "download": "Baixar",
       "downloadFailed": "Falha ao baixar este arquivo",
+      "deliveryFailed": "Falha na entrega da mensagem",
       "expand": "Expandir",
       "mediaViewer": "Visualizador de mídia",
       "previous": "Anterior",
