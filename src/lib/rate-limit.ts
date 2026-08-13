@@ -195,6 +195,23 @@ export const RATE_LIMITS = {
    *  fix a few times per minute, not enough to turn the button into a
    *  cheap way to blast real numbers. */
   broadcastTestSend: { limit: 10, windowMs: 60_000 },
+  /** Create an Evolution (WhatsApp QRCode) instance, per user (PRD 047
+   *  / SPEC 048 §7). Each call hits the VPS AND, on success, chains a
+   *  `connect` call — a second, separate round trip. 10/min is enough
+   *  to retry a typo'd label a few times without letting a script
+   *  script hammer instance creation past the D-1 limit checks. */
+  evolutionInstanceCreate: { limit: 10, windowMs: 60_000 },
+  /** Fetch an Evolution instance's QR code, per user. `GET /instance/qr`
+   *  costs a FIXED ~3s on the Evolution server regardless of outcome
+   *  (SPEC 048 §1.3 R7) — a tight budget here protects the VPS from a
+   *  connection dialog stuck in a fast refresh loop, while still
+   *  comfortably covering the UI's own ~5s auto-refresh cadence. */
+  evolutionInstanceQr: { limit: 15, windowMs: 60_000 },
+  /** Every other Evolution instance action — status, pairing code,
+   *  edit (label/advanced-settings), disconnect/logout/reconnect,
+   *  delete — per user. These are occasional admin clicks, not a
+   *  polling path, so the budget mirrors `adminAction`. */
+  evolutionInstanceAction: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

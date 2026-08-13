@@ -139,12 +139,18 @@ chegar um canal sem telefone" passa a ser **necessária já na F4**:
 
 ```sql
 CREATE TABLE contact_identities (
+  account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   contact_id  uuid NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
   channel_type text NOT NULL,
   external_id text NOT NULL,          -- ex.: '226559659127039@lid'
-  PRIMARY KEY (channel_type, external_id)
+  PRIMARY KEY (account_id, channel_type, external_id)
 );
 ```
+
+`account_id` entra na PK (revisão pré-aplicação da 056): o LID identifica quem enviou a
+mensagem, não a conta que a recebeu — o mesmo contato externo pode falar com duas contas
+diferentes na mesma VPS compartilhada. PK global colidiria (ou vazaria `contact_id` de um
+tenant para outro); escopando por conta cada tenant grava seu próprio vínculo sem conflito.
 
 Estratégia: ao criar/atualizar um contato no canal QR, resolver o LID uma vez via
 `/user/check` e gravar o vínculo. Um inbound que chegue **só** como LID casa por esta tabela.

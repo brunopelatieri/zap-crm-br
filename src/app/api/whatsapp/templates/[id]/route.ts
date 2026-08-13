@@ -7,6 +7,7 @@ import {
 } from '@/lib/whatsapp/meta-api';
 import {
   validateTemplatePayload,
+  isMetaSampleTemplate,
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators';
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components';
@@ -116,6 +117,16 @@ export async function PATCH(
         {
           error:
             'This template was never submitted to Meta — use New Template to submit it instead.',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (isMetaSampleTemplate(existing.name)) {
+      return NextResponse.json(
+        {
+          error:
+            "This is Meta's built-in sample template (hello_world) — Meta doesn't allow it to be edited.",
         },
         { status: 400 }
       );
@@ -294,7 +305,7 @@ export async function DELETE(
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, meta_template_id')
+      .select('id, name, status, meta_template_id')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -305,7 +316,27 @@ export async function DELETE(
       );
     }
 
-    if (existing.meta_template_id && !isDryRun()) {
+    if (isMetaSampleTemplate(existing.name)) {
+      return NextResponse.json(
+        {
+          error:
+            "This is Meta's built-in sample template (hello_world) — Meta doesn't allow it to be deleted.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Meta already put this template into its own 30-day deletion
+    // pipeline (either we triggered it before, or it was synced from a
+    // webhook/sync run) — calling DELETE again doesn't 404, it comes
+    // back as a Meta API error, which this route surfaced as a raw
+    // "Delete failed (HTTP 502)". Treat it the same as an already-gone
+    // template: skip the Meta call and just clear the local row.
+    if (
+      existing.meta_template_id &&
+      existing.status !== 'PENDING_DELETION' &&
+      !isDryRun()
+    ) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')

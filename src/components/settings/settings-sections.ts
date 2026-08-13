@@ -5,6 +5,7 @@ import {
   LayoutGrid,
   Palette,
   PlugZap,
+  QrCode,
   Shield,
   Tags,
   User,
@@ -27,6 +28,7 @@ export const SETTINGS_SECTIONS = [
   'security',
   'appearance',
   'whatsapp',
+  'whatsapp-qrcode',
   'templates',
   'quick-replies',
   'fields',
@@ -76,6 +78,12 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
     id: 'whatsapp',
     label: 'WhatsApp',
     icon: PlugZap,
+    group: 'workspace',
+  },
+  'whatsapp-qrcode': {
+    id: 'whatsapp-qrcode',
+    label: 'WhatsApp QRCode',
+    icon: QrCode,
     group: 'workspace',
   },
   templates: {

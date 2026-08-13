@@ -51,6 +51,7 @@ import type {
 import { templateStatusConfig } from '@/lib/template-status';
 import {
   extractVariableIndices,
+  isMetaSampleTemplate,
   TEMPLATE_LIMITS,
 } from '@/lib/whatsapp/template-validators';
 import {
@@ -649,6 +650,10 @@ export function TemplateManager() {
           {templates.map((template) => {
             const statusKey = template.status || 'DRAFT';
             const status = templateStatusConfig[statusKey];
+            // Meta's fixed onboarding sample — immutable on their side
+            // (PATCH/DELETE come back as an Invalid-parameter error),
+            // so the destructive/edit actions never render for it.
+            const isSample = isMetaSampleTemplate(template.name);
             return (
               <Card key={template.id}>
                 <CardContent className="flex items-start justify-between pt-4">
@@ -663,6 +668,14 @@ export function TemplateManager() {
                       >
                         {template.category}
                       </Badge>
+                      {isSample && (
+                        <Badge
+                          className="border-border bg-muted text-muted-foreground border text-xs"
+                          title={t('sampleBadgeTitle')}
+                        >
+                          {t('sampleBadge')}
+                        </Badge>
+                      )}
                       <Badge className={`border text-xs ${status.classes}`}>
                         {t(
                           `status.${status.label}` as
@@ -716,7 +729,7 @@ export function TemplateManager() {
                     )}
                   </div>
                   <div className="ml-2 flex shrink-0 items-center gap-1">
-                    {statusKey === 'APPROVED' && (
+                    {statusKey === 'APPROVED' && !isSample && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -729,42 +742,45 @@ export function TemplateManager() {
                         {t('edit')}
                       </Button>
                     )}
-                    {(statusKey === 'REJECTED' || statusKey === 'PAUSED') && (
+                    {(statusKey === 'REJECTED' || statusKey === 'PAUSED') &&
+                      !isSample && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEdit(template)}
+                          title={t('resubmitTitle')}
+                          aria-label={t('resubmitLabel')}
+                          className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
+                        >
+                          <RotateCcw className="size-3.5" />
+                          {t('resubmit')}
+                        </Button>
+                      )}
+                    {!isSample && (
                       <Button
                         variant="ghost"
-                        size="sm"
-                        onClick={() => openEdit(template)}
-                        title={t('resubmitTitle')}
-                        aria-label={t('resubmitLabel')}
-                        className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
+                        size="icon"
+                        onClick={() => setTemplateToDelete(template)}
+                        disabled={deletingId === template.id}
+                        aria-label={
+                          template.meta_template_id
+                            ? t('deleteMetaLocallyAria')
+                            : t('deleteLocallyAria')
+                        }
+                        title={
+                          template.meta_template_id
+                            ? t('deleteMetaLocallyTitle')
+                            : t('deleteLocallyTitle')
+                        }
+                        className="text-muted-foreground h-8 w-8 hover:bg-red-950/30 hover:text-red-400"
                       >
-                        <RotateCcw className="size-3.5" />
-                        {t('resubmit')}
+                        {deletingId === template.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
                       </Button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setTemplateToDelete(template)}
-                      disabled={deletingId === template.id}
-                      aria-label={
-                        template.meta_template_id
-                          ? t('deleteMetaLocallyAria')
-                          : t('deleteLocallyAria')
-                      }
-                      title={
-                        template.meta_template_id
-                          ? t('deleteMetaLocallyTitle')
-                          : t('deleteLocallyTitle')
-                      }
-                      className="text-muted-foreground h-8 w-8 hover:bg-red-950/30 hover:text-red-400"
-                    >
-                      {deletingId === template.id ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="size-4" />
-                      )}
-                    </Button>
                   </div>
                 </CardContent>
               </Card>

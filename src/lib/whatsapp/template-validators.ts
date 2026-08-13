@@ -49,6 +49,21 @@ export interface TemplatePayload {
   sample_values?: TemplateSampleValues;
 }
 
+/**
+ * Every WABA is auto-provisioned with a fixed sample template named
+ * `hello_world` (category Utility, language en_US) that Meta uses for
+ * Cloud API onboarding. It's immutable on Meta's side — PATCH/DELETE
+ * against it comes back as an Invalid-parameter error (subcode
+ * 2388094, "Sample templates cannot be edited or deleted") rather than
+ * a normal validation failure, so callers should short-circuit before
+ * making the Meta call.
+ */
+export const META_SAMPLE_TEMPLATE_NAME = 'hello_world';
+
+export function isMetaSampleTemplate(name: string): boolean {
+  return name === META_SAMPLE_TEMPLATE_NAME;
+}
+
 export function validateTemplateName(name: string): void {
   if (!name) throw new Error('Template name is required.');
   if (!TEMPLATE_LIMITS.nameRegex.test(name)) {
