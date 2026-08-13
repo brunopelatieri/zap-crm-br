@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -137,35 +138,43 @@ export function TriageToolbar({
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-muted-foreground text-[11px] font-normal">
-              {t('engagementPresets')}
-            </DropdownMenuLabel>
-            {TRIAGE_ENGAGEMENT_FILTERS.map((value) => (
-              <DropdownMenuItem
-                key={value}
-                onClick={() => onFilterChange(value)}
-                className={
-                  filter === value ? 'text-primary' : 'text-popover-foreground'
-                }
-              >
-                {tFilter(value)}
-              </DropdownMenuItem>
-            ))}
+            {/* DropdownMenuGroup (base-ui Menu.Group) é OBRIGATÓRIO: o
+                DropdownMenuLabel abaixo é o Menu.GroupLabel do base-ui,
+                que lança "Base UI error #31" sem um Menu.Group ancestral
+                (ver dropdown-menu-group-label.test.tsx). */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-muted-foreground text-[11px] font-normal">
+                {t('engagementPresets')}
+              </DropdownMenuLabel>
+              {TRIAGE_ENGAGEMENT_FILTERS.map((value) => (
+                <DropdownMenuItem
+                  key={value}
+                  onClick={() => onFilterChange(value)}
+                  className={
+                    filter === value ? 'text-primary' : 'text-popover-foreground'
+                  }
+                >
+                  {tFilter(value)}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-muted-foreground text-[11px] font-normal">
-              {t('consentFilters')}
-            </DropdownMenuLabel>
-            {TRIAGE_CONSENT_FILTERS.map((value) => (
-              <DropdownMenuItem
-                key={value}
-                onClick={() => onFilterChange(value)}
-                className={
-                  filter === value ? 'text-primary' : 'text-popover-foreground'
-                }
-              >
-                {tFilter(value)}
-              </DropdownMenuItem>
-            ))}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-muted-foreground text-[11px] font-normal">
+                {t('consentFilters')}
+              </DropdownMenuLabel>
+              {TRIAGE_CONSENT_FILTERS.map((value) => (
+                <DropdownMenuItem
+                  key={value}
+                  onClick={() => onFilterChange(value)}
+                  className={
+                    filter === value ? 'text-primary' : 'text-popover-foreground'
+                  }
+                >
+                  {tFilter(value)}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
