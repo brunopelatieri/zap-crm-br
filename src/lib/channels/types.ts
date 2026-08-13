@@ -109,6 +109,7 @@ export interface SendMediaParams {
   url: string;
   caption?: string | null;
   filename?: string | null;
+  quotedProviderMessageId?: string | null;
 }
 
 export interface SendLocationParams {
@@ -133,11 +134,32 @@ export interface SendTemplateParams {
   language?: string | null;
   /** Estrutura já montada pelo builder de template do canal Cloud. */
   components?: unknown;
+  /**
+   * Linha local de `message_templates`, quando ela existe.
+   *
+   * Tipada como `unknown` pelo mesmo motivo de `components`: template é
+   * conceito da Meta, e importar `MessageTemplate` aqui arrastaria o
+   * schema dela para dentro da abstração de canais. Só o adaptador Cloud
+   * lê o campo — é ele quem faz o cast.
+   *
+   * Não é redundante com `components`: sem a linha, a Meta REJEITA
+   * templates com header de mídia e não monta botões de URL com
+   * variável. Quem envia sem ela cai no caminho legado de corpo simples.
+   */
+  definition?: unknown;
+  /**
+   * Parâmetros posicionais do corpo ({{1}}, {{2}}…) — o caminho legado,
+   * usado por quem ainda não migrou para `components`. Convive com os
+   * dois porque o disparo em massa e as automações ainda o usam.
+   */
+  positionalParams?: string[];
+  quotedProviderMessageId?: string | null;
 }
 
 export interface SendInteractiveParams {
   to: string;
   payload: InteractiveMessagePayload;
+  quotedProviderMessageId?: string | null;
 }
 
 // ------------------------------------------------------------
@@ -150,7 +172,10 @@ export interface SendInteractiveParams {
  * tradutor fino que produz isto.
  */
 export type NormalizedInbound =
-  NormalizedMessage | NormalizedStatusUpdate | NormalizedConnectionUpdate;
+  | NormalizedMessage
+  | NormalizedReaction
+  | NormalizedStatusUpdate
+  | NormalizedConnectionUpdate;
 
 export interface NormalizedMessage {
   kind: 'message';
@@ -184,6 +209,45 @@ export interface NormalizedMessage {
   occurredAt: Date;
   /** Mensagem citada, quando houver. */
   replyToProviderMessageId?: string | null;
+  /**
+   * Rótulo do tipo CRU do provedor, usado só no preview da lista de
+   * conversas quando a mensagem não tem texto: `[sticker]`, `[audio]`,
+   * `[contacts]`.
+   *
+   * Existe porque `contentType` já é o valor NORMALIZADO (um sticker
+   * chega como `image`, um toque em botão de template como
+   * `interactive`), e o preview do inbox sempre mostrou o tipo original.
+   * Sem este campo, a extração da F2 mudaria o texto de conversas
+   * existentes — que é exatamente o que ela não pode fazer.
+   *
+   * Ausente ⇒ o ingest usa `contentType`.
+   */
+  providerContentLabel?: string | null;
+}
+
+/**
+ * Reação a uma mensagem. NÃO é uma mensagem: não entra em `messages`,
+ * não conta como não-lida e não mexe no preview da conversa — é estado
+ * por (alvo, autor), gravado em `message_reactions`.
+ *
+ * Está no mesmo caminho de entrada porque a ordem importa: uma reação
+ * pode ser o PRIMEIRO evento de um contato, e a conversa precisa nascer
+ * (e emitir `conversation.created`) antes de a reação ser gravada.
+ */
+export interface NormalizedReaction {
+  kind: 'reaction';
+  fromPhone: string;
+  fromExternalId?: string | null;
+  pushName?: string | null;
+  /**
+   * Mensagem alvo, no id DO PROVEDOR. Vazio quando o provedor entregou
+   * um evento de reação sem alvo — o ingest ignora, sem derrubar a
+   * criação do contato/conversa que já aconteceu.
+   */
+  targetProviderMessageId: string;
+  /** Emoji aplicado. String VAZIA significa remoção da reação. */
+  emoji: string;
+  occurredAt: Date;
 }
 
 export interface NormalizedStatusUpdate {

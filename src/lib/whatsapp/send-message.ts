@@ -21,27 +21,21 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  sendInteractiveButtons,
-  sendInteractiveList,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api';
+import type { MediaKind } from '@/lib/whatsapp/meta-api';
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
-import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
-import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils';
+  resolveChannelContext,
+  sendWithPhoneVariants,
+  ChannelNotConfiguredError,
+  type OutboundContent,
+} from '@/lib/channels/send';
+import { encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate, TemplatePreviewPayload } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import {
@@ -284,22 +278,29 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-
-  if (configError || !config) {
-    throw new SendMessageError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  // Credenciais do canal da conta (hoje sempre a `whatsapp_config` do
+  // canal oficial; ver `lib/channels/send.ts`). O cliente `db` é o mesmo
+  // de antes — o do usuário no painel, service-role na API pública —,
+  // então o alcance da consulta e a RLS não mudam.
+  let channelCtx;
+  let config;
+  try {
+    ({ ctx: channelCtx, configRow: config } = await resolveChannelContext(
+      db,
+      accountId
+    ));
+  } catch (err) {
+    if (err instanceof ChannelNotConfiguredError) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    throw err;
   }
 
-  const accessToken = decrypt(config.access_token);
+  const accessToken = channelCtx.credentials.accessToken;
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
   if (isLegacyFormat(config.access_token)) {
@@ -397,8 +398,7 @@ export async function sendMessageToConversation(
   // Idem para o header de mídia de TEMPLATE — ver `header-media.ts`,
   // compartilhado com os motores de automações e flows.
   let templateParamsForSend = templateMessageParams as
-    | SendTimeParams
-    | undefined;
+    SendTimeParams | undefined;
   if (messageType === 'template' && templateRow) {
     try {
       templateParamsForSend = await withSignedHeaderMedia(
@@ -417,100 +417,51 @@ export async function sendMessageToConversation(
     }
   }
 
-  const attempt = async (phone: string): Promise<string> => {
-    if (messageType === 'template') {
-      const result = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        templateName: templateName!,
-        language: templateLanguage || 'en_US',
-        template: templateRow ?? undefined,
-        messageParams: templateParamsForSend ?? undefined,
-        params: templateParams || [],
-        contextMessageId,
-      });
-      return result.messageId;
-    }
-    if (isMediaKind) {
-      const result = await sendMediaMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        kind: messageType as MediaKind,
-        link: outboundMediaLink!,
-        caption: contentText || undefined,
-        filename: filename || undefined,
-        contextMessageId,
-      });
-      return result.messageId;
-    }
-    if (messageType === 'interactive') {
-      const p = interactivePayload!;
-      if (p.kind === 'buttons') {
-        const result = await sendInteractiveButtons({
-          phoneNumberId: config.phone_number_id,
-          accessToken,
-          to: phone,
-          bodyText: p.body,
-          headerText: p.header || undefined,
-          footerText: p.footer || undefined,
-          buttons: p.buttons,
-          contextMessageId,
-        });
-        return result.messageId;
-      }
-      const result = await sendInteractiveList({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        bodyText: p.body,
-        buttonLabel: p.button_label,
-        headerText: p.header || undefined,
-        footerText: p.footer || undefined,
-        sections: p.sections,
-        contextMessageId,
-      });
-      return result.messageId;
-    }
-    const result = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: contentText!,
-      contextMessageId,
-    });
-    return result.messageId;
-  };
+  // O que vai ser enviado, na linguagem da camada de canais. As quatro
+  // formas abaixo são exatamente os quatro ramos que este caminho sempre
+  // teve — inclusive o `contextMessageId` da citação, que vale para
+  // TODOS eles e não só para texto.
+  const outboundContent: OutboundContent =
+    messageType === 'template'
+      ? {
+          kind: 'template',
+          templateName: templateName!,
+          language: templateLanguage || 'en_US',
+          definition: templateRow ?? undefined,
+          components: templateParamsForSend ?? undefined,
+          positionalParams: templateParams || [],
+        }
+      : isMediaKind
+        ? {
+            kind: 'media',
+            mediaKind: messageType as MediaKind,
+            link: outboundMediaLink!,
+            caption: contentText || undefined,
+            filename: filename || undefined,
+          }
+        : messageType === 'interactive'
+          ? { kind: 'interactive', payload: interactivePayload! }
+          : { kind: 'text', text: contentText! };
 
-  // Send via Meta — retry across phone-number variants if Meta rejects
-  // with "recipient not in allowed list"; persist a working variant
-  // back to the contact so the next send goes straight through.
+  // Send via the channel — retry across phone-number variants if the
+  // provider rejects with "recipient not in allowed list"; persist a
+  // working variant back to the contact so the next send goes straight
+  // through.
   let waMessageId = '';
   let workingPhone = sanitizedPhone;
   try {
-    const variants = phoneVariants(sanitizedPhone);
-    let lastError: unknown = null;
-
-    for (const variant of variants) {
-      try {
-        waMessageId = await attempt(variant);
-        workingPhone = variant;
-        lastError = null;
-        break;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!isRecipientNotAllowedError(message)) {
-          throw err;
-        }
-        lastError = err;
+    const result = await sendWithPhoneVariants({
+      ctx: channelCtx,
+      sanitizedPhone,
+      content: outboundContent,
+      quotedProviderMessageId: contextMessageId,
+      onVariantRejected: (variant) =>
         console.warn(
           `[send-message] variant "${variant}" rejected by Meta, trying next…`
-        );
-      }
-    }
-
-    if (lastError) throw lastError;
+        ),
+    });
+    waMessageId = result.providerMessageId;
+    workingPhone = result.workingPhone;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
@@ -556,7 +507,8 @@ export async function sendMessageToConversation(
     // stored public URL. No fallback for `headerMediaId`-only sends (a bare
     // Meta media id, not a fetchable URL) — those still send fine to Meta,
     // the bubble just won't have anything to render inline for them.
-    const headerMediaUrl = sendParams.headerMediaUrl ?? templateRow.header_media_url;
+    const headerMediaUrl =
+      sendParams.headerMediaUrl ?? templateRow.header_media_url;
     const headerMedia =
       (templateRow.header_type === 'image' ||
         templateRow.header_type === 'video' ||

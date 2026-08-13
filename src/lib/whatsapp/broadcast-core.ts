@@ -18,7 +18,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
+import {
+  cloudChannelContext,
+  sendContentViaChannel,
+} from '@/lib/channels/send';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import {
   sanitizePhoneForMeta,
@@ -68,6 +71,12 @@ interface PlannedRecipient {
 
 export interface BroadcastPlan {
   broadcastId: string;
+  /**
+   * Tenancy. Adicionado na F2 (PRD 047): o `ChannelContext` que o
+   * adaptador consome é sempre carimbado com a conta dona do envio, e o
+   * plano é o único lugar de `deliverBroadcast` que sabe qual é.
+   */
+  accountId: string;
   templateName: string;
   templateLanguage: string;
   phoneNumberId: string;
@@ -256,6 +265,7 @@ export async function createBroadcast(
 
   return {
     broadcastId: broadcast.id,
+    accountId,
     templateName,
     templateLanguage,
     phoneNumberId: config.phone_number_id,
@@ -314,6 +324,20 @@ export async function deliverBroadcast(
   // sozinho antes de vencer — ver `header-media.ts`.
   const resolveHeaderParams = createHeaderMediaResolver(db, plan.templateRow);
 
+  // Contexto do canal montado UMA vez, a partir das credenciais que o
+  // plano já carrega desde antes da camada de canais (PRD 047 / SPEC 048
+  // §5). Reabrir a `whatsapp_config` por destinatário seria regressão de
+  // desempenho num fan-out de milhares — ver `cloudChannelContext`.
+  //
+  // O laço abaixo NÃO usa `sendWithPhoneVariants`: aqui cada
+  // destinatário é best-effort e uma falha vira linha marcada como
+  // `failed`, nunca exceção que aborte o resto da audiência.
+  const channelCtx = cloudChannelContext({
+    accountId: plan.accountId,
+    phoneNumberId: plan.phoneNumberId,
+    accessToken: plan.accessToken,
+  });
+
   for (const recipient of plan.planned) {
     const messageParams = await resolveHeaderParams();
 
@@ -323,17 +347,17 @@ export async function deliverBroadcast(
 
     for (const variant of variants) {
       try {
-        const result = await sendTemplateMessage({
-          phoneNumberId: plan.phoneNumberId,
-          accessToken: plan.accessToken,
+        sentMessageId = await sendContentViaChannel(channelCtx, {
           to: variant,
-          templateName: plan.templateName,
-          language: plan.templateLanguage,
-          template: plan.templateRow ?? undefined,
-          messageParams,
-          params: recipient.params,
+          content: {
+            kind: 'template',
+            templateName: plan.templateName,
+            language: plan.templateLanguage,
+            definition: plan.templateRow ?? undefined,
+            components: messageParams,
+            positionalParams: recipient.params,
+          },
         });
-        sentMessageId = result.messageId;
         lastError = null;
         break;
       } catch (error) {

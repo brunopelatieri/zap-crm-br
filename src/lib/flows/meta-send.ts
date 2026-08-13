@@ -1,36 +1,30 @@
-import {
-  sendInteractiveButtons,
-  sendInteractiveList,
-  sendMediaMessage,
-  sendTextMessage,
-  type InteractiveButton,
-  type InteractiveListSection,
-  type MediaKind,
+import type {
+  InteractiveButton,
+  InteractiveListSection,
+  MediaKind,
 } from '@/lib/whatsapp/meta-api';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
-import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveMediaUrlForServer } from '@/lib/storage/sign-media';
-import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils';
+import { sendAndPersistOutbound } from '@/lib/channels/send';
 import { supabaseAdmin } from './admin-client';
 
 // ------------------------------------------------------------
-// Flows-side Meta sender (interactive variants).
+// Flows-side sender.
 //
 // Mirrors src/lib/automations/meta-send.ts (engineSendText /
-// engineSendTemplate) but emits interactive button + list messages.
-// Kept separate from the automations file so the two engines don't
-// fight over each other's shape — once both stabilize, the
-// phone-variant retry + DB persistence are obvious extraction
-// candidates into a shared base.
+// engineSendTemplate) but also emits media + interactive button/list
+// messages.
 //
-// PR #1 ships this in isolation: callers don't exist yet. PR #2
-// brings the flow runner online and wires it up. Shipping it now
-// keeps the foundation PR self-contained and unit-testable.
+// Desde a F2 (PRD 047 / SPEC 048 §5) o esqueleto — resolver o contato
+// pela conta, carregar as credenciais do canal, tentar as variantes de
+// telefone, gravar a mensagem e atualizar o preview — vive em
+// `lib/channels/send.ts`, e a chamada ao provedor passa pelo adaptador
+// do canal. O que continua aqui é o que é DESTE motor: quais colunas
+// cada tipo de envio grava (`ai_generated`, `interactive_payload`) e
+// como o preview da conversa é montado.
+//
+// O nome do arquivo é mantido de propósito — vários módulos e testes
+// importam `@/lib/flows/meta-send` por este caminho.
 // ------------------------------------------------------------
 
 interface SendTextEngineArgs {
@@ -66,92 +60,22 @@ interface SendTextEngineArgs {
 export async function engineSendText(
   args: SendTextEngineArgs
 ): Promise<{ whatsapp_message_id: string }> {
-  const db = supabaseAdmin();
-
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle();
-  if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this account');
-  }
-
-  const sanitized = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitized)) {
-    throw new Error(`contact phone invalid: ${contact.phone}`);
-  }
-
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', args.accountId)
-    .single();
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account');
-  }
-
-  const accessToken = decrypt(config.access_token);
-
-  const attempt = async (phone: string): Promise<string> => {
-    const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: args.text,
-    });
-    return r.messageId;
-  };
-
-  const variants = phoneVariants(sanitized);
-  let workingPhone = sanitized;
-  let waMessageId = '';
-  let lastError: unknown = null;
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v);
-      workingPhone = v;
-      lastError = null;
-      break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!isRecipientNotAllowedError(msg)) throw err;
-      lastError = err;
-    }
-  }
-  if (lastError) throw lastError;
-
-  if (workingPhone !== sanitized) {
-    await db
-      .from('contacts')
-      .update({ phone: workingPhone })
-      .eq('id', contact.id);
-  }
-
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: 'text',
-    content_text: args.text,
-    message_id: waMessageId,
-    status: 'sent',
-    ai_generated: args.aiGenerated ?? false,
+  return sendAndPersistOutbound({
+    db: supabaseAdmin(),
+    accountId: args.accountId,
+    conversationId: args.conversationId,
+    contactId: args.contactId,
+    content: { kind: 'text', text: args.text },
+    persist: {
+      // `bot` distingue envio de motor de envio manual de agente; a
+      // lista de conversas usa `last_message_text` como resumo.
+      senderType: 'bot',
+      contentType: 'text',
+      contentText: args.text,
+      previewText: args.text,
+      extra: { ai_generated: args.aiGenerated ?? false },
+    },
   });
-  if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`);
-  }
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: args.text,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', args.conversationId);
-
-  return { whatsapp_message_id: waMessageId };
 }
 
 interface SendMediaEngineArgs {
@@ -181,38 +105,12 @@ export async function engineSendMedia(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin();
 
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle();
-  if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this account');
-  }
-
-  const sanitized = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitized)) {
-    throw new Error(`contact phone invalid: ${contact.phone}`);
-  }
-
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', args.accountId)
-    .single();
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account');
-  }
-
-  const accessToken = decrypt(config.access_token);
-
   // O `link` vem do config do nó (`cfg.media_url`), que pode ser um
   // objeto nosso no bucket `flow-media` — privado desde a migração 040 —
   // ou uma URL externa que o usuário colou no builder. A primeira
-  // precisa ser assinada para a Meta conseguir buscá-la; a segunda passa
-  // intocada. Assinado UMA vez, fora do `attempt`, para não gerar uma
-  // assinatura nova por variante de telefone tentada.
+  // precisa ser assinada para o provedor conseguir buscá-la; a segunda
+  // passa intocada. Assinado UMA vez, fora do laço de variantes, para
+  // não gerar uma assinatura nova por telefone tentado.
   const outboundLink = await resolveMediaUrlForServer(db, args.link);
   if (!outboundLink) {
     throw new Error(
@@ -220,71 +118,29 @@ export async function engineSendMedia(
     );
   }
 
-  const attempt = async (phone: string): Promise<string> => {
-    const r = await sendMediaMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      kind: args.kind,
+  return sendAndPersistOutbound({
+    db,
+    accountId: args.accountId,
+    conversationId: args.conversationId,
+    contactId: args.contactId,
+    content: {
+      kind: 'media',
+      mediaKind: args.kind,
       link: outboundLink,
       caption: args.caption,
       filename: args.filename,
-    });
-    return r.messageId;
-  };
-
-  const variants = phoneVariants(sanitized);
-  let workingPhone = sanitized;
-  let waMessageId = '';
-  let lastError: unknown = null;
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v);
-      workingPhone = v;
-      lastError = null;
-      break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!isRecipientNotAllowedError(msg)) throw err;
-      lastError = err;
-    }
-  }
-  if (lastError) throw lastError;
-
-  if (workingPhone !== sanitized) {
-    await db
-      .from('contacts')
-      .update({ phone: workingPhone })
-      .eq('id', contact.id);
-  }
-
-  // content_type='image'|'video'|'document' — these are already in the
-  // messages_content_type_check constraint (migration 001 + 010).
-  // content_text carries the caption (or empty) so the conversation
-  // list preview shows something meaningful when the user glances at it.
-  const preview = args.caption?.trim() || `[${args.kind}]`;
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: args.kind,
-    content_text: args.caption ?? null,
-    message_id: waMessageId,
-    status: 'sent',
+    },
+    persist: {
+      senderType: 'bot',
+      // content_type='image'|'video'|'document' — these are already in
+      // the messages_content_type_check constraint (migration 001 + 010).
+      contentType: args.kind,
+      // content_text carries the caption (or empty) so the conversation
+      // list preview shows something meaningful when the user glances at it.
+      contentText: args.caption ?? null,
+      previewText: args.caption?.trim() || `[${args.kind}]`,
+    },
   });
-  if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`);
-  }
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: preview,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', args.conversationId);
-
-  return { whatsapp_message_id: waMessageId };
 }
 
 interface SendInteractiveButtonsEngineArgs {
@@ -344,102 +200,11 @@ type SendInput =
 async function sendInteractiveViaMeta(
   input: SendInput
 ): Promise<{ whatsapp_message_id: string }> {
-  const db = supabaseAdmin();
-
-  // Scope the contact + whatsapp_config lookups by account_id —
-  // same defense-in-depth rationale as automations/meta-send.ts.
-  // Migration 017 moved both tables to account-scoped tenancy.
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone')
-    .eq('id', input.contactId)
-    .eq('account_id', input.accountId)
-    .maybeSingle();
-  if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this account');
-  }
-
-  const sanitized = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitized)) {
-    throw new Error(`contact phone invalid: ${contact.phone}`);
-  }
-
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single();
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account');
-  }
-
-  const accessToken = decrypt(config.access_token);
-
-  const attempt = async (phone: string): Promise<string> => {
-    if (input.kind === 'buttons') {
-      const r = await sendInteractiveButtons({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        bodyText: input.bodyText,
-        buttons: input.buttons,
-        headerText: input.headerText,
-        footerText: input.footerText,
-      });
-      return r.messageId;
-    }
-    const r = await sendInteractiveList({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      bodyText: input.bodyText,
-      buttonLabel: input.buttonLabel,
-      sections: input.sections,
-      headerText: input.headerText,
-      footerText: input.footerText,
-    });
-    return r.messageId;
-  };
-
-  // Same phone-variant retry as automations/meta-send.ts. Numbers
-  // registered with/without a trunk 0 + Meta's sandbox quirks all
-  // need this to reliably land a message.
-  const variants = phoneVariants(sanitized);
-  let workingPhone = sanitized;
-  let waMessageId = '';
-  let lastError: unknown = null;
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v);
-      workingPhone = v;
-      lastError = null;
-      break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!isRecipientNotAllowedError(msg)) throw err;
-      lastError = err;
-    }
-  }
-  if (lastError) throw lastError;
-
-  if (workingPhone !== sanitized) {
-    await db
-      .from('contacts')
-      .update({ phone: workingPhone })
-      .eq('id', contact.id);
-  }
-
-  // Persist the bot's prompt to the messages table so it appears in
-  // the inbox. content_type='interactive' is supported as of
-  // migration 010; sender_type='bot' distinguishes flow sends from
-  // manual agent sends (the conversation list preview will pick up
-  // last_message_text as a sensible summary).
-  //
-  // We do NOT set interactive_reply_id here — that column is reserved
-  // for the customer's tap on this message, populated by the webhook
-  // when their reply arrives. We DO persist the structured payload so
-  // the inbox thread re-renders the buttons/rows the bot sent (round-
-  // trip), matching the composer + automation send paths.
+  // O payload estruturado serve a DOIS propósitos: é o que o adaptador
+  // do canal traduz para o provedor e é o que fica gravado na linha,
+  // para que a thread do inbox re-renderize os botões/linhas que o bot
+  // mandou (ida e volta), igual aos caminhos do composer e das
+  // automações.
   const interactivePayload: InteractiveMessagePayload =
     input.kind === 'buttons'
       ? {
@@ -458,27 +223,26 @@ async function sendInteractiveViaMeta(
           sections: input.sections,
         };
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: input.conversationId,
-    sender_type: 'bot',
-    content_type: 'interactive',
-    content_text: input.bodyText,
-    interactive_payload: interactivePayload,
-    message_id: waMessageId,
-    status: 'sent',
+  return sendAndPersistOutbound({
+    db: supabaseAdmin(),
+    accountId: input.accountId,
+    conversationId: input.conversationId,
+    contactId: input.contactId,
+    content: { kind: 'interactive', payload: interactivePayload },
+    persist: {
+      // Persist the bot's prompt to the messages table so it appears in
+      // the inbox. content_type='interactive' is supported as of
+      // migration 010; sender_type='bot' distinguishes flow sends from
+      // manual agent sends.
+      //
+      // We do NOT set interactive_reply_id here — that column is
+      // reserved for the customer's tap on this message, populated by
+      // the ingest when their reply arrives.
+      senderType: 'bot',
+      contentType: 'interactive',
+      contentText: input.bodyText,
+      previewText: input.bodyText,
+      extra: { interactive_payload: interactivePayload },
+    },
   });
-  if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`);
-  }
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: input.bodyText,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', input.conversationId);
-
-  return { whatsapp_message_id: waMessageId };
 }

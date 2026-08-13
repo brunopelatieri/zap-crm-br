@@ -3,16 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
-import { setContactOptIn } from '@/lib/contacts/consent';
-import { detectOptOut } from '@/lib/contacts/opt-out';
 import { detectDeadNumberOnFailure } from '@/lib/contacts/whatsapp-status';
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature';
 import { proxyMediaUrl } from '@/lib/storage/media-url';
-import { runAutomationsForTrigger } from '@/lib/automations/engine';
-import { dispatchInboundToFlows } from '@/lib/flows/engine';
-import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
+import { ingestInbound, type IngestContext } from '@/lib/channels/ingest';
+import type { NormalizedMessage } from '@/lib/channels/types';
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -501,123 +497,42 @@ async function handleStatusUpdate(status: {
 }
 
 /**
- * If an inbound message's sender is on a still-unreplied
- * broadcast_recipients row, flip it to `replied` so the reply count
- * advances on the parent broadcast.
+ * Mapeia o `type` que a Meta entrega para o `content_type` do nosso
+ * schema.
  *
- * Runs on a best-effort basis — failures here must not break the
- * main inbound-message flow, so errors are swallowed with a log.
- */
-async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
-  try {
-    // Most recent outbound broadcast in this account that hasn't
-    // been replied to yet. Account-scoped so a shared inbox reply
-    // marks the broadcast as replied regardless of which teammate
-    // sent it.
-    const { data: recs, error } = await supabaseAdmin()
-      .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id)')
-      .eq('contact_id', contactId)
-      .eq('broadcasts.account_id', accountId)
-      .in('status', ['sent', 'delivered', 'read'])
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (error || !recs || recs.length === 0) return;
-
-    const row = recs[0];
-    const { error: updErr } = await supabaseAdmin()
-      .from('broadcast_recipients')
-      .update({ status: 'replied', replied_at: new Date().toISOString() })
-      .eq('id', row.id);
-
-    if (updErr) {
-      console.error('Error marking broadcast recipient replied:', updErr);
-    }
-  } catch (err) {
-    console.error('flagBroadcastReplyIfAny failed:', err);
-  }
-}
-
-/**
- * Resolve a Meta-side message_id into the matching internal UUID, scoped
- * to one conversation. Returns null when we never received the parent
- * (e.g. a swipe-reply to a message older than this CRM install).
- */
-async function lookupInternalIdByMetaId(
-  metaId: string,
-  conversationId: string
-): Promise<string | null> {
-  const { data, error } = await supabaseAdmin()
-    .from('messages')
-    .select('id')
-    .eq('message_id', metaId)
-    .eq('conversation_id', conversationId)
-    .maybeSingle();
-  if (error) {
-    console.error('[webhook] lookupInternalIdByMetaId failed:', error.message);
-    return null;
-  }
-  return data?.id ?? null;
-}
-
-/**
- * Persist an inbound reaction. WhatsApp reactions are not new messages —
- * they're per-(target, actor) state. We upsert / delete on
- * `message_reactions`, never write a row into `messages`.
+ * A CHECK constraint de `messages.content_type` (ampliada na migração
+ * 010 para aceitar 'interactive') permite: text, image, document, audio,
+ * video, location, template, interactive. Tipos de entrada que não estão
+ * nessa lista são mapeados para o valor permitido mais próximo, senão o
+ * INSERT falha por violação de constraint.
  *
- * Best-effort: a missing parent (we never received it) is logged and
- * skipped so the webhook still acks 200 to Meta.
+ * É tradução ESPECÍFICA DA META e por isso ficou na rota: o canal QRCode
+ * entrega outro vocabulário e terá o seu próprio mapeamento.
  */
-async function handleReaction(
-  message: WhatsAppMessage,
-  conversationId: string,
-  contactId: string
-) {
-  const reaction = message.reaction;
-  if (!reaction?.message_id) return;
-
-  const targetInternalId = await lookupInternalIdByMetaId(
-    reaction.message_id,
-    conversationId
-  );
-  if (!targetInternalId) {
-    console.warn(
-      '[webhook] reaction target message not found; skipping',
-      reaction.message_id
-    );
-    return;
-  }
-
-  // Empty emoji = removal (per Meta's Cloud API spec).
-  if (!reaction.emoji) {
-    const { error: delError } = await supabaseAdmin()
-      .from('message_reactions')
-      .delete()
-      .eq('message_id', targetInternalId)
-      .eq('actor_type', 'customer')
-      .eq('actor_id', contactId);
-    if (delError) {
-      console.error('[webhook] reaction delete failed:', delError.message);
-    }
-    return;
-  }
-
-  const { error: upsertError } = await supabaseAdmin()
-    .from('message_reactions')
-    .upsert(
-      {
-        message_id: targetInternalId,
-        conversation_id: conversationId,
-        actor_type: 'customer',
-        actor_id: contactId,
-        emoji: reaction.emoji,
-      },
-      { onConflict: 'message_id,actor_type,actor_id' }
-    );
-  if (upsertError) {
-    console.error('[webhook] reaction upsert failed:', upsertError.message);
-  }
+function toStoredContentType(
+  metaType: string
+): NormalizedMessage['contentType'] {
+  const ALLOWED_CONTENT_TYPES = new Set([
+    'text',
+    'image',
+    'document',
+    'audio',
+    'video',
+    'location',
+    'template',
+    'interactive',
+  ]);
+  const stored = ALLOWED_CONTENT_TYPES.has(metaType)
+    ? metaType
+    : metaType === 'sticker'
+      ? 'image' // stickers are images
+      : metaType === 'button'
+        ? 'interactive' // template quick-reply tap — same UI as an interactive tap
+        : 'text'; // reaction, contacts, unknown → text fallback
+  // `template` está na constraint mas não no vocabulário de entrada — a
+  // Meta nunca entrega uma mensagem RECEBIDA com esse tipo. O cast cobre
+  // essa diferença sem afrouxar o mapeamento acima.
+  return stored as NormalizedMessage['contentType'];
 }
 
 async function processMessage(
@@ -633,393 +548,88 @@ async function processMessage(
   configOwnerUserId: string,
   accessToken: string
 ) {
+  // Tudo o que acontece DEPOIS de uma mensagem entrar (contato,
+  // conversa, janela de 24h, opt-out, flows, automações, IA, webhooks de
+  // saída) mora em `lib/channels/ingest.ts` desde a F2 — ver o cabeçalho
+  // de lá. O que sobrou aqui é a tradução do formato da Meta.
+  const ctx: IngestContext = {
+    db: supabaseAdmin(),
+    accountId,
+    ownerUserId: configOwnerUserId,
+    channelType: 'whatsapp_cloud',
+  };
+
   const senderPhone = normalizePhone(message.from);
   const contactName = contact.profile.name;
 
-  // Find or create contact
-  const contactOutcome = await findOrCreateContact(
-    accountId,
-    configOwnerUserId,
-    senderPhone,
-    contactName
-  );
-  if (!contactOutcome) return;
-  const contactRecord = contactOutcome.contact;
+  // Instante DA META, não do nosso servidor (SPEC 045 §5.2.1) — o
+  // ingest o usa tanto no `created_at` da mensagem quanto na âncora da
+  // janela de sessão, e um `new Date()` aqui produziria uma âncora no
+  // futuro sempre que o webhook chegasse atrasado.
+  const metaMessageAt = new Date(parseInt(message.timestamp) * 1000);
 
-  // Find or create conversation
-  const convResult = await findOrCreateConversation(
-    accountId,
-    configOwnerUserId,
-    contactRecord.id
-  );
-  if (!convResult) return;
-  const conversation = convResult.conversation;
-
-  // Emit conversation.created as soon as the thread is opened — BEFORE
-  // the reaction short-circuit below — so a conversation first opened by
-  // a reaction still fires the event, and a subscriber always sees the
-  // thread open before its first message.received.
-  if (convResult.created) {
-    await dispatchWebhookEvent(
-      supabaseAdmin(),
-      accountId,
-      'conversation.created',
-      {
-        conversation_id: conversation.id,
-        contact_id: contactRecord.id,
-      }
-    );
-  }
-
-  // Reactions short-circuit here — they aren't messages. We never insert
-  // into `messages`, never bump unread_count, never update last_message_text.
-  // Done before parseMessageContent so the media-URL fetch is skipped.
+  // Reactions aren't messages: the ingest never inserts into `messages`,
+  // never bumps unread_count and never touches last_message_text for
+  // them. Short-circuiting via the event kind (instead of parsing the
+  // content first) is what keeps the media-URL fetch out of this path.
   if (message.type === 'reaction') {
-    await handleReaction(message, conversation.id, contactRecord.id);
+    await ingestInbound(ctx, {
+      kind: 'reaction',
+      fromPhone: senderPhone,
+      pushName: contactName,
+      // Vazio quando a Meta manda um evento de reação sem alvo. O
+      // ingest ignora a reação nesse caso — mas só DEPOIS de contato e
+      // conversa existirem, que é como esta rota sempre se comportou.
+      targetProviderMessageId: message.reaction?.message_id ?? '',
+      // Emoji vazio = remoção da reação (spec da Cloud API).
+      emoji: message.reaction?.emoji ?? '',
+      occurredAt: metaMessageAt,
+    });
     return;
   }
 
-  // Parse message content based on type
+  // Parse message content based on type.
+  //
+  // ⚠️ Mudança de ORDEM em relação ao código anterior à F2: a
+  //    verificação da mídia contra a Graph API acontecia DEPOIS de
+  //    contato e conversa existirem; agora acontece antes, porque virou
+  //    parte da tradução. Nada observável muda — `verifyMedia` nunca
+  //    lança (falha vira `mediaUrl: null`) e o resultado só é usado no
+  //    INSERT da mensagem. O custo é uma chamada à Meta desperdiçada no
+  //    caso raro em que a criação do contato falha logo depois.
   const { contentText, mediaUrl, mediaId, mediaType, interactiveReplyId } =
     await parseMessageContent(message, accessToken);
 
-  // Resolve swipe-reply context if present. A missing parent is fine —
-  // we just store NULL and the UI renders the message without a quote.
-  let replyToInternalId: string | null = null;
-  if (message.context?.id) {
-    replyToInternalId = await lookupInternalIdByMetaId(
-      message.context.id,
-      conversation.id
-    );
-    if (!replyToInternalId) {
-      console.warn(
-        '[webhook] reply context parent not found:',
-        message.context.id
-      );
-    }
-  }
-
-  // Insert message — field names MUST match the messages table schema
-  // (see supabase/migrations/001_initial_schema.sql):
-  //   conversation_id, sender_type, content_type, content_text,
-  //   media_url, template_name, message_id, status, created_at
   // `mediaType` is intentionally unused — the schema has no media_type
   // column; the MIME type is only used to construct the proxy URL during
   // parseMessageContent. Silence the unused-var warning:
   void mediaType;
 
-  // The messages.content_type CHECK constraint (widened in migration 010
-  // to add 'interactive' for button/list taps) allows:
-  //   text, image, document, audio, video, location, template, interactive
-  // Map incoming WhatsApp types that aren't in that list to the closest
-  // allowed value so the INSERT doesn't fail with a constraint error.
-  const ALLOWED_CONTENT_TYPES = new Set([
-    'text',
-    'image',
-    'document',
-    'audio',
-    'video',
-    'location',
-    'template',
-    'interactive',
-  ]);
-  const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
-    ? message.type
-    : message.type === 'sticker'
-      ? 'image' // stickers are images
-      : message.type === 'button'
-        ? 'interactive' // template quick-reply tap — same UI as an interactive tap
-        : 'text'; // reaction, contacts, unknown → text fallback
-
-  // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
-  // the contact row already exists (manual add / CSV import) but they've
-  // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer');
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0;
-
-  // Instante DA META, não do nosso servidor — usado tanto para o
-  // `created_at` da mensagem quanto para a âncora da janela de sessão
-  // logo abaixo (SPEC 045 §5.2.1). Extraído para uma const para que os
-  // dois nunca divirjam: `new Date()` no segundo produziria uma âncora
-  // no futuro sempre que o webhook chegar atrasado (fila da Meta,
-  // reentrega após 5xx nosso), fazendo o CRM achar que a janela ainda
-  // está aberta quando a Meta já a fechou.
-  const metaMessageAt = new Date(parseInt(message.timestamp) * 1000);
-
-  const { error: msgError } = await supabaseAdmin()
-    .from('messages')
-    .insert({
-      conversation_id: conversation.id,
-      sender_type: 'customer',
-      content_type: contentType,
-      content_text: contentText,
-      media_url: mediaUrl,
-      // Migração 040: é por esta coluna que a rota-proxy autoriza o
-      // download (F-40-A). Sem ela, a mídia recebida fica inacessível
-      // até para quem é dono da conversa.
-      media_id: mediaId,
-      message_id: message.id,
-      status: 'delivered',
-      created_at: metaMessageAt.toISOString(),
-      reply_to_message_id: replyToInternalId,
-      // Only populated for content_type='interactive'. Migration 010 added
-      // the column; null for every other content_type so existing inserts
-      // behave identically.
-      interactive_reply_id: interactiveReplyId,
-    });
-
-  if (msgError) {
-    console.error('Error inserting message:', msgError);
-    return;
-  }
-
-  // Update conversation
-  const { error: convError } = await supabaseAdmin()
-    .from('conversations')
-    .update({
-      last_message_text: contentText || `[${message.type}]`,
-      last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversation.id);
-
-  if (convError) {
-    console.error('Error updating conversation:', convError);
-  }
-
-  // ============================================================
-  // Âncora da janela de sessão de 24h (SPEC 045 §5.2.1) — UPDATE
-  // separado do que já existe acima, de propósito: `last_message_at`
-  // é um rótulo de UI e pode usar o instante do nosso servidor, mas a
-  // âncora da janela tem de usar o instante DA META (`metaMessageAt`,
-  // a mesma const do INSERT logo acima) e tem de ser monotônica.
-  //
-  // A Meta reentrega webhooks sem garantir ordem; um UPDATE cego
-  // aceitaria um timestamp mais antigo que o já gravado e puxaria a
-  // âncora PARA TRÁS — reabrindo elegibilidade de uma janela já
-  // reengajada e encurtando artificialmente a janela vigente. O filtro
-  // abaixo só deixa a escrita passar quando avança a âncora (ou quando
-  // ainda não há nenhuma).
-  // ============================================================
-  const { data: anchorMoved, error: anchorError } = await supabaseAdmin()
-    .from('conversations')
-    .update({ last_customer_message_at: metaMessageAt.toISOString() })
-    .eq('id', conversation.id)
-    .or(
-      `last_customer_message_at.is.null,last_customer_message_at.lt.${metaMessageAt.toISOString()}`
-    )
-    // O `.select()` existe para sabermos se a âncora AVANÇOU: numa
-    // reentrega fora de ordem o filtro acima não casa e o resultado vem
-    // vazio. É esse sinal que decide o bloco de `reopened_at` abaixo —
-    // marcar reabertura com um timestamp velho contaria uma resposta
-    // que não aconteceu agora.
-    .select('id');
-
-  if (anchorError) {
-    console.error('Error updating session window anchor:', anchorError);
-  }
-
-  // ============================================================
-  // Reengajamento que FUNCIONOU (SPEC 045 §5.5.5 / §7).
-  //
-  // O cliente acabou de escrever. Se existe um claim desta conversa que
-  // já enviou um reengajamento nas últimas 24h e ainda não foi marcado,
-  // então foi este reengajamento que trouxe a pessoa de volta — e é
-  // exatamente essa a definição da métrica de reabertura da §7.
-  //
-  // Marcar aqui é o que transforma "cruzar automation_logs com messages
-  // por contact_id e faixa de tempo" (a consulta que ninguém escreve
-  // depois do deploy) em um count sobre uma coluna. O índice parcial da
-  // migração 053 cobre exatamente este filtro.
-  //
-  // Best-effort e fora do caminho crítico: perder a marcação custa a
-  // métrica, nunca a entrega da mensagem.
-  // ============================================================
-  if (!anchorError && anchorMoved && anchorMoved.length > 0) {
-    const reopenCutoff = new Date(
-      metaMessageAt.getTime() - 24 * 60 * 60 * 1000
-    ).toISOString();
-    const { error: reopenError } = await supabaseAdmin()
-      .from('automation_window_claims')
-      .update({ reopened_at: metaMessageAt.toISOString() })
-      .eq('conversation_id', conversation.id)
-      .not('sent_at', 'is', null)
-      .is('reopened_at', null)
-      .gte('sent_at', reopenCutoff);
-    if (reopenError) {
-      console.error('Error marking window reopen:', reopenError);
-    }
-  }
-
-  // If this contact was a recent broadcast recipient, flag the reply
-  // so the broadcast's `replied_count` advances (via the aggregate
-  // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id);
-
-  // ============================================================
-  // Opt-out por palavra-chave (SPEC 044 §6.8).
-  //
-  // "SAIR", "PARAR", "DESCADASTRAR" — se a mensagem INTEIRA é um pedido
-  // de descadastro, o contato vira `opted_out` e o pedido entra na
-  // trilha (`contact_consent_events`). A partir daí ele não entra em
-  // audiência de marketing nenhuma.
-  //
-  // Roda ANTES dos gatilhos de automação, e de propósito não os
-  // suprime: a §6.8 descreve a detecção como "plugável nas automações
-  // que já existem", e é por um `keyword_match` que o operador manda a
-  // confirmação de descadastro que quiser. O que muda é o estado — e o
-  // estado já estará gravado quando a automação rodar.
-  //
-  // Best-effort: uma falha aqui não pode impedir o 200 para a Meta.
-  // ============================================================
-  const optOutKeyword = detectOptOut(contentText ?? message.text?.body ?? '');
-  if (optOutKeyword) {
-    try {
-      await setContactOptIn(supabaseAdmin(), {
-        contactId: contactRecord.id,
-        status: 'opted_out',
-        source: 'inbound_keyword',
-        keyword: optOutKeyword,
-        whatsappMessageId: message.id,
-      });
-    } catch (err) {
-      console.error('[webhook] opt-out registration failed:', err);
-    }
-  }
-
-  // ============================================================
-  // Flow runner dispatch.
-  //
-  // If the runner consumes the message (it either advanced an active
-  // run or started a new one), we suppress the `new_message_received`
-  // + `keyword_match` automation triggers for this inbound. Customer
-  // is navigating the bot menu, not sending a fresh trigger word
-  // that should fork into automations.
-  //
-  // The relationship-level triggers (`new_contact_created`,
-  // `first_inbound_message`) still fire even when consumed — those
-  // are about WHO is messaging, not what they said.
-  //
-  // Awaited (not fire-and-forget) because we need the `consumed`
-  // result before deciding whether to dispatch automations. The
-  // runner has its own try/catch and never throws. Accounts with
-  // no active flows take the runner's early-exit "no_match" path
-  // basically for free (one indexed SELECT for the active run).
-  // ============================================================
-  const flowResult = await dispatchInboundToFlows({
-    accountId,
-    userId: configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    message: interactiveReplyId
-      ? {
-          kind: 'interactive_reply',
-          reply_id: interactiveReplyId,
-          reply_title: contentText ?? '',
-          meta_message_id: message.id,
-        }
-      : {
-          kind: 'text',
-          text: contentText ?? message.text?.body ?? '',
-          meta_message_id: message.id,
-        },
-    isFirstInboundMessage,
-  });
-  const flowConsumed = flowResult.consumed;
-
-  // Fire any automations that react to this webhook event. All dispatches
-  // run here (not earlier) so the contact, conversation, and inbound
-  // message all exist before any step — including send_message — runs.
-  // Fire-and-forget: a slow or failing automation must not block the
-  // webhook's 200 OK response to Meta.
-  const inboundText = contentText ?? message.text?.body ?? '';
-  const automationTriggers: (
-    | 'new_contact_created'
-    | 'first_inbound_message'
-    | 'new_message_received'
-    | 'keyword_match'
-    | 'interactive_reply'
-  )[] = [];
-  // Content-level triggers are suppressed when a flow consumed the
-  // message — see the comment block above.
-  if (!flowConsumed) {
-    automationTriggers.push('new_message_received', 'keyword_match');
-    // Interactive tap → fire the interactive_reply trigger too (only
-    // meaningful when a button/list reply actually arrived). Enables
-    // automation-only chained menus; when a Flow owns the menu it will
-    // have consumed the reply and this is skipped.
-    if (interactiveReplyId) {
-      automationTriggers.push('interactive_reply');
-    }
-  }
-  // new_contact_created fires only when the webhook just auto-created the
-  // contact row. first_inbound_message fires whenever this is the contact's
-  // first-ever customer-sent message — a superset that also catches
-  // manually-imported contacts sending for the first time. We dispatch both
-  // so users can pick whichever semantic they want; an automation that
-  // listens to only one trigger runs only when that trigger matches.
-  if (contactOutcome.wasCreated)
-    automationTriggers.unshift('new_contact_created');
-  if (isFirstInboundMessage)
-    automationTriggers.unshift('first_inbound_message');
-  for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
-      accountId,
-      triggerType,
-      contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-        // Only set on interactive taps; drives the interactive_reply
-        // trigger's exact-id match.
-        interactive_reply_id: interactiveReplyId ?? undefined,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err));
-  }
-
-  // AI auto-reply. Runs only for plain-text inbound the deterministic
-  // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
-  // the webhook dispatch below); `dispatchInboundToAiReply` owns its
-  // eligibility gates + try/catch and never throws.
-  // `optOutKeyword` entra na condição: responder "SAIR" com um texto
-  // gerado por LLM é o oposto do que a pessoa pediu, e a resposta
-  // consumiria uma mensagem em nome de quem acabou de sair da lista. Uma
-  // confirmação, se o operador quiser mandar, é trabalho de automação
-  // determinística — ver o bloco de opt-out acima.
-  if (
-    !flowConsumed &&
-    !interactiveReplyId &&
-    !optOutKeyword &&
-    inboundText.trim()
-  ) {
-    await dispatchInboundToAiReply({
-      accountId,
-      conversationId: conversation.id,
-      contactId: contactRecord.id,
-      configOwnerUserId,
-    });
-  }
-
-  // message.received webhook (public API). Awaited — not fire-and-forget
-  // — because we're inside the route's `after()` block, which only keeps
-  // the function alive for promises it can see; a detached promise could
-  // be frozen before it delivers. `dispatchWebhookEvent` early-exits
-  // when the account has no matching endpoint and never throws.
-  // (conversation.created is emitted earlier, right after the thread is
-  // opened.)
-  await dispatchWebhookEvent(supabaseAdmin(), accountId, 'message.received', {
-    conversation_id: conversation.id,
-    contact_id: contactRecord.id,
-    whatsapp_message_id: message.id,
-    content_type: contentType,
+  await ingestInbound(ctx, {
+    kind: 'message',
+    fromPhone: senderPhone,
+    pushName: contactName,
+    providerMessageId: message.id,
+    // A Meta nunca entrega no webhook uma mensagem que NÓS enviamos —
+    // ao contrário do canal QRCode, que entrega (`SEND_MESSAGE`).
+    fromMe: false,
+    contentType: toStoredContentType(message.type),
+    // `contentText` já é o valor final. Para `type: 'text'` ele é
+    // `text.body || null`, então o antigo fallback duplo
+    // (`contentText ?? message.text?.body ?? ''`) nunca podia produzir
+    // valor diferente de `contentText ?? ''` — que é exatamente o que o
+    // ingest faz com este campo.
     text: contentText,
+    mediaUrl,
+    mediaId,
+    interactiveReplyId,
+    occurredAt: metaMessageAt,
+    // Resposta com citação. O ingest resolve o pai dentro da conversa;
+    // pai ausente vira NULL e a bolha renderiza sem a citação.
+    replyToProviderMessageId: message.context?.id ?? null,
+    // O preview da lista de conversas sempre mostrou o tipo CRU
+    // (`[sticker]`, `[contacts]`), não o normalizado (`[image]`).
+    providerContentLabel: message.type,
   });
 }
 
@@ -1202,7 +812,9 @@ async function parseMessageContent(
         .filter((n): n is string => !!n);
       return {
         ...empty,
-        contentText: names.length ? `\u{1F464} ${names.join(', ')}` : '[Contact shared]',
+        contentText: names.length
+          ? `\u{1F464} ${names.join(', ')}`
+          : '[Contact shared]',
       };
     }
 
@@ -1212,149 +824,4 @@ async function parseMessageContent(
         contentText: `[Unsupported message type: ${message.type}]`,
       };
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ContactRow = any;
-
-interface ContactOutcome {
-  contact: ContactRow;
-  /** True when this call created the row; drives new_contact_created
-   *  automation dispatch in processMessage. */
-  wasCreated: boolean;
-}
-
-async function findOrCreateContact(
-  accountId: string,
-  configOwnerUserId: string,
-  phone: string,
-  name: string
-): Promise<ContactOutcome | null> {
-  // Find an existing contact for this account by phone. The shared
-  // helper pre-filters in SQL by the last-8-digit suffix (so we don't
-  // pull every contact on every inbound message) then applies the
-  // strict `phonesMatch` in JS on the small candidate set. The same
-  // helper backs the manual contact form and CSV import, so all three
-  // paths agree on what "same number" means (issue #212).
-  const existingContact = await findExistingContact(
-    supabaseAdmin(),
-    accountId,
-    phone
-  );
-
-  if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
-      await supabaseAdmin()
-        .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
-        .eq('id', existingContact.id);
-    }
-    return { contact: existingContact, wasCreated: false };
-  }
-
-  // Create new contact. account_id is the tenancy column;
-  // user_id is the NOT NULL FK audit column (no inbound message
-  // has a single "user who created" it — we attribute to the
-  // WhatsApp config owner as a stable default).
-  const { data: newContact, error: createError } = await supabaseAdmin()
-    .from('contacts')
-    .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
-      phone,
-      name: name || phone,
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    // Lost a race: a concurrent inbound delivery (or another path)
-    // created this contact between our lookup and insert, and the
-    // unique index (migration 022) rejected the duplicate. Re-resolve
-    // the existing row instead of dropping the message.
-    if (isUniqueViolation(createError)) {
-      const raced = await findExistingContact(
-        supabaseAdmin(),
-        accountId,
-        phone
-      );
-      if (raced) return { contact: raced, wasCreated: false };
-    }
-    console.error('Error creating contact:', createError);
-    return null;
-  }
-
-  return { contact: newContact, wasCreated: true };
-}
-
-async function findOrCreateConversation(
-  accountId: string,
-  configOwnerUserId: string,
-  contactId: string
-) {
-  // Look for an existing conversation in this account, oldest-first.
-  //
-  // We deliberately do NOT use `.single()` here. `.single()` errors on
-  // *both* 0 rows and ≥2 rows, and the old code treated any error as
-  // "none found" and inserted a new row. So once two conversations
-  // existed for a contact (from a race — Meta retries a delivery, or a
-  // batch fans out to concurrent runs), every subsequent inbound
-  // message errored on the lookup and created yet another conversation,
-  // snowballing into a wall of duplicate chats (issue #363).
-  //
-  // Ordering oldest-first and taking one row makes the lookup resolve to
-  // the same canonical survivor the dedup migration (036) keeps, so any
-  // pre-existing duplicates converge instead of compounding.
-  const { data: existingRows, error: findError } = await supabaseAdmin()
-    .from('conversations')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .order('created_at', { ascending: true })
-    .limit(1);
-
-  if (findError) {
-    console.error('Error finding conversation:', findError);
-    return null;
-  }
-
-  if (existingRows && existingRows.length > 0) {
-    return { conversation: existingRows[0], created: false };
-  }
-
-  // Create new conversation. Same tenancy + audit split as
-  // findOrCreateContact above.
-  const { data: newConv, error: createError } = await supabaseAdmin()
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
-      contact_id: contactId,
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    // Lost a race: a concurrent inbound delivery created the
-    // conversation between our lookup and insert, and the unique index
-    // (migration 036) rejected the duplicate. Re-resolve the winning
-    // row instead of dropping the message — mirrors findOrCreateContact.
-    if (isUniqueViolation(createError)) {
-      const { data: raced } = await supabaseAdmin()
-        .from('conversations')
-        .select('*')
-        .eq('account_id', accountId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: true })
-        .limit(1);
-      if (raced && raced.length > 0) {
-        return { conversation: raced[0], created: false };
-      }
-    }
-    console.error('Error creating conversation:', createError);
-    return null;
-  }
-
-  return { conversation: newConv, created: true };
 }

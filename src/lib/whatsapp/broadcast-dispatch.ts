@@ -648,6 +648,7 @@ async function materializeArm(
 
   return {
     broadcastId,
+    accountId,
     templateName,
     templateLanguage,
     phoneNumberId: context.phoneNumberId,

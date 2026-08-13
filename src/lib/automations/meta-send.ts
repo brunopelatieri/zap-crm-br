@@ -1,4 +1,3 @@
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api';
 import { withSignedHeaderMedia } from '@/lib/whatsapp/header-media';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 import type { MessageTemplate, TemplatePreviewPayload } from '@/types';
@@ -8,24 +7,21 @@ import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send';
-import { decrypt } from '@/lib/whatsapp/encryption';
-import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils';
+import { sendAndPersistOutbound } from '@/lib/channels/send';
 import { supabaseAdmin } from './admin-client';
 
 // ------------------------------------------------------------
-// Automation-side Meta sender.
+// Automation-side sender.
 //
-// Mirrors the logic in src/app/api/whatsapp/send/route.ts but uses
-// the service-role client (engine has no cookies) and accepts the
-// user / conversation / contact identifiers the engine already has
-// on hand. Kept here (rather than refactoring the user-facing send
-// route) to avoid risk to the working manual-send path — they can
-// converge in a later refactor.
+// Usa o cliente de service-role (o motor não tem cookies) e aceita os
+// identificadores de usuário / conversa / contato que o motor já tem em
+// mãos.
+//
+// Desde a F2 (PRD 047 / SPEC 048 §5) o esqueleto de envio vive em
+// `lib/channels/send.ts` e a chamada ao provedor passa pelo adaptador do
+// canal. O que continua aqui é o que é DESTE motor: carregar a linha
+// local do template, assinar o header de mídia e montar o
+// `template_preview` da bolha.
 // ------------------------------------------------------------
 
 interface SendTextArgs {
@@ -115,39 +111,16 @@ async function sendViaMeta(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin();
 
-  // Scope the contact + config lookups by account_id, not user_id.
-  // The engine uses the service-role client (bypassing RLS); without
-  // this filter, an authenticated user could fire their own
-  // automations against another tenant's contact UUID and send via
-  // their own WhatsApp config to that contact's phone. The 017
-  // migration moved both tables to account-scoped tenancy, so the
-  // check is the same defense-in-depth as before, just keyed on the
-  // new tenancy column.
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone')
-    .eq('id', input.contactId)
-    .eq('account_id', input.accountId)
-    .maybeSingle();
-  if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this account');
-  }
-
-  const sanitized = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitized)) {
-    throw new Error(`contact phone invalid: ${contact.phone}`);
-  }
-
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single();
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account');
-  }
-
-  const accessToken = decrypt(config.access_token);
+  // O escopo por `account_id` (e não por `user_id`) do contato e das
+  // credenciais é aplicado dentro de `lib/channels/send.ts` — ver lá o
+  // porquê: o motor usa service-role, com a RLS desligada.
+  //
+  // ⚠️ Diferença de ORDEM em relação ao código anterior à F2: a linha do
+  //    template e a assinatura do header passaram a ser resolvidas ANTES
+  //    da validação do contato e do canal (antes vinham depois). Nada
+  //    observável muda — as duas primeiras são leituras —, exceto o
+  //    texto do erro quando contato E header de mídia estão quebrados ao
+  //    mesmo tempo.
 
   // Load the local template row so the send builds the full components
   // array (required for media-header templates — Meta rejects those
@@ -169,67 +142,16 @@ async function sendViaMeta(
 
   // Header de mídia: o bucket virou privado na migração 040, então a
   // URL guardada no template não é mais buscável pela Meta. Assina uma
-  // vez, fora do `attempt`, para não gerar uma assinatura nova a cada
-  // variante de telefone tentada.
+  // vez, fora do laço de variantes, para não gerar uma assinatura nova a
+  // cada telefone tentado.
   const templateSendParams = await withSignedHeaderMedia(
     db,
     templateRow ?? undefined
   );
 
-  const attempt = async (phone: string): Promise<string> => {
-    if (input.kind === 'template') {
-      const r = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        templateName: input.templateName,
-        language: input.language,
-        template: templateRow ?? undefined,
-        messageParams: templateSendParams,
-        params: input.params,
-      });
-      return r.messageId;
-    }
-    const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: input.text,
-    });
-    return r.messageId;
-  };
-
-  // Same phone-variant retry as /api/whatsapp/send — Meta sandbox and
-  // numbers registered with/without a trunk 0 both require this to
-  // reliably land a message.
-  const variants = phoneVariants(sanitized);
-  let workingPhone = sanitized;
-  let waMessageId = '';
-  let lastError: unknown = null;
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v);
-      workingPhone = v;
-      lastError = null;
-      break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!isRecipientNotAllowedError(msg)) throw err;
-      lastError = err;
-    }
-  }
-  if (lastError) throw lastError;
-
-  if (workingPhone !== sanitized) {
-    await db
-      .from('contacts')
-      .update({ phone: workingPhone })
-      .eq('id', contact.id);
-  }
-
   // Persist the sent message so it appears in the inbox with a real
-  // Meta message id. sender_type='bot' distinguishes automation sends
-  // from manual agent sends.
+  // provider message id. sender_type='bot' distinguishes automation
+  // sends from manual agent sends.
   // Templates: when the local row was found, resolve header/body/footer/
   // buttons into `template_preview` (mirrors sendMessageToConversation,
   // migration 037) so the bubble renders the template in full instead of
@@ -239,7 +161,10 @@ async function sendViaMeta(
   let templatePreview: TemplatePreviewPayload | null = null;
   let renderedBody: string | null = null;
   if (input.kind === 'template' && templateRow) {
-    renderedBody = renderTemplateText(templateRow.body_text, input.params ?? []);
+    renderedBody = renderTemplateText(
+      templateRow.body_text,
+      input.params ?? []
+    );
     const headerMediaType =
       templateRow.header_type === 'image' ||
       templateRow.header_type === 'video' ||
@@ -265,33 +190,34 @@ async function sendViaMeta(
   const content_text = input.kind === 'text' ? input.text : renderedBody;
   const template_name = input.kind === 'template' ? input.templateName : null;
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: input.conversationId,
-    sender_type: 'bot',
-    content_type,
-    content_text,
-    template_name,
-    template_preview: templatePreview,
-    message_id: waMessageId,
-    status: 'sent',
-  });
-  if (msgErr) {
-    // Meta already has the message; record the DB error but don't pretend
-    // the send failed. The engine wraps this in a log line.
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`);
-  }
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text:
+  return sendAndPersistOutbound({
+    db,
+    accountId: input.accountId,
+    conversationId: input.conversationId,
+    contactId: input.contactId,
+    content:
+      input.kind === 'template'
+        ? {
+            kind: 'template',
+            templateName: input.templateName,
+            language: input.language,
+            // A linha local é o que faz header de mídia e botão de URL
+            // com variável chegarem ao destinatário; sem ela o envio cai
+            // no caminho legado de corpo simples (`positionalParams`).
+            definition: templateRow ?? undefined,
+            components: templateSendParams,
+            positionalParams: input.params,
+          }
+        : { kind: 'text', text: input.text },
+    persist: {
+      senderType: 'bot',
+      contentType: content_type,
+      contentText: content_text,
+      previewText:
         input.kind === 'template'
           ? (renderedBody ?? `[template:${input.templateName}]`)
           : input.text,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', input.conversationId);
-
-  return { whatsapp_message_id: waMessageId };
+      extra: { template_name, template_preview: templatePreview },
+    },
+  });
 }

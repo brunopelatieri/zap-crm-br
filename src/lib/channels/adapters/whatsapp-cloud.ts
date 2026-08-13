@@ -6,14 +6,19 @@
  * É o que permite ao `send.ts` (F2) tratar Meta e Evolution pela mesma
  * porta, sem que o canal oficial mude uma linha de comportamento.
  *
- * `normalizeInbound` fica vazio de propósito
+ * `normalizeInbound` continua lançando, e isso é deliberado
  *
- *   O webhook da Meta ainda faz a tradução inline, dentro da própria
- *   rota. Movê-la para cá é trabalho da F2 (`ingest.ts`), que é um PR
- *   isolado com testes de paridade — é o caminho crítico de recebimento
- *   de mensagem e não pode viajar junto com a fundação. Até lá, lançar
- *   é mais honesto que devolver `[]`: um array vazio silenciaria
- *   mensagens se alguém plugasse este adaptador cedo demais.
+ *   A F2 moveu a INGESTÃO (o que acontece depois de a mensagem entrar)
+ *   para `lib/channels/ingest.ts`, mas a tradução do payload da Meta
+ *   ficou na rota do webhook dela. O motivo é a assinatura: normalizar
+ *   uma mensagem da Cloud API exige verificar cada mídia contra a Graph
+ *   API — uma chamada de rede assíncrona, com o token da conta —, e
+ *   `normalizeInbound(raw): NormalizedInbound[]` é síncrona e sem
+ *   credencial. Forçar a tradução aqui pediria mudar o contrato de todos
+ *   os canais por causa de um.
+ *
+ *   Lançar continua sendo mais honesto que devolver `[]`: um array vazio
+ *   silenciaria mensagens se alguém plugasse este adaptador na entrada.
  */
 
 import {
@@ -24,6 +29,7 @@ import {
   sendInteractiveList,
 } from '@/lib/whatsapp/meta-api';
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
+import type { MessageTemplate } from '@/types';
 import { capabilitiesFor } from '../capabilities';
 import type {
   ChannelAdapter,
@@ -66,6 +72,7 @@ export const whatsappCloudAdapter: ChannelAdapter = {
       accessToken,
       to: p.to,
       text: p.text,
+      contextMessageId: p.quotedProviderMessageId ?? undefined,
     });
     return { providerMessageId: r.messageId };
   },
@@ -80,6 +87,7 @@ export const whatsappCloudAdapter: ChannelAdapter = {
       link: p.url,
       caption: p.caption ?? undefined,
       filename: p.filename ?? undefined,
+      contextMessageId: p.quotedProviderMessageId ?? undefined,
     });
     return { providerMessageId: r.messageId };
   },
@@ -92,13 +100,18 @@ export const whatsappCloudAdapter: ChannelAdapter = {
       to: p.to,
       templateName: p.templateName,
       language: p.language ?? undefined,
-      // `components` é `unknown` na interface de propósito: template é
-      // conceito da Meta, e tipá-lo em `types.ts` arrastaria
-      // `SendTimeParams` para dentro da abstração de canais — o
-      // vazamento que o cabeçalho de types.ts proíbe. O cast é seguro
-      // porque este adaptador é o ÚNICO consumidor do campo, e só o
-      // caminho de envio Cloud o produz.
+      // `components` / `definition` são `unknown` na interface de
+      // propósito: template é conceito da Meta, e tipá-los em `types.ts`
+      // arrastaria `SendTimeParams` e `MessageTemplate` para dentro da
+      // abstração de canais — o vazamento que o cabeçalho de types.ts
+      // proíbe. Os casts são seguros porque este adaptador é o ÚNICO
+      // consumidor dos campos, e só o caminho de envio Cloud os produz.
       messageParams: p.components as SendTimeParams | undefined,
+      // Sem a linha do template a Meta rejeita header de mídia e não
+      // monta botão de URL com variável — ver `SendTemplateParams`.
+      template: (p.definition as MessageTemplate | undefined) ?? undefined,
+      params: p.positionalParams,
+      contextMessageId: p.quotedProviderMessageId ?? undefined,
     });
     return { providerMessageId: r.messageId };
   },
@@ -116,6 +129,7 @@ export const whatsappCloudAdapter: ChannelAdapter = {
         buttons: payload.buttons,
         headerText: payload.header,
         footerText: payload.footer,
+        contextMessageId: p.quotedProviderMessageId ?? undefined,
       });
       return { providerMessageId: r.messageId };
     }
@@ -129,13 +143,14 @@ export const whatsappCloudAdapter: ChannelAdapter = {
       sections: payload.sections,
       headerText: payload.header,
       footerText: payload.footer,
+      contextMessageId: p.quotedProviderMessageId ?? undefined,
     });
     return { providerMessageId: r.messageId };
   },
 
   normalizeInbound(): NormalizedInbound[] {
     throw new Error(
-      'whatsapp-cloud normalizeInbound lands in F2 (ingest.ts) — the Meta webhook still translates inline'
+      'whatsapp-cloud normalizeInbound is not used — the Meta webhook route translates its own payload (media verification needs the account token); ingestion itself lives in lib/channels/ingest.ts'
     );
   },
 };
