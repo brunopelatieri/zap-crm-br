@@ -57,6 +57,7 @@
     "opus-recorder": "^8.0.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-phone-number-input": "^3.4.17",
     "read-excel-file": "^9.3.5",
     "recharts": "^3.8.1",
     "shadcn": "^4.11.0",

@@ -558,6 +558,13 @@
       "phoneLabel": "Phone Number",
       "phonePlaceholder": "+1234567890",
       "phoneHint": "Include country code, e.g. +1 for US",
+      "phoneHintBr": "Include the area code (DDD) — both mobile and landline numbers are accepted.",
+      "phoneInvalidDdd": "This area code (DDD) doesn't exist in Brazil.",
+      "phoneInvalidNinthDigit": "A Brazilian mobile number needs a 9 right after the area code.",
+      "phoneInvalidLocalPrefix": "This doesn't match a valid Brazilian phone number.",
+      "phoneInvalidLength": "This doesn't look like a valid phone number.",
+      "phoneMissingCountryCode": "Include the country code — this deployment can't assume a default country.",
+      "phoneLegacyWarning": "This number has 8 digits after the area code (pre-2012 mobile format). Double-check it's correct — modern Brazilian mobile numbers have 9.",
       "emailLabel": "Email",
       "emailPlaceholder": "jane@example.com",
       "companyLabel": "Company",
@@ -721,7 +728,18 @@
       "toastSkipped_plural": "{count} duplicates skipped",
       "toastFailed": "{count} contact failed to import",
       "toastFailed_plural": "{count} contacts failed to import",
-      "toastError": "Import failed"
+      "toastError": "Import failed",
+      "rejectedRows": "{count} rows were not imported",
+      "rejectedLine": "Line {n}",
+      "showAllRejected": "Show all {count}",
+      "reason": {
+        "empty": "no phone",
+        "invalid_length": "invalid length",
+        "invalid_ddd": "invalid area code",
+        "mobile_invalid_ninth_digit": "missing 9th digit",
+        "invalid_local_prefix": "invalid number",
+        "missing_country_code": "missing country code"
+      }
     },
     "customFields": {
       "title": "Custom fields",

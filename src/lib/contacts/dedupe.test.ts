@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { phonesMatch } from '@/lib/whatsapp/phone-utils';
 import {
   dedupeByPhone,
   findExistingContact,
@@ -16,6 +17,15 @@ describe('normalizeKey', () => {
 
   it('collapses different formats of the same number to one key', () => {
     expect(normalizeKey('+44 7911 123456')).toBe(normalizeKey('447911123456'));
+  });
+});
+
+describe('phonesMatch — celular legado de 8 dígitos (SPEC 050 D-6)', () => {
+  it('casa um contato gravado sem o nono dígito com o inbound que já traz o nono dígito', () => {
+    // Aceitar o celular legado (D-6) só não fragmenta a base porque o
+    // fallback de últimos-8-dígitos do phonesMatch já cobre exatamente
+    // esta diferença — este teste trava essa garantia.
+    expect(phonesMatch('551198765432', '5511998765432')).toBe(true);
   });
 });
 

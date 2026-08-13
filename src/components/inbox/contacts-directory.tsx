@@ -9,9 +9,16 @@ import { toast } from 'sonner';
 import type { Contact } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Users, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import {
+  Search,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
+import { formatPhoneForDisplay } from '@/lib/phone/br';
 
 const PAGE_SIZE = 25;
 
@@ -232,7 +239,7 @@ export function ContactsDirectory() {
                     )}
                   </p>
                   <p className="text-muted-foreground truncate text-xs">
-                    {c.phone}
+                    {formatPhoneForDisplay(c.phone)}
                   </p>
                 </div>
                 {c.company && (

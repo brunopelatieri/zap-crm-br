@@ -7,7 +7,7 @@
 | Data              | 2026-08-12                                                                              |
 | Versão do produto | ZAP CRM BR sobre Next.js 16.2.6 / React 19.2.4 / Supabase                                |
 | Migrações         | A partir de **055** (a última aplicada é a 054)                                          |
-| Referências       | [evolution_go-guide-api.md](./references/evolution_go-guide-api.md), [SPEC 045](./spec-045-reengajamento-janela-24h.md), [SPEC 046](./spec-046-agendamento-visual.md) |
+| Referências       | [SPEC 045](./spec-045-reengajamento-janela-24h.md), [SPEC 046](./spec-046-agendamento-visual.md) |
 
 ---
 
@@ -35,13 +35,13 @@ fração do primeiro**.
 > variáveis de ambiente da VPS e bugs conhecidos, compilado das specs OpenAPI oficiais.
 > Este PRD **não duplica** aquele conteúdo: referencia.
 >
-> ⚠️ O guia antigo
-> [`evolution_go-guide-api.md`](./references/evolution_go-guide-api.md) descreve endpoints no
-> formato da **Evolution API v2** (`/message/sendText/{instanceName}`,
-> `/instance/{name}/qrcode`) e **está incorreto** para a Evolution Go. A própria referência
-> nova documenta essa divergência: os guias narrativos do site oficial contradizem as páginas
-> geradas do OpenAPI, e são estas últimas que valem. A fase **F0** (§13) continua sendo
-> bloqueante — documentação autoconsistente ainda não é a sua VPS rodando.
+> ⚠️ Havia um guia antigo (`evolution_go-guide-api.md`, removido deste repositório em
+> 2026-08-13 por estar desatualizado) que descrevia endpoints no formato da **Evolution API
+> v2** (`/message/sendText/{instanceName}`, `/instance/{name}/qrcode`) — **incorreto** para a
+> Evolution Go. A própria referência nova documenta essa divergência: os guias narrativos do
+> site oficial contradizem as páginas geradas do OpenAPI, e são estas últimas que valem. A
+> fase **F0** (§13) continua sendo bloqueante — documentação autoconsistente ainda não é a sua
+> VPS rodando.
 
 ---
 

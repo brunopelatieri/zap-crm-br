@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
@@ -11,6 +13,9 @@ import {
   isUniqueViolation,
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
+import { isBrDeployment } from '@/lib/i18n/deployment-locale';
+import { normalizeContactPhone, type PhoneRejectReason } from '@/lib/phone/br';
+import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import {
   Dialog,
   DialogContent,
@@ -25,6 +30,19 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+
+/**
+ * Motivos de recusa "de sabor BR" (SPEC 050 D-3): quando a rejeição vem
+ * de uma destas razões, a validação desta função é AUTORITATIVA sobre a
+ * do `react-phone-number-input` — o número "parece brasileiro" e é a
+ * regra local (DDD/9º dígito) que decide, não a lib genérica.
+ */
+const DOMESTIC_REASONS = new Set<PhoneRejectReason>([
+  'invalid_ddd',
+  'mobile_invalid_ninth_digit',
+  'invalid_local_prefix',
+  'missing_country_code',
+]);
 
 interface ContactFormProps {
   open: boolean;
@@ -51,10 +69,19 @@ export function ContactForm({
   const isEdit = !!contact;
 
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  // E.164-with-`+`, the shape `PhoneInput` manages — never what gets
+  // saved. The saved value always comes from `normalizeContactPhone`
+  // (SPEC 050): digits-only, with DDI, no `+`.
+  const [phone, setPhone] = useState<string>('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Inline validation (SPEC 050 F2). `phoneLegacy` is the D-6
+  // non-blocking notice for an 8-digit BR celular (pre-nono-dígito) —
+  // it never prevents saving, only asks the user to confirm.
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [phoneLegacy, setPhoneLegacy] = useState(false);
 
   // Duplicate-phone detection for NEW contacts. `exact` (same digits)
   // hard-blocks the save; a fuzzy trunk-variant match only warns. The
@@ -73,14 +100,81 @@ export function ContactForm({
   useEffect(() => {
     if (open) {
       setName(contact?.name ?? '');
-      setPhone(contact?.phone ?? '');
+      // Stored `phone` is digits-only without `+` (canonical format);
+      // `PhoneInput` needs the `+` back to recognize it as E.164.
+      setPhone(contact?.phone ? `+${contact.phone}` : '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
+      setPhoneError(null);
+      setPhoneLegacy(false);
       fetchTags();
     }
   }, [open, contact]);
+
+  function reasonMessage(reason: PhoneRejectReason): string {
+    switch (reason) {
+      case 'empty':
+        return t('phoneRequired');
+      case 'invalid_ddd':
+        return t('phoneInvalidDdd');
+      case 'mobile_invalid_ninth_digit':
+        return t('phoneInvalidNinthDigit');
+      case 'invalid_local_prefix':
+        return t('phoneInvalidLocalPrefix');
+      case 'missing_country_code':
+        return t('phoneMissingCountryCode');
+      case 'invalid_length':
+        return t('phoneInvalidLength');
+    }
+  }
+
+  /**
+   * Valida + normaliza o telefone digitado (SPEC 050 D-3): a regra BR
+   * desta SPEC é autoritativa para qualquer número "de cara brasileira"
+   * (doméstico, ou rejeitado por um motivo específico do Brasil); para
+   * o resto (estrangeiro, ou problema de comprimento genérico), quem
+   * decide é o validador da lib de máscara.
+   */
+  function validatePhoneValue(
+    raw: string
+  ): { phone: string; legacy: boolean } | { error: string } {
+    if (!raw.trim()) return { error: t('phoneRequired') };
+
+    const result = normalizeContactPhone(raw);
+
+    if (result.ok) {
+      if (result.kind !== 'foreign') {
+        return { phone: result.phone, legacy: result.legacy };
+      }
+      // Estrangeiro: cruza com a lib antes de aceitar (D-3).
+      if (!isValidPhoneNumber(raw)) return { error: t('phoneInvalidLength') };
+      return { phone: result.phone, legacy: false };
+    }
+
+    if (DOMESTIC_REASONS.has(result.reason)) {
+      return { error: reasonMessage(result.reason) };
+    }
+
+    // invalid_length fora da faixa doméstica — a lib decide (D-3).
+    if (isValidPhoneNumber(raw)) {
+      return { phone: sanitizePhoneForMeta(raw), legacy: false };
+    }
+    return { error: reasonMessage(result.reason) };
+  }
+
+  function handlePhoneBlur() {
+    const validation = validatePhoneValue(phone);
+    if ('error' in validation) {
+      setPhoneError(validation.error);
+      setPhoneLegacy(false);
+    } else {
+      setPhoneError(null);
+      setPhoneLegacy(validation.legacy);
+    }
+    checkDuplicate();
+  }
 
   // Look up an existing contact with this number (new contacts only).
   // Runs on blur so we don't query on every keystroke.
@@ -122,10 +216,15 @@ export function ContactForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!phone.trim()) {
-      toast.error(t('phoneRequired'));
+    const validation = validatePhoneValue(phone);
+    if ('error' in validation) {
+      setPhoneError(validation.error);
+      toast.error(validation.error);
       return;
     }
+    setPhoneError(null);
+    setPhoneLegacy(validation.legacy);
+    const normalizedPhone = validation.phone;
 
     // Hard-block an exact duplicate on create (the DB unique index is
     // the real backstop; this avoids a round-trip + a raw error toast).
@@ -152,7 +251,7 @@ export function ContactForm({
           .from('contacts')
           .update({
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: normalizedPhone,
             email: email.trim() || null,
             company: company.trim() || null,
             updated_at: new Date().toISOString(),
@@ -166,7 +265,7 @@ export function ContactForm({
             user_id: user.id,
             account_id: accountId,
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: normalizedPhone,
             email: email.trim() || null,
             company: company.trim() || null,
           })
@@ -252,18 +351,28 @@ export function ContactForm({
             <Label htmlFor="cf-phone" className="text-muted-foreground">
               {t('phoneLabel')} <span className="text-red-400">*</span>
             </Label>
-            <Input
+            <PhoneInput
               id="cf-phone"
+              international
+              defaultCountry={isBrDeployment() ? 'BR' : undefined}
               value={phone}
-              onChange={(e) => {
-                setPhone(e.target.value);
+              onChange={(value) => {
+                setPhone(value ?? '');
                 if (dupMatch) setDupMatch(null);
+                if (phoneError) setPhoneError(null);
+                if (phoneLegacy) setPhoneLegacy(false);
               }}
-              onBlur={checkDuplicate}
+              onBlur={handlePhoneBlur}
               placeholder={t('phonePlaceholder')}
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              inputComponent={Input}
+              className="[&_.PhoneInputInput]:bg-muted [&_.PhoneInputInput]:border-border [&_.PhoneInputInput]:text-foreground [&_.PhoneInputInput]:placeholder:text-muted-foreground"
             />
-            {dupMatch ? (
+            {phoneError ? (
+              <div className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-2 text-xs text-red-300">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <p>{phoneError}</p>
+              </div>
+            ) : dupMatch ? (
               <div
                 className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs ${
                   dupMatch.exact
@@ -287,8 +396,16 @@ export function ContactForm({
                   )}
                 </div>
               </div>
+            ) : phoneLegacy ? (
+              // D-6: aviso não-bloqueante — número aceito, só pede confirmação.
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-300">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <p>{t('phoneLegacyWarning')}</p>
+              </div>
             ) : (
-              <p className="text-muted-foreground text-xs">{t('phoneHint')}</p>
+              <p className="text-muted-foreground text-xs">
+                {isBrDeployment() ? t('phoneHintBr') : t('phoneHint')}
+              </p>
             )}
           </div>
 

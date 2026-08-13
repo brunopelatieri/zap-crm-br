@@ -40,6 +40,7 @@ describe('parseContactCsv', () => {
           email: undefined,
           company: undefined,
           tagNames: ['VIP', 'Lead'],
+          sourceRow: 2,
         },
         {
           phone: '+15559876543',
@@ -47,6 +48,7 @@ describe('parseContactCsv', () => {
           email: undefined,
           company: undefined,
           tagNames: ['Customer'],
+          sourceRow: 3,
         },
       ],
     });
@@ -66,8 +68,29 @@ describe('parseContactCsv', () => {
           email: undefined,
           company: undefined,
           tagNames: [],
+          sourceRow: 2,
         },
       ],
     });
+  });
+
+  it('normalizes a masked BR phone with react-phone-number-input-style input', () => {
+    const csv = `phone,name
++55 (19) 9 9249-6598,Maria`;
+
+    const { rows } = parseContactCsv(csv);
+    // parseContactCsv itself does not normalize — that's SPEC 050 F3,
+    // done by the import modal via normalizeContactPhone. This just
+    // confirms the raw masked value survives the CSV parse untouched.
+    expect(rows).toEqual([
+      {
+        phone: '+55 (19) 9 9249-6598',
+        name: 'Maria',
+        email: undefined,
+        company: undefined,
+        tagNames: [],
+        sourceRow: 2,
+      },
+    ]);
   });
 });

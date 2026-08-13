@@ -9,6 +9,7 @@ import { usePresence } from '@/hooks/use-presence';
 import { PresenceDot } from '@/components/presence/presence-dot';
 import { presenceLabel } from '@/lib/presence';
 import { cn } from '@/lib/utils';
+import { formatPhoneForDisplay } from '@/lib/phone/br';
 import type {
   Conversation,
   Message,
@@ -1030,7 +1031,8 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayPhone = formatPhoneForDisplay(contact.phone);
+  const displayName = contact.name || displayPhone;
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -1082,7 +1084,7 @@ export function MessageThread({
               {displayName}
             </h2>
             <p className="text-muted-foreground truncate text-xs">
-              {contact.phone}
+              {displayPhone}
             </p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so

@@ -23,6 +23,7 @@ import { useTranslations } from 'next-intl';
 import { useTagPicker } from '@/components/inbox/tag-picker/tag-picker-context';
 import { useDealPicker } from '@/components/inbox/deal-picker/deal-picker-context';
 import { canSendMessages } from '@/lib/auth/roles';
+import { formatPhoneForDisplay } from '@/lib/phone/br';
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -142,7 +143,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayPhone = formatPhoneForDisplay(contact.phone);
+  const displayName = contact.name || displayPhone;
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
@@ -177,7 +179,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               className="text-muted-foreground hover:bg-muted flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
             >
               <Phone className="text-muted-foreground h-4 w-4" />
-              <span className="flex-1 text-left">{contact.phone}</span>
+              <span className="flex-1 text-left">{displayPhone}</span>
               {copied ? (
                 <Check className="text-primary h-3 w-3" />
               ) : (

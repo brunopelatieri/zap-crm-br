@@ -17,6 +17,7 @@ import {
   resolveImportTagIds,
   type ContactTagAssignment,
 } from '@/lib/contacts/resolve-import-tags';
+import { normalizeContactPhone, type PhoneRejectReason } from '@/lib/phone/br';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -41,6 +42,15 @@ import { useTranslations } from 'next-intl';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
 const PREVIEW_LIMIT = 5;
+const REJECTED_PREVIEW_LIMIT = 10;
+
+/** Uma linha do CSV cujo telefone não passou pela validação (SPEC 050 F3/D-4). */
+interface RejectedContactRow {
+  sourceRow: number;
+  rawPhone: string;
+  name?: string;
+  reason: PhoneRejectReason;
+}
 
 function truncateFilename(name: string, max = 48): string {
   if (name.length <= max) return name;
@@ -133,6 +143,8 @@ export function ImportModal({
 
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
+  const [invalidRows, setInvalidRows] = useState<RejectedContactRow[]>([]);
+  const [rejectedExpanded, setRejectedExpanded] = useState(false);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
   const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
   const [tagColorByKey, setTagColorByKey] = useState<Map<string, string>>(
@@ -149,6 +161,8 @@ export function ImportModal({
   function reset() {
     setFile(null);
     setParsedRows([]);
+    setInvalidRows([]);
+    setRejectedExpanded(false);
     setHasTagsColumn(false);
     setHasCompanyColumn(false);
     setTagColorByKey(new Map());
@@ -178,13 +192,36 @@ export function ImportModal({
     if (rows.length === 0) {
       toast.error(t('toastNoValidRows'));
       setParsedRows([]);
+      setInvalidRows([]);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);
       setTagColorByKey(new Map());
       return;
     }
 
-    setParsedRows(rows);
+    // SPEC 050 F3: normaliza cada linha (dígitos-only, com DDI) e valida
+    // a regra brasileira quando o deployment é BR — ANTES do dedup, para
+    // que "+55 19 …" e "5519…" já cheguem lá como a mesma chave. Linhas
+    // com telefone inválido nunca viram contato; entram na lista de
+    // rejeitadas com o número da linha original e o motivo (D-4).
+    const validRows: ParsedContactRow[] = [];
+    const rejectedRows: RejectedContactRow[] = [];
+    for (const row of rows) {
+      const result = normalizeContactPhone(row.phone);
+      if (result.ok) {
+        validRows.push({ ...row, phone: result.phone });
+      } else {
+        rejectedRows.push({
+          sourceRow: row.sourceRow,
+          rawPhone: row.phone,
+          name: row.name,
+          reason: result.reason,
+        });
+      }
+    }
+
+    setParsedRows(validRows);
+    setInvalidRows(rejectedRows);
     setHasTagsColumn(csvHasTags);
     setHasCompanyColumn(csvHasCompany);
 
@@ -370,6 +407,9 @@ export function ImportModal({
   }
 
   const preview = parsedRows.slice(0, PREVIEW_LIMIT);
+  const rejectedPreview = rejectedExpanded
+    ? invalidRows
+    : invalidRows.slice(0, REJECTED_PREVIEW_LIMIT);
   // Tags: OR — show when the CSV declares a column or preview rows carry
   // values, so an all-empty tags column still renders for validation.
   const previewHasTags =
@@ -570,6 +610,59 @@ export function ImportModal({
                   {t('moreRows', { count: parsedRows.length - PREVIEW_LIMIT })}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* SPEC 050 D-4: linhas com telefone inválido nunca somem em
+              silêncio — cada uma aparece com o número da linha original
+              e o motivo. Fica fora do bloco de preview de propósito: se
+              o arquivo inteiro tiver telefones ruins, `preview` fica
+              vazio mas este resumo continua aparecendo. */}
+          {invalidRows.length > 0 && !result && (
+            <div className="border-border bg-card/50 mt-3 space-y-2 rounded-xl border p-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-400" />
+                <p className="text-foreground text-sm font-medium">
+                  {t('rejectedRows', { count: invalidRows.length })}
+                </p>
+              </div>
+
+              <div className="border-border rounded-lg border">
+                <ul className="border-border max-h-48 divide-y overflow-y-auto">
+                  {rejectedPreview.map((row) => (
+                    <li
+                      key={`${row.sourceRow}-${row.rawPhone}`}
+                      className="border-border/50 flex items-center justify-between gap-3 border-b px-3 py-1.5 text-xs last:border-b-0"
+                    >
+                      <span className="text-muted-foreground shrink-0 tabular-nums">
+                        {t('rejectedLine', { n: row.sourceRow })}
+                      </span>
+                      <span className="text-foreground min-w-0 flex-1 truncate font-mono">
+                        {row.rawPhone || '—'}
+                        {row.name && (
+                          <span className="text-muted-foreground ml-2 font-sans">
+                            {row.name}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-amber-300">
+                        {t(`reason.${row.reason}`)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                {!rejectedExpanded &&
+                  invalidRows.length > REJECTED_PREVIEW_LIMIT && (
+                    <button
+                      type="button"
+                      onClick={() => setRejectedExpanded(true)}
+                      className="text-primary hover:bg-muted/50 w-full px-3 py-1.5 text-xs font-medium"
+                    >
+                      {t('showAllRejected', { count: invalidRows.length })}
+                    </button>
+                  )}
+              </div>
             </div>
           )}
 

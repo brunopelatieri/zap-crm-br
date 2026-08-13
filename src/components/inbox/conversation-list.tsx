@@ -24,6 +24,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
+import { formatPhoneForDisplay } from '@/lib/phone/br';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -493,7 +494,10 @@ function ConversationItem({
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t('unknown');
+  const displayName =
+    contact?.name ||
+    (contact?.phone && formatPhoneForDisplay(contact.phone)) ||
+    t('unknown');
   const initials = displayName.charAt(0).toUpperCase();
 
   // As etiquetas já chegam hidratadas em `contact.tags` pelo

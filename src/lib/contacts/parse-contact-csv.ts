@@ -10,6 +10,9 @@ export interface ParsedContactRow {
   company?: string;
   /** Tag names from the optional `tags` column (comma/semicolon separated). */
   tagNames: string[];
+  /** 1-based line number in the original file (SPEC 050 F3 — lets the
+   *  import summary say "line 47", not just "one row was skipped"). */
+  sourceRow: number;
 }
 
 /** Split a CSV cell into unique tag names (case-insensitive de-dupe). */
@@ -109,7 +112,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
 
   const rows: ParsedContactRow[] = [];
 
-  for (const { values } of tableRows) {
+  for (const { values, lineNumber } of tableRows) {
     const phone = values[phoneIdx]?.replace(/["']/g, '').trim();
     if (!phone) continue;
 
@@ -129,6 +132,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
           : undefined,
       tagNames:
         tagsIdx >= 0 ? parseTagCell(values[tagsIdx]?.replace(/["']/g, '')) : [],
+      sourceRow: lineNumber,
     });
   }
 

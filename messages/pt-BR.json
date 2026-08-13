@@ -558,6 +558,13 @@
       "phoneLabel": "Número de telefone",
       "phonePlaceholder": "+5511987654321",
       "phoneHint": "Inclua o código do país, ex.: +55 para o Brasil",
+      "phoneHintBr": "Inclua o DDD — números fixos e celulares são aceitos.",
+      "phoneInvalidDdd": "Esse DDD não existe no Brasil.",
+      "phoneInvalidNinthDigit": "Um celular brasileiro precisa do 9 logo após o DDD.",
+      "phoneInvalidLocalPrefix": "Isso não corresponde a um número de telefone brasileiro válido.",
+      "phoneInvalidLength": "Isso não parece um número de telefone válido.",
+      "phoneMissingCountryCode": "Inclua o código do país — esta instalação não pode assumir um país padrão.",
+      "phoneLegacyWarning": "Este número tem 8 dígitos após o DDD (formato de celular anterior a 2012). Confirme se está correto — celulares brasileiros atuais têm 9 dígitos.",
       "emailLabel": "E-mail",
       "emailPlaceholder": "maria@exemplo.com",
       "companyLabel": "Empresa",
@@ -721,7 +728,18 @@
       "toastSkipped_plural": "{count} duplicados ignorados",
       "toastFailed": "{count} contato falhou ao importar",
       "toastFailed_plural": "{count} contatos falharam ao importar",
-      "toastError": "Falha na importação"
+      "toastError": "Falha na importação",
+      "rejectedRows": "{count} linhas não foram importadas",
+      "rejectedLine": "Linha {n}",
+      "showAllRejected": "Mostrar todas as {count}",
+      "reason": {
+        "empty": "sem telefone",
+        "invalid_length": "comprimento inválido",
+        "invalid_ddd": "DDD inválido",
+        "mobile_invalid_ninth_digit": "falta o 9º dígito",
+        "invalid_local_prefix": "número inválido",
+        "missing_country_code": "sem código do país"
+      }
     },
     "customFields": {
       "title": "Campos personalizados",

@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/currency';
 import { assignTag, unassignTag } from '@/lib/tags';
 import { setContactOptIn } from '@/lib/contacts/consent';
 import { markWhatsappValid } from '@/lib/contacts/whatsapp-status';
+import { formatPhoneForDisplay } from '@/lib/phone/br';
 import { toast } from 'sonner';
 import type {
   Contact,
@@ -504,7 +505,7 @@ export function ContactDetailView({
                         className="hover:text-primary flex cursor-pointer items-center gap-1 transition-colors"
                       >
                         <Phone className="size-3" />
-                        {contact.phone}
+                        {formatPhoneForDisplay(contact.phone)}
                         {copiedPhone ? (
                           <Check className="text-primary size-3" />
                         ) : (
@@ -722,7 +723,7 @@ export function ContactDetailView({
                           {tWhatsapp('label')}
                         </Label>
                         <div className="flex items-center gap-2">
-                          <span className="bg-amber-500/10 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-amber-300">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-300">
                             <PhoneOff className="size-3" />
                             {tWhatsapp('status.invalid')}
                           </span>

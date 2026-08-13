@@ -228,3 +228,24 @@ html[data-theme='rose'] {
     @apply font-sans;
   }
 }
+
+/* react-phone-number-input (SPEC 050 F2): the country `<select>` is a
+ * transparent overlay over the flag icon — when opened, the browser
+ * renders its OWN native popup, which is NOT part of our component
+ * tree. `color` inherits into that popup's `<option>`s from `body`
+ * above (`text-foreground`, near-white in dark mode); `background-color`
+ * does NOT inherit and stays the browser's opaque white default. The
+ * combination is white-on-white in dark mode. Fixed with literal
+ * colors (not CSS custom properties) on purpose — this popup is
+ * OS/browser-rendered chrome outside our theme's cascade, so it always
+ * gets the light-mode pairing regardless of app theme. Left unlayered
+ * (outside `@layer base`) so it always wins over `body`'s layered
+ * `text-foreground`, without needing `!important`.
+ */
+.PhoneInputCountrySelect {
+  color-scheme: light;
+}
+.PhoneInputCountrySelect option {
+  color: #111827;
+  background-color: #ffffff;
+}

@@ -169,7 +169,8 @@ Guia detalhado (quando e por quê de cada um): [docs/comandos-desenvolvimento.md
 | [docs/prd-047-canais-e-whatsapp-qrcode.md](./docs/prd-047-canais-e-whatsapp-qrcode.md)                   | **PRD** — camada de canais + WhatsApp QRCode (Evolution Go) |
 | [docs/spec-048-canal-whatsapp-qrcode.md](./docs/spec-048-canal-whatsapp-qrcode.md)                       | **SPEC** — canal WhatsApp QRCode: fundação, adaptador, plano de teste   |
 | [docs/references/EVOLUTION_GO_REFERENCE.md](./docs/references/EVOLUTION_GO_REFERENCE.md)                 | Referência da API Evolution Go (⚠️ incompleta — ver SPEC 048 §1)        |
-| [docs/references/evolution_go-guide-api.md](./docs/references/evolution_go-guide-api.md)                 | ⚠️ Guia antigo — paths da Evolution API v2, **incorreto** para a Go     |
+| [docs/spec-050-padronizacao-telefone-br.md](./docs/spec-050-padronizacao-telefone-br.md)                 | **SPEC** — padronização de telefone + validação brasileira (DDD/celular/fixo) |
+| [docs/context/phone-number-format-standard.md](./docs/context/phone-number-format-standard.md)           | Padrão de formato de telefone — mapeamento de todos os pontos de entrada |
 | [docs/spec-inbox-tag-management.md](./docs/spec-inbox-tag-management.md)                                 | Gestão de etiquetas dentro do inbox                   |
 | [docs/spec-inbox-tabs-assignment.md](./docs/spec-inbox-tabs-assignment.md)                               | Abas do inbox e atribuição                            |
 | [docs/spec-inbox-kanban-integration.md](./docs/spec-inbox-kanban-integration.md)                         | Integração inbox ↔ funil kanban                       |
