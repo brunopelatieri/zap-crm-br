@@ -102,7 +102,7 @@ export function TriageToolbar({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="relative w-full flex-1">
+        <div className="relative w-full sm:w-1/2">
           <Search className="text-muted-foreground absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2" />
           <Input
             value={search}
@@ -117,12 +117,14 @@ export function TriageToolbar({
             render={
               <Button
                 variant="outline"
-                className="border-border text-muted-foreground hover:bg-muted shrink-0"
+                className="border-border text-muted-foreground hover:bg-muted w-full justify-between sm:w-1/2"
               />
             }
           >
-            <Filter className="h-3.5 w-3.5" />
-            {activeFilterLabel}
+            <span className="flex items-center gap-2">
+              <Filter className="h-3.5 w-3.5" />
+              {activeFilterLabel}
+            </span>
             <ChevronDown className="h-3 w-3" />
           </DropdownMenuTrigger>
           <DropdownMenuContent className="border-border bg-popover max-h-80 overflow-y-auto">
