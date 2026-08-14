@@ -168,6 +168,7 @@ Guia detalhado (quando e por quê de cada um): [docs/comandos-desenvolvimento.md
 | [docs/spec-046-agendamento-visual.md](./docs/spec-046-agendamento-visual.md)                             | Construtor visual do gatilho "Baseado em horário"                             |
 | [docs/prd-047-canais-e-whatsapp-qrcode.md](./docs/prd-047-canais-e-whatsapp-qrcode.md)                   | **PRD** — camada de canais + WhatsApp QRCode (Evolution Go)                   |
 | [docs/spec-048-canal-whatsapp-qrcode.md](./docs/spec-048-canal-whatsapp-qrcode.md)                       | **SPEC** — canal WhatsApp QRCode: fundação, adaptador, plano de teste         |
+| [docs/spec-049-inbox-multicanal-e-motores.md](./docs/spec-049-inbox-multicanal-e-motores.md)             | **SPEC** — inbox multicanal (F5) e motores cientes de canal (F6)              |
 | [docs/references/EVOLUTION_GO_REFERENCE.md](./docs/references/EVOLUTION_GO_REFERENCE.md)                 | Referência da API Evolution Go (⚠️ incompleta — ver SPEC 048 §1)              |
 | [docs/spec-050-padronizacao-telefone-br.md](./docs/spec-050-padronizacao-telefone-br.md)                 | **SPEC** — padronização de telefone + validação brasileira (DDD/celular/fixo) |
 | [docs/context/phone-number-format-standard.md](./docs/context/phone-number-format-standard.md)           | Padrão de formato de telefone — mapeamento de todos os pontos de entrada      |

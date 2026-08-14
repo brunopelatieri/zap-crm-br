@@ -2,12 +2,12 @@
 
 | Campo         | Valor                                                                                                                                |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Status        | **F0 CONCLUÍDA** — 12 respostas com evidência contra o servidor real. Pronta para F1.                                                |
+| Status        | **F0 a F4 CONCLUÍDAS** — adaptador, webhook e mensageria testados contra número real (§6.6, §6.7). Código ainda não commitado quando este trecho foi escrito. |
 | PRD           | [PRD 047](./prd-047-canais-e-whatsapp-qrcode.md) — esta SPEC cobre as fases **F0 a F4**                                              |
-| Escopo fora   | Inbox multicanal (F5) e motores (F6) → SPEC 049                                                                                      |
+| Escopo fora   | Inbox multicanal (F5) e motores (F6) → SPEC 049. **Duas peças do PRD §10.2/§10.3, marcadas ali como "falta F4", na prática são de motor e migraram para a 049**: `sendViaFallbackChannel` ([engine.ts:975](../src/lib/automations/engine.ts#L975)) ainda lança erro em vez de enviar; `channel_cold_sends` (tabela de contagem do teto de envio frio) não existe. |
 | Migrações     | **055** (canais) · **056** (instâncias) · **059** (conversa por canal — renumerada de 057; ver §3) · **060** (merge por canal, §6.6) |
 | Servidor alvo | `https://go.local.ia.br` — Evolution GO v1.0, **91 endpoints**                                                                       |
-| Data          | 2026-08-12                                                                                                                           |
+| Data          | 2026-08-14                                                                                                                           |
 
 ---
 
