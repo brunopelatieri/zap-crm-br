@@ -328,7 +328,8 @@
       "manageTags": "Gerenciar etiquetas de {name}",
       "manageTagsShort": "Gerenciar etiquetas",
       "claimConversation": "Assumir conversa com {name}",
-      "claimConversationShort": "Assumir conversa"
+      "claimConversationShort": "Assumir conversa",
+      "channelBadgeTitle": "Esta conversa passa por {channel}"
     },
     "messageThread": {
       "assignedElsewhereWarning": "Esta conversa é de {name}. Enviar uma mensagem vai atribuí-la a você.",

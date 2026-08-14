@@ -26,24 +26,26 @@ Tudo em modo **single-tenant**: `account_id` e `user_id` são constantes fixas n
 
 ```json
 {
-  "name": "",                    // OBRIGATÓRIO
-  "phone": "",                   // OBRIGATÓRIO (aceita "(19) 9 99249 65-98", E.164, etc.)
-  "email": "",                   // opcional
-  "company": "",                 // opcional
-  "tag": "",                     // opcional
-  "tag_create": true,            // opcional (default: false se ausente)
-  "contact_custom_values": [     // opcional
+  "name": "", // OBRIGATÓRIO
+  "phone": "", // OBRIGATÓRIO (aceita "(19) 9 99249 65-98", E.164, etc.)
+  "email": "", // opcional
+  "company": "", // opcional
+  "tag": "", // opcional
+  "tag_create": true, // opcional (default: false se ausente)
+  "contact_custom_values": [
+    // opcional
     {
-      "field_1": "",             // chave = field_name em custom_fields; valor = value
+      "field_1": "", // chave = field_name em custom_fields; valor = value
       "field_2": "",
       "...": "..."
     }
   ],
-  "contact_notes": []            // opcional — array de strings, uma nota por elemento (ver D7)
+  "contact_notes": [] // opcional — array de strings, uma nota por elemento (ver D7)
 }
 ```
 
 ### Regras de validação (node `setData`, já existente — a estender)
+
 - `email`: validado por regex; resultado em `valid_email` (não bloqueia o fluxo).
 - `phone`: validado/normalizado para BR (celular/fixo, 67 DDDs Anatel); resultado em `valid_number` + `tipo`.
 - **`valid_number = false` → não prossegue** (branch falso do node `If` responde erro).
@@ -53,14 +55,14 @@ Tudo em modo **single-tenant**: `account_id` e `user_id` são constantes fixas n
 
 ## 3. Modelo de dados relevante (Supabase)
 
-| Tabela | Campos-chave | Observações |
-|---|---|---|
-| `contacts` | `id`, `user_id*`, `account_id*`, `phone*`, `name`, `email`, `company`, `phone_normalized` | `phone_normalized` é **GENERATED STORED** = `regexp_replace(phone,'\D','','g')`. **n8n nunca escreve nela.** |
-| `tags` | `id`, `user_id*`, `account_id*`, `name*`, `color` (default `#3b82f6`) | |
-| `contact_tags` | `contact_id*`, `tag_id*` | UNIQUE `(contact_id, tag_id)` |
-| `custom_fields` | `id`, `user_id*`, `account_id*`, `field_name*`, `field_type` | busca por `field_name` **case-insensitive** |
-| `contact_custom_values` | `contact_id*`, `custom_field_id*`, `value` | UNIQUE `(contact_id, custom_field_id)` |
-| `contact_notes` | `id`, `contact_id*`, `user_id*`, `account_id*`, `note_text*` | **Sem constraint UNIQUE** — todo insert é uma linha nova, nunca upsert. |
+| Tabela                  | Campos-chave                                                                              | Observações                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `contacts`              | `id`, `user_id*`, `account_id*`, `phone*`, `name`, `email`, `company`, `phone_normalized` | `phone_normalized` é **GENERATED STORED** = `regexp_replace(phone,'\D','','g')`. **n8n nunca escreve nela.** |
+| `tags`                  | `id`, `user_id*`, `account_id*`, `name*`, `color` (default `#3b82f6`)                     |                                                                                                              |
+| `contact_tags`          | `contact_id*`, `tag_id*`                                                                  | UNIQUE `(contact_id, tag_id)`                                                                                |
+| `custom_fields`         | `id`, `user_id*`, `account_id*`, `field_name*`, `field_type`                              | busca por `field_name` **case-insensitive**                                                                  |
+| `contact_custom_values` | `contact_id*`, `custom_field_id*`, `value`                                                | UNIQUE `(contact_id, custom_field_id)`                                                                       |
+| `contact_notes`         | `id`, `contact_id*`, `user_id*`, `account_id*`, `note_text*`                              | **Sem constraint UNIQUE** — todo insert é uma linha nova, nunca upsert.                                      |
 
 `*` = NOT NULL. Índice único de dedup de contato: `idx_contacts_account_phone_normalized` = UNIQUE `(account_id, phone_normalized)` WHERE `phone_normalized <> ''`.
 
@@ -69,6 +71,7 @@ Tudo em modo **single-tenant**: `account_id` e `user_id` são constantes fixas n
 ## 4. Decisões de design
 
 ### D1 — Formato de `phone` armazenado (DECIDIDO)
+
 Guardar tudo em formato **internacional com DDI, sem o sinal `+`**. O node `setData` já entrega E.164 (`+5519992496598`); basta remover o `+`.
 
 - `contacts.phone` = E.164 sem `+` → ex.: `+5519992496598 → 5519992496598`.
@@ -78,19 +81,25 @@ Guardar tudo em formato **internacional com DDI, sem o sinal `+`**. O node `setD
 Dedup por `(account_id, phone_normalized)` passa a usar a chave **com DDI** (`5519...`). O valor E.164 com `+` (`phone_e164`) permanece disponível no fluxo para a camada de envio WhatsApp (fora do escopo desta SPEC).
 
 ### D2 — Duplicata de contato (var de CONFIG)
+
 Nova constante `update_existing_contact` (boolean) no node `CONFIG`:
+
 - `true` → contato já existe: **PATCH** de `name`, `email`, `company` (sobrescreve).
 - `false` → contato já existe: **não altera** os dados existentes.
 - Em ambos os casos, o fluxo **continua** para tags e custom fields usando o `id` do contato existente.
 
 ### D3 — Tags: sempre aditivo
+
 Independente de `update_existing_contact`, tags **nunca são removidas**. Só se **acrescenta** a relação em `contact_tags` que ainda não existir (dedup via UNIQUE `(contact_id, tag_id)`).
 
 ### D4 — Custom values em duplicata
-Se a relação `(contact_id, custom_field_id)` já existir, faz **UPSERT** (atualiza `value` para o mais recente). Recomendação: manter upsert para refletir o dado mais atual. *(Opcional: gatear a sobrescrita por `update_existing_contact` — não adotado por padrão; decidir no deploy.)*
+
+Se a relação `(contact_id, custom_field_id)` já existir, faz **UPSERT** (atualiza `value` para o mais recente). Recomendação: manter upsert para refletir o dado mais atual. _(Opcional: gatear a sobrescrita por `update_existing_contact` — não adotado por padrão; decidir no deploy.)_
 
 ### D5 — Normalização (slug) da tag
+
 Regra de `slugify(tag)`:
+
 1. `trim()`.
 2. Remover acentos → ASCII (`NFD` + remove diacríticos; `ç → c`, `ã → a`, `é → e`).
 3. Espaços (um ou mais) → `_`.
@@ -99,11 +108,13 @@ Regra de `slugify(tag)`:
 6. **Case:** preservar o original (usuário não pediu lowercase). ⚠️ Risco de duplicata `VIP` vs `vip` — a busca de existência usa `ilike` (case-insensitive) para mitigar; decidir no deploy se força lowercase.
 
 ### D6 — Lookups
+
 - Tag: busca por `name` com `ilike` (case-insensitive) filtrando por `account_id`.
 - Custom field: busca por `field_name` com `ilike` filtrando por `account_id`.
 - Escrita via Supabase REST (`/rest/v1/...`) com header `Authorization: Bearer <service_role>` + `apikey`. Relações usam `Prefer: resolution=ignore-duplicates` (contact_tags) e `resolution=merge-duplicates` (contact_custom_values).
 
 ### D7 — Notas de contato (`contact_notes`) — DECIDIDO 2026-07-22
+
 Novo campo opcional no input: `contact_notes` — **array de strings**, uma nota por elemento:
 
 ```json
@@ -167,7 +178,7 @@ Além dos campos atuais (`valid_email`, `valid_number`, `tipo`, `phone` E.164), 
 
 ```js
 // após montar telefoneResult.e164 = "+55DDDNUMERO"
-const e164 = telefoneResult.e164;                       // "+5519992496598"
+const e164 = telefoneResult.e164; // "+5519992496598"
 const phone_ddi = e164 ? e164.replace(/^\+/, '') : null; // "5519992496598" (DDI sem +)
 
 return {
@@ -176,9 +187,9 @@ return {
     valid_email: emailValido,
     valid_number: telefoneResult.valido,
     tipo: telefoneResult.tipo,
-    phone_e164: e164,      // com +, para camada WhatsApp (futuro)
-    phone_ddi: phone_ddi   // sem +, vai para contacts.phone (D1)
-  }
+    phone_e164: e164, // com +, para camada WhatsApp (futuro)
+    phone_ddi: phone_ddi, // sem +, vai para contacts.phone (D1)
+  },
 };
 ```
 
@@ -190,11 +201,11 @@ return {
 
 Adicionar às assignments existentes (`supabase_url`, `supabase_anon_service_role`):
 
-| name | type | valor |
-|---|---|---|
-| `account_id` | string | `<UUID fixo da conta>` |
-| `user_id` | string | `<UUID fixo do usuário owner>` |
-| `update_existing_contact` | boolean | `true` \| `false` |
+| name                      | type    | valor                          |
+| ------------------------- | ------- | ------------------------------ |
+| `account_id`              | string  | `<UUID fixo da conta>`         |
+| `user_id`                 | string  | `<UUID fixo do usuário owner>` |
+| `update_existing_contact` | boolean | `true` \| `false`              |
 
 > Reposicionar `CONFIG` **antes** do Lookup Contact (hoje está no fim). Os segredos permanecem no node — considerar migrar `service_role` para credencial/variável n8n em iteração futura (ver §10).
 
@@ -208,6 +219,7 @@ Adicionar às assignments existentes (`supabase_url`, `supabase_anon_service_rol
 - **Erro Supabase** (status ≥ 400 em insert de contato): abortar e responder 500 com corpo do erro; **não** prosseguir para tags/custom.
 - **Erro em ramo tag/custom**: logar mas não derrubar o contato já criado (contato é o núcleo; relações são best-effort). Definir no deploy se falha de relação vira 207/parcial.
 - **Resposta de sucesso** (200):
+
 ```json
 {
   "ok": true,
@@ -226,7 +238,7 @@ Adicionar às assignments existentes (`supabase_url`, `supabase_anon_service_rol
 1. **Contato novo mínimo** (`name`+`phone`) → 1 linha em `contacts`; `phone` = E.164 sem `+` (ex.: `5519992496598`); `phone_normalized` gerada automaticamente = mesmos dígitos com DDI; resposta `contact_action:"created"`.
 2. **Contato duplicado + `update_existing_contact=true`** → `name/email/company` atualizados; `contact_action:"updated"`; sem duplicar linha.
 3. **Contato duplicado + `update_existing_contact=false`** → dados originais intactos; `contact_action:"unchanged"`; fluxo segue para tags/custom.
-4. **Tag existente** → relação criada em `contact_tags`; rodar 2×  não duplica (UNIQUE respeitada); nenhuma tag pré-existente do contato é removida.
+4. **Tag existente** → relação criada em `contact_tags`; rodar 2× não duplica (UNIQUE respeitada); nenhuma tag pré-existente do contato é removida.
 5. **Tag inexistente + `tag_create=true`** → tag criada com slug normalizado (sem acento/ç, espaços→`_`, só `[A-Za-z0-9_-]`) + relação criada.
 6. **Tag inexistente + `tag_create=false`** → nada criado, `action:"skipped_not_created"`.
 7. **Custom field existente (case-insensitive)** → valor gravado em `contact_custom_values`; re-run atualiza `value`.
@@ -268,11 +280,11 @@ O JSON do workflow de origem contém a **`service_role` key** do Supabase em tex
 
 ### Histórico de versões do workflow
 
-| Workflow ID | Status | Observação |
-|---|---|---|
-| `MLytVzkcOjzxkRUJ` | apagado | Primeira versão de teste, path `contact-ingestion-test`. |
+| Workflow ID        | Status                               | Observação                                                                                                                                                                                                           |
+| ------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MLytVzkcOjzxkRUJ` | apagado                              | Primeira versão de teste, path `contact-ingestion-test`.                                                                                                                                                             |
 | `5YAnUZyLQ9r4vncy` | **desativado, pendente de exclusão** | Versão sem o ramo de notas. Recriada como `YwZ2Md3aZddb0F5c` ao adicionar D7 (ver §14 item 4 — não dá pra editar workflow já ativado uma vez). Apagar assim que a conexão MCP `bmcp-n8n` estiver disponível de novo. |
-| `YwZ2Md3aZddb0F5c` | **ativo (atual)** | Versão completa: contact + tags + custom fields + notes. |
+| `YwZ2Md3aZddb0F5c` | **ativo (atual)**                    | Versão completa: contact + tags + custom fields + notes.                                                                                                                                                             |
 
 ## 13. Conflito com workflow de produção existente
 
@@ -289,4 +301,7 @@ O path `send-whatsapp-welcome` já pertence a um workflow ATIVO em produção (`
 O arquivo `workflow_contact_ingestion.json` já reflete todas essas correções.
 
 4. **Bug de plataforma no rename via API (`update_workflow`/`update_workflow_partial`).** Ao tentar apenas renomear o path do webhook num workflow já ativado uma vez, toda tentativa de PATCH/PUT passou a falhar com `request/body/settings must NOT have additional properties` — o GET da API retorna `settings.binaryMode` mas o schema de validação do PUT não aceita esse campo de volta (incompatibilidade da própria API do n8n, não do conteúdo do workflow). **Contorno:** recriar o workflow do zero via `create_workflow` com o path já correto (settings limpos por padrão) em vez de tentar editar o existente. O workflow antigo (`MLytVzkcOjzxkRUJ`) foi apagado após o novo (`5YAnUZyLQ9r4vncy`) ser validado com smoke test. **Lição:** evitar múltiplas idas de ativar/desativar/editar no mesmo workflow via essas ferramentas; se precisar mudar `path`/`webhookId` depois de ativar uma vez, considerar recriar em vez de editar.
+
+```
+
 ```

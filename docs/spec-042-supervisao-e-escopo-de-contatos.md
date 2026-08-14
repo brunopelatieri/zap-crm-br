@@ -16,12 +16,12 @@ A §6 da [SPEC de abas + atribuição](spec-inbox-tabs-assignment.md) listou set
 pendentes (D1–D7) declaradas como **bloqueadoras da implementação**. Quatro foram
 resolvidas de forma explícita e documentada na entrega:
 
-| | Decisão | Como ficou |
-| --- | --- | --- |
-| D1 | Aba "Open" = `IS NULL` ou `status='open'`? | `assigned_agent_id IS NULL` ([tabs.ts](../src/lib/inbox/tabs.ts)) |
-| D3 | Filtro de status na aba "Chat" | mantido nas duas abas |
-| D4 | Rótulos literais | `Chat` / **`Fila`** / `Contatos` em PT-BR ([pt-BR.json:212-216](../messages/pt-BR.json#L212-L216)) |
-| D6 | Backfill | híbrido, com snapshot reversível (039, seção 12) |
+|     | Decisão                                    | Como ficou                                                                                         |
+| --- | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| D1  | Aba "Open" = `IS NULL` ou `status='open'`? | `assigned_agent_id IS NULL` ([tabs.ts](../src/lib/inbox/tabs.ts))                                  |
+| D3  | Filtro de status na aba "Chat"             | mantido nas duas abas                                                                              |
+| D4  | Rótulos literais                           | `Chat` / **`Fila`** / `Contatos` em PT-BR ([pt-BR.json:212-216](../messages/pt-BR.json#L212-L216)) |
+| D6  | Backfill                                   | híbrido, com snapshot reversível (039, seção 12)                                                   |
 
 **As outras três nunca foram decididas — foram implementadas por omissão.** O código
 escolheu um caminho, ele funciona, mas ninguém registrou a escolha nem mediu o efeito.
@@ -70,11 +70,11 @@ contatos ([contacts-directory.tsx:46](../src/components/inbox/contacts-directory
 Antes da 039 o modelo era plano: o dono da conta abria o Inbox e via o atendimento
 inteiro. Depois da 039 ele vê **as conversas atribuídas a ele** — que, para um dono que
 não atende pessoalmente, é **nenhuma** — mais a fila. A conta ficou sem supervisão de
-atendimento pela interface. Não há tela onde a pergunta *"o que o agente A está
-respondendo?"* seja respondível.
+atendimento pela interface. Não há tela onde a pergunta _"o que o agente A está
+respondendo?"_ seja respondível.
 
-Este era exatamente o alerta do D7 (*"Admin vê 'todas' na aba Chat (fica ilegível em
-contas grandes) ou tem um seletor 'ver como: {agente}'?"*). A entrega não escolheu
+Este era exatamente o alerta do D7 (_"Admin vê 'todas' na aba Chat (fica ilegível em
+contas grandes) ou tem um seletor 'ver como: {agente}'?"_). A entrega não escolheu
 nenhuma das duas: ficou sem opção alguma.
 
 ### Decisão recomendada: seletor "ver como"
@@ -141,7 +141,7 @@ Correto e coerente com o escopo declarado da 039
 ([017:386](../supabase/migrations/017_account_sharing.sql#L386)).
 
 **O problema é o que a tela afirma.** O subtítulo em PT-BR é
-*"Contatos das conversas atribuídas a você"* ([pt-BR.json:221](../messages/pt-BR.json#L221)),
+_"Contatos das conversas atribuídas a você"_ ([pt-BR.json:221](../messages/pt-BR.json#L221)),
 lido naturalmente como um limite de acesso. Não é. Qualquer agente logado obtém a base
 inteira de contatos da conta — nome, telefone, e-mail, empresa — com uma requisição
 direta ao PostgREST usando a `anon key` que já está no bundle:
@@ -152,7 +152,7 @@ curl "$SUPABASE_URL/rest/v1/contacts?select=name,phone,email,company" \
 ```
 
 É precisamente o **"falso isolamento"** contra o qual a F-10 da SPEC original alertava:
-*"Filtrar a lista por `user_id` no cliente seria falso isolamento"*. A entrega evitou o
+_"Filtrar a lista por `user_id` no cliente seria falso isolamento"_. A entrega evitou o
 erro técnico (não fingiu que o filtro era segurança) mas deixou o erro **de
 comunicação** na interface.
 
@@ -176,8 +176,8 @@ O contato é, no modelo do produto, um **ativo da conta**, não do agente. O fil
 ### Implementação
 
 1. **Texto**: `subtitleMine` deixa de sugerir limite de acesso. Sugestão PT-BR:
-   *"Contatos das suas conversas"* com um subtexto ou tooltip *"Todos os contatos da
-   conta permanecem acessíveis em Contatos"*, e link para `/contacts`. Ajustar
+   _"Contatos das suas conversas"_ com um subtexto ou tooltip _"Todos os contatos da
+   conta permanecem acessíveis em Contatos"_, e link para `/contacts`. Ajustar
    [en.json](../messages/en.json) em paralelo.
 2. **Comentário do componente**: atualizar
    [contacts-directory.tsx:20-34](../src/components/inbox/contacts-directory.tsx#L20-L34)
@@ -231,8 +231,8 @@ Quem precisa auditar atendimento é promovido a `admin`.
 ### Implementação
 
 1. **Aba "Chat" vazia para `viewer` precisa de estado vazio explicativo**, não de uma
-   lista em branco: *"Conversas atribuídas a você aparecem aqui. Seu papel (Leitor) não
-   recebe atribuições."* Hoje o `viewer` vê um vazio indistinguível de erro.
+   lista em branco: _"Conversas atribuídas a você aparecem aqui. Seu papel (Leitor) não
+   recebe atribuições."_ Hoje o `viewer` vê um vazio indistinguível de erro.
 2. **Documentar a mudança de papel** onde os papéis são explicados ao usuário (tela de
    membros / convite): o `viewer` deixou de ser "vê tudo, não escreve" e passou a ser
    "vê a fila, não escreve".
@@ -245,40 +245,42 @@ Quem precisa auditar atendimento é promovido a `admin`.
 
 Nenhuma migração obrigatória. Tudo é cliente + i18n, e cada fase é independente.
 
-| Fase | # | Alvo | Ação |
-| --- | --- | --- | --- |
-| **1 — texto** | 1.1 | [messages/pt-BR.json](../messages/pt-BR.json), [en.json](../messages/en.json) | `subtitleMine` deixa de prometer isolamento (§2) |
-| | 1.2 | [contacts-directory.tsx](../src/components/inbox/contacts-directory.tsx) | comentário: D2 fechada, com o porquê |
-| | 1.3 | Inbox | estado vazio explicativo da aba "Chat" para `viewer` (§3) |
-| **2 — supervisão** | 2.1 | `src/hooks/use-account-members.ts` | **novo** — extrair o fetch de `profiles` hoje embutido no [message-thread.tsx:229](../src/components/inbox/message-thread.tsx#L229) |
-| | 2.2 | [tabs.ts](../src/lib/inbox/tabs.ts) + [tabs.test.ts](../src/lib/inbox/tabs.test.ts) | predicados recebem `viewAsUserId` |
-| | 2.3 | [use-inbox-tabs.ts](../src/hooks/use-inbox-tabs.ts) | `viewAs` na URL |
-| | 2.4 | [use-conversation-feed.ts](../src/hooks/use-conversation-feed.ts) | invalidar cache ao trocar de alvo |
-| | 2.5 | [inbox-tabs.tsx](../src/components/inbox/inbox-tabs.tsx) | seletor sob `useCan('view-all-conversations')` |
-| | 2.6 | [inbox/page.tsx](../src/app/(dashboard)/inbox/page.tsx) | roteamento de realtime comparando com o alvo, não com `user.id` |
-| | 2.7 | `messages/*.json` | `Inbox.tabs.viewAs*` |
-| **3 — docs** | 3.1 | esta SPEC | registro de D2/D5/D7 como fechadas |
+| Fase               | #   | Alvo                                                                                | Ação                                                                                                                                |
+| ------------------ | --- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **1 — texto**      | 1.1 | [messages/pt-BR.json](../messages/pt-BR.json), [en.json](../messages/en.json)       | `subtitleMine` deixa de prometer isolamento (§2)                                                                                    |
+|                    | 1.2 | [contacts-directory.tsx](../src/components/inbox/contacts-directory.tsx)            | comentário: D2 fechada, com o porquê                                                                                                |
+|                    | 1.3 | Inbox                                                                               | estado vazio explicativo da aba "Chat" para `viewer` (§3)                                                                           |
+| **2 — supervisão** | 2.1 | `src/hooks/use-account-members.ts`                                                  | **novo** — extrair o fetch de `profiles` hoje embutido no [message-thread.tsx:229](../src/components/inbox/message-thread.tsx#L229) |
+|                    | 2.2 | [tabs.ts](../src/lib/inbox/tabs.ts) + [tabs.test.ts](../src/lib/inbox/tabs.test.ts) | predicados recebem `viewAsUserId`                                                                                                   |
+|                    | 2.3 | [use-inbox-tabs.ts](../src/hooks/use-inbox-tabs.ts)                                 | `viewAs` na URL                                                                                                                     |
+|                    | 2.4 | [use-conversation-feed.ts](../src/hooks/use-conversation-feed.ts)                   | invalidar cache ao trocar de alvo                                                                                                   |
+|                    | 2.5 | [inbox-tabs.tsx](../src/components/inbox/inbox-tabs.tsx)                            | seletor sob `useCan('view-all-conversations')`                                                                                      |
+|                    | 2.6 | [inbox/page.tsx](<../src/app/(dashboard)/inbox/page.tsx>)                           | roteamento de realtime comparando com o alvo, não com `user.id`                                                                     |
+|                    | 2.7 | `messages/*.json`                                                                   | `Inbox.tabs.viewAs*`                                                                                                                |
+| **3 — docs**       | 3.1 | esta SPEC                                                                           | registro de D2/D5/D7 como fechadas                                                                                                  |
 
 ---
 
 ## 5. Riscos e critérios de aceite
 
 **Riscos**
+
 - **Roteamento de realtime com `viewAs`** (2.6) é o ponto delicado: `convTabMapRef`
-  ([inbox/page.tsx](../src/app/(dashboard)/inbox/page.tsx)) mapeia conversa → aba
+  ([inbox/page.tsx](<../src/app/(dashboard)/inbox/page.tsx>)) mapeia conversa → aba
   assumindo "minhas". Com alvo variável, um evento de conversa do agente observado tem
   de cair no feed certo — e trocar o alvo tem de **limpar** o mapa junto com o cache,
   senão sobram entradas apontando para a aba errada.
 - **A conversa ativa sobrevive à troca de alvo?** Recomendação: **sim** — a thread
   continua aberta (o admin tem acesso pela RLS), só a lista muda. Fazer
   `setActiveConversation(null)` reintroduziria o bug de remount já documentado em
-  [inbox/page.tsx:658](../src/app/(dashboard)/inbox/page.tsx#L658).
+  [inbox/page.tsx:658](<../src/app/(dashboard)/inbox/page.tsx#L658>).
 - **Admin respondendo na carteira alheia**: o envio dispara o claim automático do
   servidor (F-07 da SPEC original) e **transfere a conversa para o admin**. É por isso
   que o aviso do item 5 da §1 não é enfeite — sem ele, um admin "só dando uma olhada"
   rouba a conversa do agente ao responder.
 
 **Critérios de aceite**
+
 1. `admin` e `owner` conseguem, pela UI, abrir a carteira de outro agente e ler a thread.
 2. `agent` **não** vê o seletor; forçar `?viewAs=<outro>` na URL não devolve linha alguma
    (a RLS decide — o front não precisa bloquear, mas deve degradar sem quebrar).
@@ -293,8 +295,8 @@ Nenhuma migração obrigatória. Tudo é cliente + i18n, e cada fase é independ
 
 Para citar em migrações e SPECs futuras:
 
-| Decisão | Fechamento | Onde |
-| --- | --- | --- |
-| **D2** | `contacts` permanece com escopo de **conta**. O filtro da aba Contatos é ergonomia, não controle de acesso. | §2 |
-| **D5** | `viewer` permanece restrito à fila. Supervisão se obtém por promoção a `admin`. | §3 |
-| **D7** | Admin/owner supervisionam por **seletor "ver como"**, não por "ver todas na aba Chat". | §1 |
+| Decisão | Fechamento                                                                                                  | Onde |
+| ------- | ----------------------------------------------------------------------------------------------------------- | ---- |
+| **D2**  | `contacts` permanece com escopo de **conta**. O filtro da aba Contatos é ergonomia, não controle de acesso. | §2   |
+| **D5**  | `viewer` permanece restrito à fila. Supervisão se obtém por promoção a `admin`.                             | §3   |
+| **D7**  | Admin/owner supervisionam por **seletor "ver como"**, não por "ver todas na aba Chat".                      | §1   |

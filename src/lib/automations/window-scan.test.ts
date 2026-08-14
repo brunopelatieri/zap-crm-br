@@ -43,7 +43,8 @@ vi.mock('./admin-client', () => {
   }) {
     const { table, type } = ops;
 
-    if (table === 'automations') return { data: state.automations, error: null };
+    if (table === 'automations')
+      return { data: state.automations, error: null };
 
     if (table === 'conversations') {
       state.conversationFilters = ops.filters;
@@ -178,7 +179,9 @@ function conversation(
     id,
     contact_id: contactId,
     last_customer_message_at: anchor,
-    last_message_at: new Date(new Date(anchor).getTime() + 60_000).toISOString(),
+    last_message_at: new Date(
+      new Date(anchor).getTime() + 60_000
+    ).toISOString(),
     ...overrides,
   };
 }
@@ -472,7 +475,11 @@ describe('query shape', () => {
       ACCOUNT,
     ]);
     // Literal: sem ele o índice PARCIAL de §5.2 não é aproveitado.
-    expect(h.state.conversationFilters).toContainEqual(['eq', 'status', 'open']);
+    expect(h.state.conversationFilters).toContainEqual([
+      'eq',
+      'status',
+      'open',
+    ]);
   });
 
   it('the eligibility band is exactly margin_minutes wide, ending at window close', async () => {

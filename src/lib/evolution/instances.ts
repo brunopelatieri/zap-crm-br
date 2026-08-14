@@ -205,7 +205,7 @@ export async function getInstanceLimitStatus(
   });
 }
 
-interface ResolvedInstance {
+export interface ResolvedInstance {
   instanceId: string;
   channelId: string;
   accountId: string;
@@ -215,25 +215,21 @@ interface ResolvedInstance {
   channelName: string;
 }
 
-/** Resolve uma instância PELA CONTA e decripta o token. Tenancy aqui é
- *  defesa em profundidade: a rota já filtra por sessão, mas o acesso
- *  via `supabaseAdmin()` ignora RLS, então o filtro explícito por
- *  `account_id` é o único que resta. */
-async function resolveInstance(
-  accountId: string,
-  instanceId: string
-): Promise<ResolvedInstance> {
+/**
+ * Junta `evolution_instances` + `channels` + o segredo decriptado, dada
+ * uma linha de `evolution_instances` já resolvida e escopada à conta.
+ * Compartilhado pelas duas formas de resolver: por `instanceId` (rotas
+ * de gerenciamento, F3) e por `channelId` (adaptador de mensageria, F4
+ * — `ChannelContext` só carrega o id do CANAL, nunca o id da instância).
+ */
+async function loadResolvedInstance(instance: {
+  id: string;
+  channel_id: string;
+  account_id: string;
+  remote_instance_id: string | null;
+  remote_instance_name: string;
+}): Promise<ResolvedInstance> {
   const db = supabaseAdmin();
-  const { data: instance, error } = await db
-    .from('evolution_instances')
-    .select(
-      'id, channel_id, account_id, remote_instance_id, remote_instance_name'
-    )
-    .eq('id', instanceId)
-    .eq('account_id', accountId)
-    .maybeSingle();
-  if (error || !instance) throw new InstanceNotFoundError();
-
   const [{ data: channel }, { data: secret }] = await Promise.all([
     db
       .from('channels')
@@ -257,6 +253,50 @@ async function resolveInstance(
     token: decrypt(secret.instance_token_encrypted),
     channelName: channel.name,
   };
+}
+
+/** Resolve uma instância PELA CONTA e decripta o token. Tenancy aqui é
+ *  defesa em profundidade: a rota já filtra por sessão, mas o acesso
+ *  via `supabaseAdmin()` ignora RLS, então o filtro explícito por
+ *  `account_id` é o único que resta. */
+async function resolveInstance(
+  accountId: string,
+  instanceId: string
+): Promise<ResolvedInstance> {
+  const db = supabaseAdmin();
+  const { data: instance, error } = await db
+    .from('evolution_instances')
+    .select(
+      'id, channel_id, account_id, remote_instance_id, remote_instance_name'
+    )
+    .eq('id', instanceId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (error || !instance) throw new InstanceNotFoundError();
+  return loadResolvedInstance(instance);
+}
+
+/**
+ * Resolve uma instância PELO CANAL — é o que o adaptador de mensageria
+ * (F4) usa: `ChannelContext.channel.id` é sempre `channels.id`, nunca
+ * `evolution_instances.id` (esse é um detalhe interno de gerenciamento
+ * que o resto do sistema não vê).
+ */
+export async function resolveInstanceByChannelId(
+  accountId: string,
+  channelId: string
+): Promise<ResolvedInstance> {
+  const db = supabaseAdmin();
+  const { data: instance, error } = await db
+    .from('evolution_instances')
+    .select(
+      'id, channel_id, account_id, remote_instance_id, remote_instance_name'
+    )
+    .eq('channel_id', channelId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (error || !instance) throw new InstanceNotFoundError();
+  return loadResolvedInstance(instance);
 }
 
 // ------------------------------------------------------------
@@ -589,6 +629,144 @@ export async function getInstanceLiveStatus(
     .eq('id', resolved.channelId);
 
   return { connected, loggedIn, name };
+}
+
+// ------------------------------------------------------------
+// Vínculo canal ↔ número do WhatsApp
+// ------------------------------------------------------------
+
+export interface BindChannelResult {
+  /** O canal que a instância passa a usar — o adotado, quando houve
+   *  adoção; o próprio, quando não. */
+  channelId: string;
+  adopted: boolean;
+}
+
+/**
+ * O que identifica um canal QRCode é o NÚMERO, não a instância.
+ *
+ * O problema que isto resolve
+ *
+ *   Excluir a instância e parear o mesmo número de novo criava um
+ *   `channels` novo. Como `conversations.channel_id` é NOT NULL desde a
+ *   059 e a busca por conversa filtra por canal, todo o histórico do
+ *   número ficava preso ao canal velho e o inbox recomeçava vazio — com
+ *   as conversas antigas invisíveis, não apagadas, o que é pior.
+ *
+ *   O nome da instância é rótulo do operador ("bruno", "bruno teste 1")
+ *   e pode mudar à vontade. O vínculo real é o número: reconectou o
+ *   mesmo WhatsApp, é o mesmo canal, e a conversa continua de onde
+ *   parou.
+ *
+ * Quando roda
+ *
+ *   No evento de conexão do webhook, único momento em que o número fica
+ *   conhecido — a Evolution só informa o JID depois do pareamento. Na
+ *   criação da instância ainda não há número nenhum, e é por isso que o
+ *   canal nasce com `identifier` nulo e é reconciliado aqui.
+ *
+ * O que NÃO faz
+ *
+ *   Não move conversas entre canais. Se o canal recém-criado já tiver
+ *   conversas (impossível no fluxo normal — mensagem só trafega depois
+ *   do pareamento, que é o que dispara esta função), a adoção é abortada
+ *   com log: dois canais separados são um incômodo, histórico órfão é
+ *   perda de dado.
+ */
+export async function bindChannelToPhone(input: {
+  accountId: string;
+  instanceId: string;
+  channelId: string;
+  phone: string;
+}): Promise<BindChannelResult> {
+  const { accountId, instanceId, channelId, phone } = input;
+  const db = supabaseAdmin();
+
+  const { data: current } = await db
+    .from('channels')
+    .select('name, identifier')
+    .eq('id', channelId)
+    .maybeSingle();
+
+  if (current?.identifier !== phone) {
+    await db.from('channels').update({ identifier: phone }).eq('id', channelId);
+  }
+
+  // Canal mais antigo desta conta que já atendeu este número. `disabled`
+  // entra na busca de propósito: é exatamente o estado em que
+  // `deleteEvolutionInstance` deixa o canal ao excluir a instância.
+  const { data: previous } = await db
+    .from('channels')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('type', 'whatsapp_qr')
+    .eq('identifier', phone)
+    .neq('id', channelId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!previous) return { channelId, adopted: false };
+
+  const { count: strandedConversations } = await db
+    .from('conversations')
+    .select('id', { count: 'exact', head: true })
+    .eq('channel_id', channelId);
+
+  if ((strandedConversations ?? 0) > 0) {
+    console.warn(
+      `[evolution] canal ${channelId} já tem ${strandedConversations} conversa(s); ` +
+        `adoção de ${previous.id} abortada para não deixar histórico órfão. ` +
+        `O número ${phone} fica com dois canais — resolver manualmente.`
+    );
+    return { channelId, adopted: false };
+  }
+
+  const { error: repointError } = await db
+    .from('evolution_instances')
+    .update({ channel_id: previous.id })
+    .eq('id', instanceId);
+  if (repointError) {
+    console.error(
+      '[evolution] falha ao reapontar a instância para o canal do número:',
+      repointError.message
+    );
+    return { channelId, adopted: false };
+  }
+
+  // O rótulo novo vence: o operador acabou de escolhê-lo ao recriar a
+  // instância, e o canal adotado pode carregar um nome de meses atrás.
+  await db
+    .from('channels')
+    .update({
+      identifier: phone,
+      status: 'connected',
+      status_detail: null,
+      ...(current?.name ? { name: current.name } : {}),
+    })
+    .eq('id', previous.id);
+
+  // Sem instância e sem conversa, o canal recém-criado não serve para
+  // nada — deixá-lo poluiria a lista a cada reconexão.
+  const { error: deleteError } = await db
+    .from('channels')
+    .delete()
+    .eq('id', channelId);
+  if (deleteError) {
+    await db
+      .from('channels')
+      .update({
+        status: 'disabled',
+        status_detail: `Substituído pelo canal do número ${phone}`,
+      })
+      .eq('id', channelId);
+  }
+
+  console.warn(
+    `[evolution] número ${phone} reconectado — instância ${instanceId} adotou ` +
+      `o canal ${previous.id}, preservando o histórico de conversas.`
+  );
+  return { channelId: previous.id, adopted: true };
 }
 
 // ------------------------------------------------------------

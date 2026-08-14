@@ -1,5 +1,39 @@
 import { describe, expect, it } from 'vitest';
-import { buildMediaPath, MEDIA_MAX_BYTES_BY_KIND } from './upload-media';
+import {
+  baseMimeType,
+  buildMediaPath,
+  MEDIA_MAX_BYTES_BY_KIND,
+} from './upload-media';
+
+/**
+ * `allowed_mime_types` do bucket é comparado como STRING LITERAL pelo
+ * Supabase Storage, e lista tipos puros. Qualquer parâmetro no mimetype
+ * derruba o upload de uma mídia perfeitamente permitida.
+ */
+describe('baseMimeType', () => {
+  it('descarta o parâmetro de codec do WhatsApp', () => {
+    // Todo áudio de voz do WhatsApp chega assim.
+    expect(baseMimeType('audio/ogg; codecs=opus')).toBe('audio/ogg');
+  });
+
+  it('descarta o parâmetro sem espaço, como o MediaRecorder produz', () => {
+    // As duas grafias são válidas na RFC 2045.
+    expect(baseMimeType('audio/webm;codecs=opus')).toBe('audio/webm');
+    expect(baseMimeType('video/webm;codecs=vp8,opus')).toBe('video/webm');
+  });
+
+  it('normaliza a caixa e não mexe num tipo já puro', () => {
+    expect(baseMimeType('IMAGE/JPEG')).toBe('image/jpeg');
+    expect(baseMimeType('application/pdf')).toBe('application/pdf');
+  });
+
+  it('ausência vira null — quem chama omite o contentType', () => {
+    expect(baseMimeType(null)).toBeNull();
+    expect(baseMimeType(undefined)).toBeNull();
+    expect(baseMimeType('')).toBeNull();
+    expect(baseMimeType('  ; charset=utf-8')).toBeNull();
+  });
+});
 
 const ACCOUNT = '11111111-2222-3333-4444-555555555555';
 

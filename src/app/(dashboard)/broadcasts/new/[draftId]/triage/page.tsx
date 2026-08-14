@@ -189,7 +189,10 @@ export default function AudienceTriagePage() {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
         <p className="text-sm text-red-400">{t('draftNotFound')}</p>
-        <Button variant="outline" onClick={() => router.push('/broadcasts/new')}>
+        <Button
+          variant="outline"
+          onClick={() => router.push('/broadcasts/new')}
+        >
           {t('backToNew')}
         </Button>
       </div>
@@ -199,9 +202,7 @@ export default function AudienceTriagePage() {
   if (draft.status !== 'draft') {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
-        <p className="text-muted-foreground text-sm">
-          {t('draftAlreadySent')}
-        </p>
+        <p className="text-muted-foreground text-sm">{t('draftAlreadySent')}</p>
         <Button onClick={() => router.push(`/broadcasts/${draft.id}`)}>
           {t('viewBroadcast')}
         </Button>
@@ -258,7 +259,9 @@ export default function AudienceTriagePage() {
                 disabled={discarding}
                 className="bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {discarding ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {discarding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
                 {t('cancelConfirmAction')}
               </Button>
             </DialogFooter>

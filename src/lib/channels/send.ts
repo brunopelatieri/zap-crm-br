@@ -40,6 +40,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { decrypt } from '@/lib/whatsapp/encryption';
+import { resolveInstanceByChannelId } from '@/lib/evolution/instances';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 import {
   sanitizePhoneForMeta,
@@ -155,14 +156,45 @@ export interface ResolvedChannel {
 export async function resolveChannelContext(
   db: SupabaseClient,
   accountId: string,
-  channelType: ChannelType = DEFAULT_CHANNEL_TYPE
+  channelType: ChannelType = DEFAULT_CHANNEL_TYPE,
+  /**
+   * Obrigatório para `whatsapp_qr`. Ao contrário do Cloud (um canal por
+   * conta, resolvível só pelo tipo), uma conta pode ter VÁRIAS
+   * instâncias QRCode — `channelType` sozinho não desambigua qual.
+   * Quem chama (a wiring de inbox/motores por conversa — SPEC 049)
+   * precisa saber de antemão o `channels.id` da thread.
+   */
+  channelId?: string
 ): Promise<ResolvedChannel> {
+  if (channelType === 'whatsapp_qr') {
+    if (!channelId) {
+      throw new ChannelNotConfiguredError(
+        'whatsapp_qr requires an explicit channel id — resolveChannelContext cannot pick one of several instances by type alone'
+      );
+    }
+    const resolved = await resolveInstanceByChannelId(accountId, channelId);
+    const { data: channelRow, error: channelErr } = await db
+      .from('channels')
+      .select('*')
+      .eq('id', channelId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (channelErr || !channelRow) {
+      throw new ChannelNotConfiguredError();
+    }
+    return {
+      ctx: {
+        accountId,
+        channel: channelRow as Channel,
+        credentials: { instanceToken: resolved.token },
+      },
+      configRow: resolved,
+    };
+  }
+
   if (channelType !== 'whatsapp_cloud') {
-    // O adaptador da Evolution e a leitura de `channel_secrets` chegam
-    // na F4. Falhar aqui, com motivo, é melhor que montar um contexto
-    // vazio e receber um 401 do provedor três camadas abaixo.
     throw new ChannelNotConfiguredError(
-      `channel type "${channelType}" has no credential resolver yet — it lands in PRD 047 phase F4`
+      `channel type "${channelType}" has no credential resolver`
     );
   }
 
@@ -190,6 +222,104 @@ export async function resolveChannelContext(
     }),
     configRow: config,
   };
+}
+
+/**
+ * Credenciais do canal DA CONVERSA (SPEC 048 F4.1).
+ *
+ * Por que isto existe
+ *
+ *   `conversations.channel_id` é NOT NULL desde a 059, mas até esta
+ *   correção NENHUM caminho de saída o lia: `sendMessageToConversation`
+ *   e `sendAndPersistOutbound` chamavam `resolveChannelContext(db,
+ *   accountId)` sem tipo, o que cai no padrão `whatsapp_cloud`. Com a F4
+ *   fazendo conversas QRCode aparecerem no inbox, isso significava
+ *   responder uma thread do WhatsApp QRCode PELO NÚMERO OFICIAL da Meta
+ *   — mensagem cobrada, saindo de outro número, fora de qualquer janela
+ *   de 24h, e com o `message_id` do wamid que o eco `SEND_MESSAGE` da
+ *   Evolution nunca casaria.
+ *
+ *   Este helper é o único ponto que traduz conversa → canal. Os guards
+ *   de capacidade em `sendContentViaChannel` fazem o resto: um template
+ *   ou botão pedido numa conversa QR vira `ChannelCapabilityError` com
+ *   motivo legível, em vez de um 500 opaco do provedor.
+ *
+ * Compatibilidade
+ *
+ *   `channel_id` ausente (conta que nunca passou pelo backfill da 055,
+ *   ou projeto onde a 059 ainda não rodou) cai no canal Cloud, que é o
+ *   comportamento anterior — nada muda para quem só usa o oficial.
+ */
+export async function resolveChannelForConversation(
+  db: SupabaseClient,
+  accountId: string,
+  conversationId: string
+): Promise<ResolvedChannel> {
+  const { data: conversation } = await db
+    .from('conversations')
+    .select('channel_id')
+    .eq('id', conversationId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+
+  const channelId = conversation?.channel_id as string | undefined;
+  if (!channelId) {
+    return resolveChannelContext(db, accountId, DEFAULT_CHANNEL_TYPE);
+  }
+
+  // Duas queries em vez de um embed `channels!inner(type)`: a 055/059
+  // são migrações novas e o cache de schema do PostgREST costuma
+  // devolver `PGRST200` para um relacionamento recém-criado (mesma
+  // armadilha documentada em `lib/evolution/instances.ts`).
+  const { data: channel } = await db
+    .from('channels')
+    .select('type')
+    .eq('id', channelId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+
+  const channelType = (channel?.type as ChannelType | undefined) ?? undefined;
+  if (!channelType) {
+    // Canal apagado fora do fluxo normal: melhor falhar com motivo do
+    // que enviar pelo canal errado.
+    throw new ChannelNotConfiguredError(
+      `conversation ${conversationId} points at channel ${channelId}, which no longer exists in this account`
+    );
+  }
+
+  return resolveChannelContext(db, accountId, channelType, channelId);
+}
+
+/**
+ * O `channels.id` padrão da conta (migração 059).
+ *
+ * Usado pelos três pontos que abrem conversa fora do `ingest.ts`
+ * (API pública, envio do inbox por `contact_id`): nenhum deles ainda
+ * deixa o operador escolher canal, então "padrão" é sempre o certo. Cai
+ * de volta em `whatsapp_config.channel_id` quando a conta não tem
+ * `is_default` marcado (não deveria acontecer pós-055, mas uma conta
+ * criada antes do backfill não pode virar 500 opaco).
+ */
+export async function resolveDefaultChannelId(
+  db: SupabaseClient,
+  accountId: string
+): Promise<string> {
+  const { data: defaultChannel } = await db
+    .from('channels')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('is_default', true)
+    .maybeSingle();
+  if (defaultChannel?.id) return defaultChannel.id;
+
+  const { data: config } = await db
+    .from('whatsapp_config')
+    .select('channel_id')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (config?.channel_id) return config.channel_id;
+
+  throw new ChannelNotConfiguredError();
 }
 
 /**
@@ -501,6 +631,11 @@ export interface OutboundPersistSpec {
 export async function sendAndPersistOutbound(input: {
   db: SupabaseClient;
   accountId: string;
+  /**
+   * Força um tipo de canal, ignorando o da conversa. Não usado por
+   * nenhum motor — existe só para teste e para um chamador futuro que
+   * precise sobrescrever de propósito.
+   */
   channelType?: ChannelType;
   conversationId: string;
   contactId: string;
@@ -508,10 +643,14 @@ export async function sendAndPersistOutbound(input: {
   persist: OutboundPersistSpec;
 }): Promise<{ whatsapp_message_id: string }> {
   const { db, accountId, conversationId, contactId, content, persist } = input;
-  const channelType = input.channelType ?? DEFAULT_CHANNEL_TYPE;
 
   const contact = await resolveOutboundContact(db, accountId, contactId);
-  const { ctx } = await resolveChannelContext(db, accountId, channelType);
+  // O canal vem da CONVERSA, não do padrão da conta (F4.1): uma
+  // automação disparada por uma mensagem que entrou pelo QRCode tem de
+  // responder pelo QRCode. Ver `resolveChannelForConversation`.
+  const { ctx } = input.channelType
+    ? await resolveChannelContext(db, accountId, input.channelType)
+    : await resolveChannelForConversation(db, accountId, conversationId);
 
   const { providerMessageId, workingPhone } = await sendWithPhoneVariants({
     ctx,

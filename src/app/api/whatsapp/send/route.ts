@@ -12,6 +12,7 @@ import {
 } from '@/lib/whatsapp/send-message';
 import { claimConversation } from '@/lib/inbox/assignment';
 import { isUniqueViolation } from '@/lib/contacts/dedupe';
+import { resolveDefaultChannelId } from '@/lib/channels/send';
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -159,11 +160,22 @@ export async function POST(request: Request) {
         );
       }
 
+      let channelId: string;
+      try {
+        channelId = await resolveDefaultChannelId(supabase, accountId);
+      } catch {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured for this account.' },
+          { status: 400 }
+        );
+      }
+
       const resolved = await findOrCreateConversation(
         supabase,
         accountId,
         user.id,
-        contact_id
+        contact_id,
+        channelId
       );
       if (!resolved.ok) {
         return NextResponse.json(
@@ -265,13 +277,15 @@ async function findOrCreateConversation(
   supabase: SendSupabase,
   accountId: string,
   userId: string,
-  contactId: string
+  contactId: string,
+  channelId: string
 ): Promise<FindOrCreateResult> {
   const { data: existing } = await supabase
     .from('conversations')
     .select('id, assigned_agent_id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('channel_id', channelId)
     .maybeSingle();
 
   if (existing) {
@@ -288,6 +302,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: userId,
       contact_id: contactId,
+      channel_id: channelId,
       // Nasce já atribuída a quem iniciou: enviar a partir do Contato é,
       // por definição, alguém assumindo o atendimento. Poupa o
       // round-trip do claim logo em seguida — e a política

@@ -9,7 +9,10 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
   const next = searchParams.get('next');
-  const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  const safeNext =
+    next && next.startsWith('/') && !next.startsWith('//')
+      ? next
+      : '/dashboard';
 
   if (code) {
     const supabase = await createClient();

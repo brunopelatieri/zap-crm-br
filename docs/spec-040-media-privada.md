@@ -23,8 +23,8 @@ feito nas tabelas — `conversations`, `messages`, `message_reactions`, `contact
 consciente ([039:71-79](../supabase/migrations/039_conversation_assignment.sql#L71-L79)):
 
 > `FORA DE ESCOPO (ticket separado, mas registrado aqui porque relativiza o
-> resultado): o bucket chat-media é PÚBLICO (…). Enquanto isso não for corrigido, o
-> isolamento de conversas é parcial: o texto fica protegido, os anexos não.`
+resultado): o bucket chat-media é PÚBLICO (…). Enquanto isso não for corrigido, o
+isolamento de conversas é parcial: o texto fica protegido, os anexos não.`
 
 Esta SPEC é esse ticket. E a auditoria encontrou **um segundo furo, mais grave e não
 registrado em lugar nenhum**: a rota que serve a mídia **recebida** do cliente
@@ -32,12 +32,12 @@ autentica o chamador mas nunca confere a que conversa aquela mídia pertence.
 
 Os dois furos têm vítimas diferentes e por isso precisam dos dois consertos:
 
-| | Mídia **recebida** do cliente | Mídia **enviada** pelo agente |
-| --- | --- | --- |
-| Onde vive | Meta CDN, servida por `/api/whatsapp/media/[mediaId]` | bucket `chat-media`, URL pública |
+|                        | Mídia **recebida** do cliente                                  | Mídia **enviada** pelo agente                        |
+| ---------------------- | -------------------------------------------------------------- | ---------------------------------------------------- |
+| Onde vive              | Meta CDN, servida por `/api/whatsapp/media/[mediaId]`          | bucket `chat-media`, URL pública                     |
 | Quem consegue ler hoje | **qualquer membro autenticado da conta**, de qualquer conversa | **qualquer pessoa na internet** com a URL, sem login |
-| O que quebra | o isolamento por agente da 039, dentro da conta | a confidencialidade do inquilino, fora dela |
-| Item | **F-40-A** | **F-40-B** |
+| O que quebra           | o isolamento por agente da 039, dentro da conta                | a confidencialidade do inquilino, fora dela          |
+| Item                   | **F-40-A**                                                     | **F-40-B**                                           |
 
 ---
 
@@ -71,21 +71,21 @@ URL pública, porque **a Meta precisa buscar o arquivo por URL** no momento do e
 ([send-message.ts:377](../src/lib/whatsapp/send-message.ts#L377), `link: mediaUrl!`).
 Foi essa exigência que tornou o bucket público na origem — a
 [023:57-61](../supabase/migrations/023_chat_media.sql#L57-L61) diz isso com todas as
-letras: *"Reads are public (the bucket is public so Meta can fetch links)"*.
+letras: _"Reads are public (the bucket is public so Meta can fetch links)"_.
 
 Era uma decisão defensável **quando o modelo era plano por conta**. Depois da 039 não é
 mais: a 039 promete isolamento e o bucket entrega o contrário.
 
 ### 1.2 Quem consome cada coisa
 
-| Consumidor | Caminho | Efeito da correção |
-| --- | --- | --- |
-| Bolha de mensagem / lightbox | `messages.media_url` | precisa aceitar URL assinada de validade curta |
-| Download por blob ([media-download.tsx](../src/components/inbox/media-download.tsx)) | idem | idem |
-| Envio à Meta ([send-message.ts:377](../src/lib/whatsapp/send-message.ts#L377)) | `link: mediaUrl` | a Meta baixa **uma vez**, no envio — URL assinada curta basta |
-| Header de template ([template-manager.tsx:518](../src/components/settings/template-manager.tsx#L518)) | `uploadAccountMedia('chat-media', …)` → `header_media_url` | **caso especial, ver §4.4** |
-| Handle de header ([template-header-handle.ts:36](../src/lib/whatsapp/template-header-handle.ts#L36)) | faz `fetch` da própria URL pública | precisa da URL assinada, servidor-side |
-| Flows (bucket `flow-media`, [016](../supabase/migrations/016_flow_media.sql)) | mesmo `uploadAccountMedia` | **mesmo desenho, mesmo furo — ver §5 e §6** |
+| Consumidor                                                                                            | Caminho                                                    | Efeito da correção                                            |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
+| Bolha de mensagem / lightbox                                                                          | `messages.media_url`                                       | precisa aceitar URL assinada de validade curta                |
+| Download por blob ([media-download.tsx](../src/components/inbox/media-download.tsx))                  | idem                                                       | idem                                                          |
+| Envio à Meta ([send-message.ts:377](../src/lib/whatsapp/send-message.ts#L377))                        | `link: mediaUrl`                                           | a Meta baixa **uma vez**, no envio — URL assinada curta basta |
+| Header de template ([template-manager.tsx:518](../src/components/settings/template-manager.tsx#L518)) | `uploadAccountMedia('chat-media', …)` → `header_media_url` | **caso especial, ver §4.4**                                   |
+| Handle de header ([template-header-handle.ts:36](../src/lib/whatsapp/template-header-handle.ts#L36))  | faz `fetch` da própria URL pública                         | precisa da URL assinada, servidor-side                        |
+| Flows (bucket `flow-media`, [016](../supabase/migrations/016_flow_media.sql))                         | mesmo `uploadAccountMedia`                                 | **mesmo desenho, mesmo furo — ver §5 e §6**                   |
 
 O helper [upload-media.ts](../src/lib/storage/upload-media.ts) é o ponto único de
 upload dos dois buckets (`buildMediaPath` + `uploadAccountMedia` + `deleteAccountMedia`).
@@ -105,7 +105,7 @@ O que ela **não** faz: verificar que o `mediaId` pedido pertence a uma mensagem
 conversa que o chamador pode ver. Não há um único `from('messages')` na rota.
 
 **Cenário de exploração.** Agente B pertence à conta, mas a conversa do cliente
-*Fulano* está atribuída ao agente A. Sob a 039, B recebe 0 linhas ao consultar essa
+_Fulano_ está atribuída ao agente A. Sob a 039, B recebe 0 linhas ao consultar essa
 conversa ou suas mensagens — o texto está protegido, como prometido. Mas o `mediaId`
 de um anexo é um identificador da Meta que circula em logs, em telas compartilhadas,
 em exportações antigas e — decisivamente — **em qualquer histórico anterior à 039, que
@@ -207,7 +207,7 @@ isolamento é lida pelo usuário como valendo para a conversa inteira.
 ### Mitigação
 
 Bucket privado + **URL assinada de vida curta**, mintada sob demanda por quem tem
-permissão. A objeção óbvia — *"mas a Meta precisa buscar a mídia"* — se resolve porque
+permissão. A objeção óbvia — _"mas a Meta precisa buscar a mídia"_ — se resolve porque
 **a Meta baixa uma única vez, no instante do envio**: ela re-hospeda o arquivo e passa a
 servi-lo ao destinatário por conta própria. Uma URL assinada de 10 minutos é folgada
 para isso.
@@ -324,7 +324,7 @@ assinatura é sempre efêmera.
 
 Templates são o único consumidor que **não** pode usar URL de 10 minutos sem cuidado:
 [template-header-handle.ts:36](../src/lib/whatsapp/template-header-handle.ts#L36) baixa
-os bytes da própria URL para produzir o *handle* de upload da Meta, e
+os bytes da própria URL para produzir o _handle_ de upload da Meta, e
 `message_templates.header_media_url` é persistido e reusado a cada envio
 ([send-message.ts:495](../src/lib/whatsapp/send-message.ts#L495)).
 
@@ -355,13 +355,13 @@ ponto de regressão mais provável de toda a entrega.**
 
 A ordem existe para que **nenhuma janela** deixe mídia quebrada na tela.
 
-| Fase | Conteúdo | Reversível? |
-| --- | --- | --- |
-| **1 — F-40-A isolado** | Checagem de propriedade na rota de proxy + `Cache-Control: private`. Sem migração, sem tocar em bucket. | sim, trivialmente |
-| **2 — colunas** | `040_private_media.sql` **só** com `media_id` / `media_path` + backfills + índice. Bucket **continua público**. Aplicação passa a *escrever* path e a *ler* pelo caminho novo, com fallback para `media_url` legado. | sim |
-| **3 — conferência** | Rodar a query de resíduo da §4.1. Só seguir com `sem_path = 0` (ou com a policy de exceção acordada). | — |
-| **4 — fechamento** | `UPDATE storage.buckets SET public = FALSE` + troca da policy de SELECT. Templates já migrados para path. | sim (basta reverter o `UPDATE` e a policy) |
-| **5 — advisors** | `get_advisors` (security + performance) e bloco novo no [scripts/verify-039-rls.sql](../scripts/verify-039-rls.sql). | — |
+| Fase                   | Conteúdo                                                                                                                                                                                                             | Reversível?                                |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **1 — F-40-A isolado** | Checagem de propriedade na rota de proxy + `Cache-Control: private`. Sem migração, sem tocar em bucket.                                                                                                              | sim, trivialmente                          |
+| **2 — colunas**        | `040_private_media.sql` **só** com `media_id` / `media_path` + backfills + índice. Bucket **continua público**. Aplicação passa a _escrever_ path e a _ler_ pelo caminho novo, com fallback para `media_url` legado. | sim                                        |
+| **3 — conferência**    | Rodar a query de resíduo da §4.1. Só seguir com `sem_path = 0` (ou com a policy de exceção acordada).                                                                                                                | —                                          |
+| **4 — fechamento**     | `UPDATE storage.buckets SET public = FALSE` + troca da policy de SELECT. Templates já migrados para path.                                                                                                            | sim (basta reverter o `UPDATE` e a policy) |
+| **5 — advisors**       | `get_advisors` (security + performance) e bloco novo no [scripts/verify-039-rls.sql](../scripts/verify-039-rls.sql).                                                                                                 | —                                          |
 
 A Fase 1 pode e **deve** ir sozinha e antes de tudo: ela fecha o único furo que hoje é
 explorável por alguém já logado no produto, e não depende de decisão nenhuma.
@@ -371,8 +371,9 @@ explorável por alguém já logado no produto, e não depende de decisão nenhum
 ## 6. Riscos, resíduos aceitos e critérios de aceite
 
 **Riscos**
+
 - **Regressão de template com header de mídia** (§4.4) — maior risco da entrega.
-  Testar criação *e* envio de template com header antes da Fase 4.
+  Testar criação _e_ envio de template com header antes da Fase 4.
 - **Mídia histórica sem `media_path`** (§4.1) — some da tela se a Fase 3 for pulada.
 - **Custo de latência**: cada abertura de mídia ganha um round-trip de assinatura. O
   fluxo por blob já era assíncrono, então o impacto percebido é pequeno; ainda assim,
@@ -392,6 +393,7 @@ também isso, o caminho é gravar `conversation_id` no path do objeto e cruzar c
 existentes**, o que não se justifica agora.
 
 **Critérios de aceite**
+
 1. `curl` **anônimo** a uma URL de `chat-media` → **400/403**, nunca 200.
 2. Agente B, autenticado, pedindo `/api/whatsapp/media/<mediaId>` de anexo de conversa
    atribuída ao agente A → **404** (não 403).

@@ -115,7 +115,8 @@ describe('detectDeadNumberOnFailure', () => {
 
     await detectDeadNumberOnFailure(db, {
       contactId: 'c1',
-      errorMessage: '(#131026) Message Undeliverable: recipient not on WhatsApp',
+      errorMessage:
+        '(#131026) Message Undeliverable: recipient not on WhatsApp',
     });
 
     expect(updates).toHaveLength(1);
@@ -124,7 +125,10 @@ describe('detectDeadNumberOnFailure', () => {
   });
 
   it('duas falhas seguidas (as mais recentes) marcam invalid', async () => {
-    const { db, updates } = makeDb([{ status: 'failed' }, { status: 'failed' }]);
+    const { db, updates } = makeDb([
+      { status: 'failed' },
+      { status: 'failed' },
+    ]);
 
     await detectDeadNumberOnFailure(db, {
       contactId: 'c1',
@@ -147,10 +151,7 @@ describe('detectDeadNumberOnFailure', () => {
   });
 
   it('falha + sucesso mais recente não conta como consecutivo', async () => {
-    const { db, updates } = makeDb([
-      { status: 'failed' },
-      { status: 'sent' },
-    ]);
+    const { db, updates } = makeDb([{ status: 'failed' }, { status: 'sent' }]);
 
     await detectDeadNumberOnFailure(db, {
       contactId: 'c1',
@@ -162,14 +163,17 @@ describe('detectDeadNumberOnFailure', () => {
 
   it('pede as 2 mais recentes ordenadas por created_at desc', async () => {
     let sawOrder: unknown[] | undefined;
-    const { db } = makeDb([{ status: 'failed' }, { status: 'failed' }], (table, ops) => {
-      if (table === 'broadcast_recipients') {
-        sawOrder = opArgs(ops, 'order');
-        expect(opArgs(ops, 'limit')).toEqual([2]);
-        return { data: [{ status: 'failed' }, { status: 'failed' }] };
+    const { db } = makeDb(
+      [{ status: 'failed' }, { status: 'failed' }],
+      (table, ops) => {
+        if (table === 'broadcast_recipients') {
+          sawOrder = opArgs(ops, 'order');
+          expect(opArgs(ops, 'limit')).toEqual([2]);
+          return { data: [{ status: 'failed' }, { status: 'failed' }] };
+        }
+        return undefined;
       }
-      return undefined;
-    });
+    );
 
     await detectDeadNumberOnFailure(db, { contactId: 'c1', errorMessage: '' });
 

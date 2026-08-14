@@ -71,7 +71,10 @@ function LoginPageInner() {
     });
 
     if (error) {
-      console.error('[login] auth.signInWithPassword failed:', getAuthErrorLogDetails(error));
+      console.error(
+        '[login] auth.signInWithPassword failed:',
+        getAuthErrorLogDetails(error)
+      );
       setError(t(getAuthErrorMessageKey(error)));
       setLoading(false);
       return;

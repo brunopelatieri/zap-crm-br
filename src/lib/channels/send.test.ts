@@ -15,6 +15,7 @@ import {
   ChannelNotConfiguredError,
   cloudChannelContext,
   resolveChannelContext,
+  resolveChannelForConversation,
   resolveOutboundContact,
   sendAndPersistOutbound,
   sendContentViaChannel,
@@ -37,6 +38,12 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (v: string) => `decrypted:${v}`,
+}));
+
+const resolveInstanceByChannelId = vi.fn();
+vi.mock('@/lib/evolution/instances', () => ({
+  resolveInstanceByChannelId: (...a: unknown[]) =>
+    resolveInstanceByChannelId(...a),
 }));
 
 /**
@@ -205,11 +212,168 @@ describe('resolveChannelContext', () => {
     ).rejects.toBeInstanceOf(ChannelNotConfiguredError);
   });
 
-  it('recusa canal sem resolvedor de credencial (Evolution chega na F4)', async () => {
+  it('recusa whatsapp_qr sem channelId explícito (ambíguo entre várias instâncias)', async () => {
     const db = makeDb();
     await expect(
       resolveChannelContext(db.client, 'acct-1', 'whatsapp_qr')
     ).rejects.toBeInstanceOf(ChannelNotConfiguredError);
+  });
+
+  it('resolve whatsapp_qr por channelId — credencial é o instanceToken decriptado', async () => {
+    resolveInstanceByChannelId.mockResolvedValue({
+      instanceId: 'inst-1',
+      channelId: 'chan-qr-1',
+      accountId: 'acct-1',
+      remoteInstanceId: 'remote-1',
+      remoteInstanceName: 'zapcrm_acct1_vendas',
+      token: 'plain-instance-token',
+      channelName: 'Vendas',
+    });
+    const db = makeDb({
+      'channels.select': {
+        data: {
+          id: 'chan-qr-1',
+          account_id: 'acct-1',
+          type: 'whatsapp_qr',
+          name: 'Vendas',
+          status: 'connected',
+        },
+        error: null,
+      },
+    });
+
+    const resolved = await resolveChannelContext(
+      db.client,
+      'acct-1',
+      'whatsapp_qr',
+      'chan-qr-1'
+    );
+
+    expect(resolveInstanceByChannelId).toHaveBeenCalledWith(
+      'acct-1',
+      'chan-qr-1'
+    );
+    expect(resolved.ctx.credentials).toEqual({
+      instanceToken: 'plain-instance-token',
+    });
+    expect(resolved.ctx.channel.id).toBe('chan-qr-1');
+  });
+});
+
+describe('resolveChannelForConversation', () => {
+  /**
+   * A regressão que este bloco trava (SPEC 048 F4.1, achado #1 da
+   * revisão): antes disto TODO caminho de saída resolvia
+   * `whatsapp_cloud` fixo, ignorando `conversations.channel_id`. Com a
+   * F4 fazendo conversas QRCode aparecerem no inbox, responder uma
+   * delas mandava a mensagem pelo NÚMERO OFICIAL da Meta — cobrada,
+   * saindo de outro número, e com um wamid que o eco `SEND_MESSAGE` da
+   * Evolution nunca casaria.
+   */
+  it('resolve o canal QRCode quando a conversa aponta para ele', async () => {
+    resolveInstanceByChannelId.mockResolvedValue({
+      instanceId: 'inst-1',
+      channelId: 'chan-qr-1',
+      accountId: 'acct-1',
+      remoteInstanceId: 'remote-1',
+      remoteInstanceName: 'zapcrm_acct1_vendas',
+      token: 'plain-instance-token',
+      channelName: 'Vendas',
+    });
+    const db = makeDb({
+      'conversations.select': {
+        data: { channel_id: 'chan-qr-1' },
+        error: null,
+      },
+      'channels.select': {
+        data: {
+          id: 'chan-qr-1',
+          account_id: 'acct-1',
+          type: 'whatsapp_qr',
+          name: 'Vendas',
+          status: 'connected',
+        },
+        error: null,
+      },
+    });
+
+    const resolved = await resolveChannelForConversation(
+      db.client,
+      'acct-1',
+      'conv-qr'
+    );
+
+    expect(resolved.ctx.channel.type).toBe('whatsapp_qr');
+    expect(resolved.ctx.credentials).toEqual({
+      instanceToken: 'plain-instance-token',
+    });
+    // E nunca tocou a `whatsapp_config` do canal oficial.
+    expect(db.ops.some((o) => o.table === 'whatsapp_config')).toBe(false);
+  });
+
+  it('resolve o canal oficial quando a conversa aponta para ele', async () => {
+    const db = makeDb({
+      'conversations.select': {
+        data: { channel_id: 'chan-cloud-1' },
+        error: null,
+      },
+      'channels.select': {
+        data: { id: 'chan-cloud-1', type: 'whatsapp_cloud' },
+        error: null,
+      },
+      'whatsapp_config.select': { data: CONFIG_ROW, error: null },
+    });
+
+    const resolved = await resolveChannelForConversation(
+      db.client,
+      'acct-1',
+      'conv-cloud'
+    );
+
+    expect(resolved.ctx.channel.type).toBe('whatsapp_cloud');
+    expect(resolved.ctx.credentials.phoneNumberId).toBe('pnid-1');
+  });
+
+  it('conversa sem channel_id cai no canal oficial (compat pré-059)', async () => {
+    const db = makeDb({
+      'conversations.select': { data: { channel_id: null }, error: null },
+      'whatsapp_config.select': { data: CONFIG_ROW, error: null },
+    });
+
+    const resolved = await resolveChannelForConversation(
+      db.client,
+      'acct-1',
+      'conv-antiga'
+    );
+
+    expect(resolved.ctx.channel.type).toBe('whatsapp_cloud');
+  });
+
+  it('falha com motivo quando o canal da conversa não existe mais', async () => {
+    // Enviar pelo canal errado é pior que não enviar.
+    const db = makeDb({
+      'conversations.select': {
+        data: { channel_id: 'chan-apagado' },
+        error: null,
+      },
+      'channels.select': { data: null, error: null },
+    });
+
+    await expect(
+      resolveChannelForConversation(db.client, 'acct-1', 'conv-orfa')
+    ).rejects.toBeInstanceOf(ChannelNotConfiguredError);
+  });
+
+  it('escopa a leitura da conversa por conta', async () => {
+    const db = makeDb({
+      'conversations.select': { data: { channel_id: null }, error: null },
+      'whatsapp_config.select': { data: CONFIG_ROW, error: null },
+    });
+
+    await resolveChannelForConversation(db.client, 'acct-1', 'conv-1');
+
+    const read = db.ops.find((o) => o.table === 'conversations')!;
+    expect(read.filters).toContainEqual(['eq', 'account_id', 'acct-1']);
   });
 });
 

@@ -14,14 +14,14 @@
 
 > **Quem pode fazer o quê (resumo):**
 >
-> | Ação                                     | Role mínima     | Onde                                     |
-> | ---------------------------------------- | --------------- | ---------------------------------------- |
-> | **Ver** a aba "Time"                     | `admin`         | Barra de abas do Inbox                   |
-> | Arrastar card entre colunas (reatribuir) | `admin`         | Quadro                                   |
-> | Arrastar da fila para si mesmo           | `admin`         | Quadro (rota `/claim` — ver §5.1)        |
-> | Devolver card à fila (desatribuir)       | `admin`         | Quadro                                   |
-> | Ver funil/etapa do contato               | qualquer membro | Badge do card (read-only)                |
-> | Editar funil/etapa                       | `agent`         | Fora de escopo — `/pipelines`            |
+> | Ação                                     | Role mínima     | Onde                              |
+> | ---------------------------------------- | --------------- | --------------------------------- |
+> | **Ver** a aba "Time"                     | `admin`         | Barra de abas do Inbox            |
+> | Arrastar card entre colunas (reatribuir) | `admin`         | Quadro                            |
+> | Arrastar da fila para si mesmo           | `admin`         | Quadro (rota `/claim` — ver §5.1) |
+> | Devolver card à fila (desatribuir)       | `admin`         | Quadro                            |
+> | Ver funil/etapa do contato               | qualquer membro | Badge do card (read-only)         |
+> | Editar funil/etapa                       | `agent`         | Fora de escopo — `/pipelines`     |
 >
 > A aba **não é renderizada** para `agent` e `viewer`. Não é uma escolha de
 > produto: é a consequência direta da RLS da migração 039 — ver §2.1, que é a
@@ -61,19 +61,19 @@ Esta feature **não cria modelo de dados, não altera RLS e não cria rota**.
 Tudo o que ela precisa do backend já foi entregue pela migração 039 e pela
 SPEC 041.
 
-| Peça existente                        | Localização                                                                                                              | Papel aqui                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| `conversations.assigned_agent_id`     | [001](../supabase/migrations/001_initial_schema.sql) + FK/índices na [039:109-126](../supabase/migrations/039_conversation_assignment.sql#L109-L126) | A coluna que o drop escreve                  |
-| RPC `claim_conversation`              | [039:457](../supabase/migrations/039_conversation_assignment.sql#L457)                                                    | Lock atômico ao puxar da fila (§5.1)         |
-| RPC `reassign_conversation`           | [039:519](../supabase/migrations/039_conversation_assignment.sql#L519)                                                    | Reatribuição e devolução à fila              |
-| `claimConversation` / `reassignConversation` | [src/lib/inbox/assignment.ts](../src/lib/inbox/assignment.ts)                                                       | Wrapper + `mapError` SQLSTATE→HTTP           |
-| `POST …/[id]/claim` e `…/[id]/assign` | [claim/route.ts](<../src/app/api/inbox/conversations/[id]/claim/route.ts>) · [assign/route.ts](<../src/app/api/inbox/conversations/[id]/assign/route.ts>) | **Rotas reusadas sem uma linha de mudança**  |
-| `useAccountMembers()`                 | [src/hooks/use-account-members.ts:34](../src/hooks/use-account-members.ts#L34)                                            | Roster das colunas                           |
-| `usePresence()` + `PresenceDot`       | [use-presence.ts:45](../src/hooks/use-presence.ts#L45) · [presence-dot.tsx](../src/components/presence/presence-dot.tsx)  | Estado online/ausente no cabeçalho da coluna |
-| `useRealtime()`                       | [src/hooks/use-realtime.ts](../src/hooks/use-realtime.ts)                                                                 | Canal `postgres_changes`                     |
-| `normalizeConversation()`             | [src/lib/inbox/conversations.ts](../src/lib/inbox/conversations.ts)                                                       | Achata `contact_tags → contact.tags`         |
-| `TAB_DEFINITIONS` / `InboxTabs`       | [tabs.ts:43](../src/lib/inbox/tabs.ts#L43) · [inbox-tabs.tsx](../src/components/inbox/inbox-tabs.tsx)                     | Barra de abas                                |
-| Padrão DnD `@dnd-kit`                 | [pipeline-board.tsx:58-98](../src/components/pipelines/pipeline-board.tsx#L58-L98)                                        | Referência de sensores/colisão — **copiado, não importado** (§3.1) |
+| Peça existente                               | Localização                                                                                                                                           | Papel aqui                                                         |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `conversations.assigned_agent_id`            | [001](../supabase/migrations/001_initial_schema.sql) + FK/índices na [039:109-126](../supabase/migrations/039_conversation_assignment.sql#L109-L126)  | A coluna que o drop escreve                                        |
+| RPC `claim_conversation`                     | [039:457](../supabase/migrations/039_conversation_assignment.sql#L457)                                                                                | Lock atômico ao puxar da fila (§5.1)                               |
+| RPC `reassign_conversation`                  | [039:519](../supabase/migrations/039_conversation_assignment.sql#L519)                                                                                | Reatribuição e devolução à fila                                    |
+| `claimConversation` / `reassignConversation` | [src/lib/inbox/assignment.ts](../src/lib/inbox/assignment.ts)                                                                                         | Wrapper + `mapError` SQLSTATE→HTTP                                 |
+| `POST …/[id]/claim` e `…/[id]/assign`        | [claim/route.ts](../src/app/api/inbox/conversations/[id]/claim/route.ts) · [assign/route.ts](../src/app/api/inbox/conversations/[id]/assign/route.ts) | **Rotas reusadas sem uma linha de mudança**                        |
+| `useAccountMembers()`                        | [src/hooks/use-account-members.ts:34](../src/hooks/use-account-members.ts#L34)                                                                        | Roster das colunas                                                 |
+| `usePresence()` + `PresenceDot`              | [use-presence.ts:45](../src/hooks/use-presence.ts#L45) · [presence-dot.tsx](../src/components/presence/presence-dot.tsx)                              | Estado online/ausente no cabeçalho da coluna                       |
+| `useRealtime()`                              | [src/hooks/use-realtime.ts](../src/hooks/use-realtime.ts)                                                                                             | Canal `postgres_changes`                                           |
+| `normalizeConversation()`                    | [src/lib/inbox/conversations.ts](../src/lib/inbox/conversations.ts)                                                                                   | Achata `contact_tags → contact.tags`                               |
+| `TAB_DEFINITIONS` / `InboxTabs`              | [tabs.ts:43](../src/lib/inbox/tabs.ts#L43) · [inbox-tabs.tsx](../src/components/inbox/inbox-tabs.tsx)                                                 | Barra de abas                                                      |
+| Padrão DnD `@dnd-kit`                        | [pipeline-board.tsx:58-98](../src/components/pipelines/pipeline-board.tsx#L58-L98)                                                                    | Referência de sensores/colisão — **copiado, não importado** (§3.1) |
 
 **Nenhuma dependência nova.** `@dnd-kit/core` 6.3.1 já está no `package.json`.
 
@@ -278,15 +278,15 @@ ordem dentro da coluna), `formatCurrency`, `totalValue`, e o rodapé
 
 ### 3.3 Arquivos novos
 
-| Arquivo                                                                | Responsabilidade                                                                                                                                                                     |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/lib/inbox/assignment-board.ts`                                    | **Módulo puro** — sem React, sem Supabase, testável isolado. Modelo de colunas (`UNASSIGNED_COLUMN_ID`, `buildBoardColumns`, `boardColumnIdToAgentId`, `pickPrimaryDeal`, `BOARD_CONVERSATION_SELECT`, `BOARD_PAGE_SIZE`) **e os redutores de estado** (`moveCard`, `restoreCard`, `settleCard`, `insertCard`, `removeCard`, `appendCards`, `applyColumnCounts`, `hydrateCards`) — ver §5.5. Mesma filosofia declarada no cabeçalho de [tabs.ts](../src/lib/inbox/tabs.ts). |
-| `src/lib/inbox/assignment-board.test.ts`                               | Vitest para o modelo de colunas e para todos os redutores.                                                                                                                           |
-| `.../assignment-board/assignment-board.tsx`                            | `DndContext`, sensores, `DragOverlay`, `announcements`, orquestração do drop. Recebe dados e callbacks por prop.                                                                      |
-| `.../assignment-board/agent-column.tsx`                                | `useDroppable`; cabeçalho (avatar, nome, `PresenceDot`, contagem total), lista, "carregar mais", estado vazio.                                                                        |
-| `.../assignment-board/conversation-card.tsx`                           | Card puro: nome, trecho de nota, etiquetas, badge de CRM. **Sem hooks de DnD e sem rede.**                                                                                            |
-| `.../assignment-board/draggable-conversation-card.tsx`                 | Wrapper fino com `useDraggable`, espelhando `DraggableDealCard`.                                                                                                                      |
-| `.../assignment-board/use-assignment-board.ts`                         | Toda a rede: colunas, cards, hidratação em 2 ondas, realtime, mutação otimista.                                                                                                       |
+| Arquivo                                                | Responsabilidade                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/inbox/assignment-board.ts`                    | **Módulo puro** — sem React, sem Supabase, testável isolado. Modelo de colunas (`UNASSIGNED_COLUMN_ID`, `buildBoardColumns`, `boardColumnIdToAgentId`, `pickPrimaryDeal`, `BOARD_CONVERSATION_SELECT`, `BOARD_PAGE_SIZE`) **e os redutores de estado** (`moveCard`, `restoreCard`, `settleCard`, `insertCard`, `removeCard`, `appendCards`, `applyColumnCounts`, `hydrateCards`) — ver §5.5. Mesma filosofia declarada no cabeçalho de [tabs.ts](../src/lib/inbox/tabs.ts). |
+| `src/lib/inbox/assignment-board.test.ts`               | Vitest para o modelo de colunas e para todos os redutores.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `.../assignment-board/assignment-board.tsx`            | `DndContext`, sensores, `DragOverlay`, `announcements`, orquestração do drop. Recebe dados e callbacks por prop.                                                                                                                                                                                                                                                                                                                                                            |
+| `.../assignment-board/agent-column.tsx`                | `useDroppable`; cabeçalho (avatar, nome, `PresenceDot`, contagem total), lista, "carregar mais", estado vazio.                                                                                                                                                                                                                                                                                                                                                              |
+| `.../assignment-board/conversation-card.tsx`           | Card puro: nome, trecho de nota, etiquetas, badge de CRM. **Sem hooks de DnD e sem rede.**                                                                                                                                                                                                                                                                                                                                                                                  |
+| `.../assignment-board/draggable-conversation-card.tsx` | Wrapper fino com `useDraggable`, espelhando `DraggableDealCard`.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `.../assignment-board/use-assignment-board.ts`         | Toda a rede: colunas, cards, hidratação em 2 ondas, realtime, mutação otimista.                                                                                                                                                                                                                                                                                                                                                                                             |
 
 A divisão "componente puro + wrapper draggable" é a mesma de
 `DealCard` / `DraggableDealCard`, e existe pelo mesmo motivo: o `DragOverlay`
@@ -294,14 +294,14 @@ precisa renderizar o card **sem** os listeners de arrasto.
 
 ### 3.4 Arquivos alterados
 
-| Arquivo                                                              | Alteração                                                                                                                                                                                                                                                                |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [src/lib/inbox/tabs.ts](../src/lib/inbox/tabs.ts)                    | `TabId` ganha `'board'`; `TAB_IDS` e `TAB_DEFINITIONS` ganham a entrada **após `open`**; `TabDefinition` ganha `minRole?: AccountRole`; novas funções puras `visibleTabDefinitions(role)` e `resolveTab(raw, role)`. `isConversationTab` e `DEFAULT_TAB` **não mudam** (§3.5). |
-| [src/lib/inbox/tabs.test.ts](../src/lib/inbox/tabs.test.ts)          | Casos novos: `resolveTab` degradando `board → DEFAULT_TAB` para agente/viewer/`null`; `visibleTabDefinitions` por papel; `isConversationTab('board') === false`.                                                                                                          |
-| [inbox-tabs.tsx](../src/components/inbox/inbox-tabs.tsx)             | `TAB_ICONS` ganha `board`; nova prop opcional `tabs?: readonly TabDefinition[]` com default `TAB_DEFINITIONS` (§3.6).                                                                                                                                                     |
-| [use-inbox-tabs.ts:77](../src/hooks/use-inbox-tabs.ts#L77)           | Trocar `isTabId(tabParam) ? tabParam : DEFAULT_TAB` por `resolveTab(tabParam, accountRole, profileLoading)`. O hook passa a receber o papel (§3.7).                                                                                                                       |
-| [inbox/page.tsx](<../src/app/(dashboard)/inbox/page.tsx>)            | Passa `tabs={visibleTabDefinitions(accountRole)}` ao `InboxTabs`; novo branch de render `activeTab === 'board'`, no mesmo lugar em que `contacts` já se ramifica.                                                                                                          |
-| `messages/pt-BR.json`, `messages/en.json`                            | `Inbox.tabs.board` + namespace `Inbox.assignmentBoard` (§8).                                                                                                                                                                                                              |
+| Arquivo                                                     | Alteração                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [src/lib/inbox/tabs.ts](../src/lib/inbox/tabs.ts)           | `TabId` ganha `'board'`; `TAB_IDS` e `TAB_DEFINITIONS` ganham a entrada **após `open`**; `TabDefinition` ganha `minRole?: AccountRole`; novas funções puras `visibleTabDefinitions(role)` e `resolveTab(raw, role)`. `isConversationTab` e `DEFAULT_TAB` **não mudam** (§3.5). |
+| [src/lib/inbox/tabs.test.ts](../src/lib/inbox/tabs.test.ts) | Casos novos: `resolveTab` degradando `board → DEFAULT_TAB` para agente/viewer/`null`; `visibleTabDefinitions` por papel; `isConversationTab('board') === false`.                                                                                                               |
+| [inbox-tabs.tsx](../src/components/inbox/inbox-tabs.tsx)    | `TAB_ICONS` ganha `board`; nova prop opcional `tabs?: readonly TabDefinition[]` com default `TAB_DEFINITIONS` (§3.6).                                                                                                                                                          |
+| [use-inbox-tabs.ts:77](../src/hooks/use-inbox-tabs.ts#L77)  | Trocar `isTabId(tabParam) ? tabParam : DEFAULT_TAB` por `resolveTab(tabParam, accountRole, profileLoading)`. O hook passa a receber o papel (§3.7).                                                                                                                            |
+| [inbox/page.tsx](<../src/app/(dashboard)/inbox/page.tsx>)   | Passa `tabs={visibleTabDefinitions(accountRole)}` ao `InboxTabs`; novo branch de render `activeTab === 'board'`, no mesmo lugar em que `contacts` já se ramifica.                                                                                                              |
+| `messages/pt-BR.json`, `messages/en.json`                   | `Inbox.tabs.board` + namespace `Inbox.assignmentBoard` (§8).                                                                                                                                                                                                                   |
 
 ### 3.5 Mudanças em `tabs.ts`
 
@@ -309,7 +309,12 @@ precisa renderizar o card **sem** os listeners de arrasto.
 export type ConversationTabId = 'chat' | 'open';
 export type TabId = ConversationTabId | 'contacts' | 'board';
 
-export const TAB_IDS: readonly TabId[] = ['chat', 'open', 'contacts', 'board'] as const;
+export const TAB_IDS: readonly TabId[] = [
+  'chat',
+  'open',
+  'contacts',
+  'board',
+] as const;
 
 export interface TabDefinition {
   id: TabId;
@@ -448,8 +453,8 @@ Gatilhos de `resyncToken`, os mesmos do resto do Inbox: reconexão do WS
 export const UNASSIGNED_COLUMN_ID = '__unassigned__';
 
 export interface BoardColumn {
-  id: string;              // UNASSIGNED_COLUMN_ID ou profile.user_id
-  agent: Profile | null;   // null ⇒ a fila
+  id: string; // UNASSIGNED_COLUMN_ID ou profile.user_id
+  agent: Profile | null; // null ⇒ a fila
 }
 
 export function buildBoardColumns(members: Profile[]): BoardColumn[];
@@ -472,11 +477,12 @@ const q = supabase
   .select(BOARD_CONVERSATION_SELECT, { count: 'exact' })
   .in('status', ['open', 'pending'])
   .order('last_message_at', { ascending: false })
-  .range(0, BOARD_PAGE_SIZE - 1);          // BOARD_PAGE_SIZE = 50
+  .range(0, BOARD_PAGE_SIZE - 1); // BOARD_PAGE_SIZE = 50
 
-const query = agentId === null
-  ? q.is('assigned_agent_id', null)        // coluna "Não atribuídos"
-  : q.eq('assigned_agent_id', agentId);    // coluna de agente
+const query =
+  agentId === null
+    ? q.is('assigned_agent_id', null) // coluna "Não atribuídos"
+    : q.eq('assigned_agent_id', agentId); // coluna de agente
 ```
 
 **Por que o N+1 aqui não é um anti-padrão** — vale documentar, porque parece
@@ -518,13 +524,17 @@ Concluída a onda 1, coletar os `contact_id` distintos visíveis
 (≤ nº de colunas × 50) e disparar duas queries em paralelo:
 
 ```ts
-supabase.from('contact_notes')
+supabase
+  .from('contact_notes')
   .select('contact_id, note_text, created_at')
   .in('contact_id', ids)
   .order('created_at', { ascending: false });
 
-supabase.from('deals')
-  .select('contact_id, status, created_at, stage:pipeline_stages(id,name,color), pipeline:pipelines(id,name)')
+supabase
+  .from('deals')
+  .select(
+    'contact_id, status, created_at, stage:pipeline_stages(id,name,color), pipeline:pipelines(id,name)'
+  )
   .in('contact_id', ids)
   .order('created_at', { ascending: false });
 ```
@@ -537,7 +547,9 @@ a mais recente.
 ser uma decisão):
 
 ```ts
-export function pickPrimaryDeal(dealsDoContato: BoardDealRow[]): PrimaryDeal | null {
+export function pickPrimaryDeal(
+  dealsDoContato: BoardDealRow[]
+): PrimaryDeal | null {
   // Já vem ordenado por created_at desc.
   const open = dealsDoContato.find((d) => d.status === 'open');
   if (open) return toPrimary(open, { stale: false });
@@ -573,14 +585,14 @@ interface BoardCard {
     stageColor: string;
     stale: boolean;
   } | null;
-  hydrated: boolean;   // onda 2 já chegou para este contato
-  pending: boolean;    // mutação em voo
+  hydrated: boolean; // onda 2 já chegou para este contato
+  pending: boolean; // mutação em voo
 }
 
 interface BoardColumnState {
   column: BoardColumn;
   cards: BoardCard[];
-  total: number;        // count exato do servidor, NÃO cards.length
+  total: number; // count exato do servidor, NÃO cards.length
   loadingMore: boolean;
 }
 ```
@@ -594,7 +606,7 @@ aplicação com campos que só este quadro conhece — e faria o próximo
 
 ```ts
 useRealtime({
-  channelName: 'inbox-assignment-board',   // canal PRÓPRIO
+  channelName: 'inbox-assignment-board', // canal PRÓPRIO
   enabled: activeTab === 'board',
   onConversationEvent: handleBoardEvent,
 });
@@ -606,12 +618,12 @@ está aberta** — o custo é limitado ao tempo de uso.
 Por causa da §2.6, `handleBoardEvent` **não** pode ler `old.assigned_agent_id`.
 O algoritmo é:
 
-| Evento                                            | Ação                                                                                                       |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `UPDATE`, id conhecido no `cardColumnRef`         | Move o card da coluna registrada para a derivada de `new.assigned_agent_id`; atualiza os dois `total`.      |
-| `UPDATE`, id conhecido, `new.status === 'closed'` | Remove o card; decrementa o `total` da coluna de origem.                                                    |
+| Evento                                              | Ação                                                                                                        |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `UPDATE`, id conhecido no `cardColumnRef`           | Move o card da coluna registrada para a derivada de `new.assigned_agent_id`; atualiza os dois `total`.      |
+| `UPDATE`, id conhecido, `new.status === 'closed'`   | Remove o card; decrementa o `total` da coluna de origem.                                                    |
 | `UPDATE`/`INSERT`, id desconhecido, status elegível | Busca a linha com `BOARD_CONVERSATION_SELECT`, insere no topo da coluna correspondente, incrementa `total`. |
-| `DELETE`                                          | Remove pelo id; decrementa `total`.                                                                          |
+| `DELETE`                                            | Remove pelo id; decrementa `total`.                                                                         |
 
 **Sempre ajustar `total` junto do movimento.** Mover o card sem mexer na
 contagem faz o cabeçalho começar a mentir depois do primeiro evento, e o erro
@@ -666,12 +678,12 @@ Reusar **a mesma regra** que o dropdown do header da thread já aplica
 ([message-thread.tsx:946-993](../src/components/inbox/message-thread.tsx#L946-L993)),
 em vez de inventar uma segunda:
 
-| Origem → Destino                    | Rota                                       | Body                              |
-| ----------------------------------- | ------------------------------------------ | --------------------------------- |
-| Não atribuídos → **minha** coluna   | `POST /api/inbox/conversations/{id}/claim` | —                                 |
+| Origem → Destino                    | Rota                                        | Body                              |
+| ----------------------------------- | ------------------------------------------- | --------------------------------- |
+| Não atribuídos → **minha** coluna   | `POST /api/inbox/conversations/{id}/claim`  | —                                 |
 | Não atribuídos → coluna de terceiro | `POST /api/inbox/conversations/{id}/assign` | `{ assigned_agent_id: "<uuid>" }` |
-| Coluna A → Coluna B                 | `POST …/assign`                            | `{ assigned_agent_id: "<uuid>" }` |
-| Qualquer coluna → Não atribuídos    | `POST …/assign`                            | `{ assigned_agent_id: null }`     |
+| Coluna A → Coluna B                 | `POST …/assign`                             | `{ assigned_agent_id: "<uuid>" }` |
+| Qualquer coluna → Não atribuídos    | `POST …/assign`                             | `{ assigned_agent_id: null }`     |
 
 ```ts
 const targetAgentId = boardColumnIdToAgentId(targetColumnId);
@@ -740,15 +752,15 @@ traduz ([:98](../src/lib/inbox/assignment.ts#L98)). Cada um merece um
 comportamento próprio — um toast genérico para todos desperdiçaria informação
 que o backend já se deu ao trabalho de distinguir:
 
-| Status / `code`                                                    | Comportamento                                                                                                                                                             |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `409 CONVERSATION_ALREADY_CLAIMED`                                 | **Não fazer rollback** — outro agente ficou com ela, e devolvê-la à fila mostraria uma mentira. Toast informativo + refetch pontual daquela conversa para recolocá-la na coluna certa. |
-| `404 CONVERSATION_NOT_FOUND`                                       | Remove o card do quadro + toast. Sob a RLS, "não é sua" e "não existe" são indistinguíveis **por desenho** ([assignment.ts:89-97](../src/lib/inbox/assignment.ts#L89-L97)) — não tentar diferenciar. |
-| `400 INVALID_ASSIGNEE`                                             | Rollback + toast + refetch do roster: a coluna renderizada está velha (membro removido da conta ou rebaixado a `viewer`). Sem o refetch, o supervisor repete o erro.        |
-| `403 ONLY_ADMIN_CAN_REASSIGN_TO_OTHERS` / `NOT_CONVERSATION_OWNER` / `INSUFFICIENT_ROLE` | Rollback + toast. Não deveria ocorrer (a aba é `admin+`); se ocorrer, é sinal de sessão trocada em outra aba do navegador.                       |
-| `429`                                                              | Rollback + toast "muitas ações seguidas, aguarde". **Caso real, não hipotético** — ver §2.7. Desabilitar o DnD por alguns segundos evita a cascata de 429.                  |
-| `401`                                                              | Rollback + toast de sessão expirada.                                                                                                                                        |
-| Rede / `500 ASSIGNMENT_FAILED`                                     | Rollback + toast genérico.                                                                                                                                                  |
+| Status / `code`                                                                          | Comportamento                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `409 CONVERSATION_ALREADY_CLAIMED`                                                       | **Não fazer rollback** — outro agente ficou com ela, e devolvê-la à fila mostraria uma mentira. Toast informativo + refetch pontual daquela conversa para recolocá-la na coluna certa.               |
+| `404 CONVERSATION_NOT_FOUND`                                                             | Remove o card do quadro + toast. Sob a RLS, "não é sua" e "não existe" são indistinguíveis **por desenho** ([assignment.ts:89-97](../src/lib/inbox/assignment.ts#L89-L97)) — não tentar diferenciar. |
+| `400 INVALID_ASSIGNEE`                                                                   | Rollback + toast + refetch do roster: a coluna renderizada está velha (membro removido da conta ou rebaixado a `viewer`). Sem o refetch, o supervisor repete o erro.                                 |
+| `403 ONLY_ADMIN_CAN_REASSIGN_TO_OTHERS` / `NOT_CONVERSATION_OWNER` / `INSUFFICIENT_ROLE` | Rollback + toast. Não deveria ocorrer (a aba é `admin+`); se ocorrer, é sinal de sessão trocada em outra aba do navegador.                                                                           |
+| `429`                                                                                    | Rollback + toast "muitas ações seguidas, aguarde". **Caso real, não hipotético** — ver §2.7. Desabilitar o DnD por alguns segundos evita a cascata de 429.                                           |
+| `401`                                                                                    | Rollback + toast de sessão expirada.                                                                                                                                                                 |
+| Rede / `500 ASSIGNMENT_FAILED`                                                           | Rollback + toast genérico.                                                                                                                                                                           |
 
 ### 5.4 A corrida entre o otimista e o realtime
 
@@ -869,13 +881,13 @@ CSS de scrollbar temática de [:147-184](../src/components/pipelines/pipeline-bo
 └──────────────────────────────────────┘
 ```
 
-| Elemento          | Regra                                                                                                                                                                                                                                                                    |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Nome              | `contact.name \|\| contact.phone`, truncado.                                                                                                                                                                                                                             |
-| Não lidas         | Chip só quando `unread_count > 0`.                                                                                                                                                                                                                                       |
-| Nota              | `latestNote`, uma linha, `line-clamp-1`. Sem nota → linha vazia com a altura preservada (§4.4).                                                                                                                                                                            |
-| Etiquetas         | Máx. 3 chips + "+N". Usar a fórmula universal do repo — `backgroundColor: ${color}20`, `color: ${color}` — como em [contact-sidebar.tsx:222-235](../src/components/inbox/contact-sidebar.tsx#L222-L235). **Não** usar [`ui/badge.tsx`](../src/components/ui/badge.tsx): o repo nunca o usa para etiquetas. |
-| Badge de CRM      | **Visualmente distinto das etiquetas** (ícone + formato `{funil} › {etapa}`), para que ninguém o confunda com uma tag. `borderColor: ${stage.color}40`, texto em `text-muted-foreground`. `title` com o texto completo. Quando `stale`, `opacity-60`. Sem deal → nada renderizado. |
+| Elemento     | Regra                                                                                                                                                                                                                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nome         | `contact.name \|\| contact.phone`, truncado.                                                                                                                                                                                                                                                               |
+| Não lidas    | Chip só quando `unread_count > 0`.                                                                                                                                                                                                                                                                         |
+| Nota         | `latestNote`, uma linha, `line-clamp-1`. Sem nota → linha vazia com a altura preservada (§4.4).                                                                                                                                                                                                            |
+| Etiquetas    | Máx. 3 chips + "+N". Usar a fórmula universal do repo — `backgroundColor: ${color}20`, `color: ${color}` — como em [contact-sidebar.tsx:222-235](../src/components/inbox/contact-sidebar.tsx#L222-L235). **Não** usar [`ui/badge.tsx`](../src/components/ui/badge.tsx): o repo nunca o usa para etiquetas. |
+| Badge de CRM | **Visualmente distinto das etiquetas** (ícone + formato `{funil} › {etapa}`), para que ninguém o confunda com uma tag. `borderColor: ${stage.color}40`, texto em `text-muted-foreground`. `title` com o texto completo. Quando `stale`, `opacity-60`. Sem deal → nada renderizado.                         |
 
 **O badge é estritamente read-only** — nenhum `onClick`, nenhum cursor de
 ponteiro, nenhum menu. É o invariante 3 da §3.1 na superfície.
@@ -961,30 +973,30 @@ Uma chave em `Inbox.tabs`, junto de `chat` / `open` / `contacts`:
 
 Namespace novo `Inbox.assignmentBoard`:
 
-| Chave                  | pt-BR                                                        | en                                                       |
-| ---------------------- | ------------------------------------------------------------ | -------------------------------------------------------- |
-| `unassignedColumn`     | `Não atribuídos`                                             | `Unassigned`                                             |
-| `columnAriaLabel`      | `Conversas de {name}`                                        | `{name}'s conversations`                                 |
-| `dropHere`             | `Solte uma conversa aqui`                                    | `Drop a conversation here`                               |
-| `emptyColumn`          | `Nenhuma conversa`                                           | `No conversations`                                       |
-| `loadMore`             | `Carregar mais`                                              | `Load more`                                              |
-| `showingOf`            | `Mostrando {shown} de {total}`                               | `Showing {shown} of {total}`                             |
-| `crmBadge`             | `{pipeline} › {stage}`                                       | `{pipeline} › {stage}`                                   |
-| `crmBadgeClosedTitle`  | `Negócio encerrado — {pipeline} › {stage}`                   | `Closed deal — {pipeline} › {stage}`                     |
-| `moreTags`             | `+{count}`                                                   | `+{count}`                                               |
-| `moving`               | `Movendo…`                                                   | `Moving…`                                                |
-| `noMembers`            | `Nenhum agente nesta conta ainda.`                           | `No agents in this account yet.`                         |
-| `toastAssigned`        | `Conversa atribuída a {name}`                                | `Conversation assigned to {name}`                        |
-| `toastUnassigned`      | `Conversa devolvida à fila`                                  | `Conversation returned to the queue`                     |
-| `toastAlreadyClaimed`  | `Outro agente acabou de assumir esta conversa`               | `Another agent has just taken this conversation`         |
-| `toastNotFound`        | `Esta conversa não está mais disponível`                     | `This conversation is no longer available`               |
-| `toastInvalidAssignee` | `Este membro não pode mais receber conversas`                | `This member can no longer be assigned conversations`    |
-| `toastForbidden`       | `Você não tem permissão para esta ação`                      | `You don't have permission for this action`              |
-| `toastRateLimited`     | `Muitas ações seguidas. Aguarde alguns segundos.`            | `Too many actions in a row. Wait a few seconds.`         |
-| `toastFailed`          | `Falha ao mover a conversa`                                  | `Failed to move the conversation`                        |
-| `a11yDragStart`        | `Conversa de {contact} levantada da coluna {from}`           | `Picked up {contact}'s conversation from {from}`         |
-| `a11yDragOver`         | `Sobre a coluna {over}`                                      | `Over column {over}`                                     |
-| `a11yDragEnd`          | `Conversa de {contact} movida para {to}`                     | `{contact}'s conversation moved to {to}`                 |
+| Chave                  | pt-BR                                                        | en                                                        |
+| ---------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
+| `unassignedColumn`     | `Não atribuídos`                                             | `Unassigned`                                              |
+| `columnAriaLabel`      | `Conversas de {name}`                                        | `{name}'s conversations`                                  |
+| `dropHere`             | `Solte uma conversa aqui`                                    | `Drop a conversation here`                                |
+| `emptyColumn`          | `Nenhuma conversa`                                           | `No conversations`                                        |
+| `loadMore`             | `Carregar mais`                                              | `Load more`                                               |
+| `showingOf`            | `Mostrando {shown} de {total}`                               | `Showing {shown} of {total}`                              |
+| `crmBadge`             | `{pipeline} › {stage}`                                       | `{pipeline} › {stage}`                                    |
+| `crmBadgeClosedTitle`  | `Negócio encerrado — {pipeline} › {stage}`                   | `Closed deal — {pipeline} › {stage}`                      |
+| `moreTags`             | `+{count}`                                                   | `+{count}`                                                |
+| `moving`               | `Movendo…`                                                   | `Moving…`                                                 |
+| `noMembers`            | `Nenhum agente nesta conta ainda.`                           | `No agents in this account yet.`                          |
+| `toastAssigned`        | `Conversa atribuída a {name}`                                | `Conversation assigned to {name}`                         |
+| `toastUnassigned`      | `Conversa devolvida à fila`                                  | `Conversation returned to the queue`                      |
+| `toastAlreadyClaimed`  | `Outro agente acabou de assumir esta conversa`               | `Another agent has just taken this conversation`          |
+| `toastNotFound`        | `Esta conversa não está mais disponível`                     | `This conversation is no longer available`                |
+| `toastInvalidAssignee` | `Este membro não pode mais receber conversas`                | `This member can no longer be assigned conversations`     |
+| `toastForbidden`       | `Você não tem permissão para esta ação`                      | `You don't have permission for this action`               |
+| `toastRateLimited`     | `Muitas ações seguidas. Aguarde alguns segundos.`            | `Too many actions in a row. Wait a few seconds.`          |
+| `toastFailed`          | `Falha ao mover a conversa`                                  | `Failed to move the conversation`                         |
+| `a11yDragStart`        | `Conversa de {contact} levantada da coluna {from}`           | `Picked up {contact}'s conversation from {from}`          |
+| `a11yDragOver`         | `Sobre a coluna {over}`                                      | `Over column {over}`                                      |
+| `a11yDragEnd`          | `Conversa de {contact} movida para {to}`                     | `{contact}'s conversation moved to {to}`                  |
 | `a11yDragCancel`       | `Movimento cancelado; conversa de {contact} voltou a {from}` | `Move cancelled; {contact}'s conversation back to {from}` |
 
 Reusar, sem duplicar: `Inbox.tabs.viewAsUnknownMember` para membro sem nome, e

@@ -28,9 +28,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { isInvalidWhatsappNumberError } from '@/lib/whatsapp/phone-utils';
 
 export type WhatsappStatusReason =
-  | 'consecutive_failures'
-  | 'meta_error'
-  | 'manual';
+  'consecutive_failures' | 'meta_error' | 'manual';
 
 /** Predicado sobre uma linha de contato já carregada. */
 export function isWhatsappInvalid(contact: {

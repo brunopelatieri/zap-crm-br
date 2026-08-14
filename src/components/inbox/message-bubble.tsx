@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -22,6 +22,7 @@ import { MessageReactions } from './message-reactions';
 import { InteractivePreview } from '@/components/interactive/interactive-preview';
 import { TemplatePreview } from '@/components/interactive/template-preview';
 import { DownloadIconButton, useMediaSrc } from './media-download';
+import { resolveMediaRef } from '@/lib/storage/media-url';
 import { useTranslations } from 'next-intl';
 import {
   Tooltip,
@@ -102,12 +103,32 @@ function MediaUnavailable({
 // hooks dentro.
 // ------------------------------------------------------------------
 
+/**
+ * Tem mídia utilizável nesta linha?
+ *
+ * A pergunta NÃO é "`media_url` está preenchido". São três colunas
+ * possíveis e `resolveMediaRef` é quem sabe a precedência entre elas —
+ * `media_path` (objeto nosso, migração 040), `media_url` (histórico e
+ * link externo) e a rota-proxy da Meta embutida na URL.
+ *
+ * O canal WhatsApp QRCode preenche **só `media_path`**: o webhook baixa
+ * a mídia da Evolution e sobe ao bucket, sem nunca ter uma URL pública
+ * (SPEC 048 §6.5). Enquanto o gate era `!!message.media_url`, toda foto
+ * e todo áudio recebidos por esse canal caíam em "Foto indisponível" /
+ * "Áudio indisponível" — com o arquivo íntegro no bucket, a poucos
+ * caracteres de distância. Os wrappers abaixo já recebiam `path` e
+ * sabiam resolvê-lo; o gate é que nunca os deixava tentar.
+ */
+function hasUsableMedia(message: Message): boolean {
+  return resolveMediaRef(message.media_url, message.media_path).kind !== 'none';
+}
+
 function MediaImage({
   url,
   path,
   alt,
 }: {
-  url: string;
+  url: string | null | undefined;
   path?: string | null;
   alt: string;
 }) {
@@ -143,7 +164,13 @@ function MediaImage({
   );
 }
 
-function MediaVideo({ url, path }: { url: string; path?: string | null }) {
+function MediaVideo({
+  url,
+  path,
+}: {
+  url: string | null | undefined;
+  path?: string | null;
+}) {
   const { src, loading, error } = useMediaSrc(url, path);
 
   if (error) {
@@ -163,7 +190,13 @@ function MediaVideo({ url, path }: { url: string; path?: string | null }) {
   return <video src={src} controls className="max-h-64 max-w-60 rounded-lg" />;
 }
 
-function MediaAudio({ url, path }: { url: string; path?: string | null }) {
+function MediaAudio({
+  url,
+  path,
+}: {
+  url: string | null | undefined;
+  path?: string | null;
+}) {
   const { src, loading, error } = useMediaSrc(url, path);
 
   if (error) return null;
@@ -190,7 +223,7 @@ function DocumentLink({
   path,
   label,
 }: {
-  url: string;
+  url: string | null | undefined;
   path?: string | null;
   label: string;
 }) {
@@ -235,10 +268,10 @@ function MessageContent({
       // — o que o agente envia já é o próprio arquivo que ele escolheu
       // no computador dele; não há nada novo para salvar.
       const canDownload =
-        message.sender_type === 'customer' && !!message.media_url;
+        message.sender_type === 'customer' && hasUsableMedia(message);
       return (
         <div>
-          {message.media_url ? (
+          {hasUsableMedia(message) ? (
             <div
               className={cn(
                 'relative inline-block',
@@ -275,10 +308,10 @@ function MessageContent({
 
     case 'video': {
       const canDownload =
-        message.sender_type === 'customer' && !!message.media_url;
+        message.sender_type === 'customer' && hasUsableMedia(message);
       return (
         <div>
-          {message.media_url ? (
+          {hasUsableMedia(message) ? (
             <div className="relative inline-block">
               <MediaVideo url={message.media_url} path={message.media_path} />
               {/* Botão explícito (não a área toda) — o clique em cima do
@@ -319,10 +352,10 @@ function MessageContent({
 
     case 'audio': {
       const canDownload =
-        message.sender_type === 'customer' && !!message.media_url;
+        message.sender_type === 'customer' && hasUsableMedia(message);
       return (
         <div className="flex items-center gap-2">
-          {message.media_url ? (
+          {hasUsableMedia(message) ? (
             <>
               <MediaAudio url={message.media_url} path={message.media_path} />
               {canDownload && (
@@ -343,7 +376,7 @@ function MessageContent({
     }
 
     case 'document': {
-      if (!message.media_url) {
+      if (!hasUsableMedia(message)) {
         return (
           <MediaUnavailable
             label={message.content_text || t('document')}

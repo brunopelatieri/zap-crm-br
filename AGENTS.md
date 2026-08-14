@@ -151,35 +151,35 @@ Guia detalhado (quando e por quê de cada um): [docs/comandos-desenvolvimento.md
 
 ## Índice da documentação
 
-| Documento                                                                                                | Assunto                                               |
-| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| [README.md](./README.md)                                                                                 | Visão do produto, deploy, configuração de cron e i18n |
-| [docs/comandos-desenvolvimento.md](./docs/comandos-desenvolvimento.md)                                   | Comandos npm: o que fazem, quando rodar               |
-| [docs/public-api.md](./docs/public-api.md)                                                               | API REST pública `/api/v1`                            |
-| [docs/mcp.md](./docs/mcp.md)                                                                             | Servidor MCP                                          |
-| [docs/i18n-implementation-report.md](./docs/i18n-implementation-report.md)                               | Arquitetura de i18n                                   |
-| [docs/teste-ab-disparos.md](./docs/teste-ab-disparos.md)                                                 | Teste A/B de templates com significância estatística  |
-| [docs/spec-040-media-privada.md](./docs/spec-040-media-privada.md)                                       | Mídia privada                                         |
-| [docs/spec-041-atribuicao-fora-do-inbox.md](./docs/spec-041-atribuicao-fora-do-inbox.md)                 | Atribuição fora do inbox                              |
-| [docs/spec-042-supervisao-e-escopo-de-contatos.md](./docs/spec-042-supervisao-e-escopo-de-contatos.md)   | Supervisão e escopo de contatos                       |
-| [docs/spec-043-quadro-de-atribuicao.md](./docs/spec-043-quadro-de-atribuicao.md)                         | Quadro de atribuição                                  |
-| [docs/spec-044-audiencia-multiformato-e-triagem.md](./docs/spec-044-audiencia-multiformato-e-triagem.md) | Audiência multiformato e triagem                      |
-| [docs/spec-045-reengajamento-janela-24h.md](./docs/spec-045-reengajamento-janela-24h.md)                 | Reengajamento antes da janela de 24h fechar           |
-| [docs/spec-046-agendamento-visual.md](./docs/spec-046-agendamento-visual.md)                             | Construtor visual do gatilho "Baseado em horário"     |
-| [docs/prd-047-canais-e-whatsapp-qrcode.md](./docs/prd-047-canais-e-whatsapp-qrcode.md)                   | **PRD** — camada de canais + WhatsApp QRCode (Evolution Go) |
-| [docs/spec-048-canal-whatsapp-qrcode.md](./docs/spec-048-canal-whatsapp-qrcode.md)                       | **SPEC** — canal WhatsApp QRCode: fundação, adaptador, plano de teste   |
-| [docs/references/EVOLUTION_GO_REFERENCE.md](./docs/references/EVOLUTION_GO_REFERENCE.md)                 | Referência da API Evolution Go (⚠️ incompleta — ver SPEC 048 §1)        |
+| Documento                                                                                                | Assunto                                                                       |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [README.md](./README.md)                                                                                 | Visão do produto, deploy, configuração de cron e i18n                         |
+| [docs/comandos-desenvolvimento.md](./docs/comandos-desenvolvimento.md)                                   | Comandos npm: o que fazem, quando rodar                                       |
+| [docs/public-api.md](./docs/public-api.md)                                                               | API REST pública `/api/v1`                                                    |
+| [docs/mcp.md](./docs/mcp.md)                                                                             | Servidor MCP                                                                  |
+| [docs/i18n-implementation-report.md](./docs/i18n-implementation-report.md)                               | Arquitetura de i18n                                                           |
+| [docs/teste-ab-disparos.md](./docs/teste-ab-disparos.md)                                                 | Teste A/B de templates com significância estatística                          |
+| [docs/spec-040-media-privada.md](./docs/spec-040-media-privada.md)                                       | Mídia privada                                                                 |
+| [docs/spec-041-atribuicao-fora-do-inbox.md](./docs/spec-041-atribuicao-fora-do-inbox.md)                 | Atribuição fora do inbox                                                      |
+| [docs/spec-042-supervisao-e-escopo-de-contatos.md](./docs/spec-042-supervisao-e-escopo-de-contatos.md)   | Supervisão e escopo de contatos                                               |
+| [docs/spec-043-quadro-de-atribuicao.md](./docs/spec-043-quadro-de-atribuicao.md)                         | Quadro de atribuição                                                          |
+| [docs/spec-044-audiencia-multiformato-e-triagem.md](./docs/spec-044-audiencia-multiformato-e-triagem.md) | Audiência multiformato e triagem                                              |
+| [docs/spec-045-reengajamento-janela-24h.md](./docs/spec-045-reengajamento-janela-24h.md)                 | Reengajamento antes da janela de 24h fechar                                   |
+| [docs/spec-046-agendamento-visual.md](./docs/spec-046-agendamento-visual.md)                             | Construtor visual do gatilho "Baseado em horário"                             |
+| [docs/prd-047-canais-e-whatsapp-qrcode.md](./docs/prd-047-canais-e-whatsapp-qrcode.md)                   | **PRD** — camada de canais + WhatsApp QRCode (Evolution Go)                   |
+| [docs/spec-048-canal-whatsapp-qrcode.md](./docs/spec-048-canal-whatsapp-qrcode.md)                       | **SPEC** — canal WhatsApp QRCode: fundação, adaptador, plano de teste         |
+| [docs/references/EVOLUTION_GO_REFERENCE.md](./docs/references/EVOLUTION_GO_REFERENCE.md)                 | Referência da API Evolution Go (⚠️ incompleta — ver SPEC 048 §1)              |
 | [docs/spec-050-padronizacao-telefone-br.md](./docs/spec-050-padronizacao-telefone-br.md)                 | **SPEC** — padronização de telefone + validação brasileira (DDD/celular/fixo) |
-| [docs/context/phone-number-format-standard.md](./docs/context/phone-number-format-standard.md)           | Padrão de formato de telefone — mapeamento de todos os pontos de entrada |
-| [docs/spec-inbox-tag-management.md](./docs/spec-inbox-tag-management.md)                                 | Gestão de etiquetas dentro do inbox                   |
-| [docs/spec-inbox-tabs-assignment.md](./docs/spec-inbox-tabs-assignment.md)                               | Abas do inbox e atribuição                            |
-| [docs/spec-inbox-kanban-integration.md](./docs/spec-inbox-kanban-integration.md)                         | Integração inbox ↔ funil kanban                       |
-| [docs/spec-settings-tag-editing.md](./docs/spec-settings-tag-editing.md)                                 | Edição de etiquetas em Configurações                  |
-| [docs/templates_email_send/](./docs/templates_email_send/)                                               | Templates de e-mail transacional do Supabase          |
-| [docs/issues_resolved/](./docs/issues_resolved/)                                                         | Histórico de problemas resolvidos                     |
-| [supabase/setup/cron-jobs.sql](./supabase/setup/cron-jobs.sql)                                           | Script pronto de agendamento via Supabase Cron        |
-| [n8n_automation/README.md](./n8n_automation/README.md)                                                   | Ingestão de contatos e integrações externas via n8n   |
-| [CONTRIBUTING.md](./CONTRIBUTING.md)                                                                     | Fluxo de contribuição                                 |
+| [docs/context/phone-number-format-standard.md](./docs/context/phone-number-format-standard.md)           | Padrão de formato de telefone — mapeamento de todos os pontos de entrada      |
+| [docs/spec-inbox-tag-management.md](./docs/spec-inbox-tag-management.md)                                 | Gestão de etiquetas dentro do inbox                                           |
+| [docs/spec-inbox-tabs-assignment.md](./docs/spec-inbox-tabs-assignment.md)                               | Abas do inbox e atribuição                                                    |
+| [docs/spec-inbox-kanban-integration.md](./docs/spec-inbox-kanban-integration.md)                         | Integração inbox ↔ funil kanban                                               |
+| [docs/spec-settings-tag-editing.md](./docs/spec-settings-tag-editing.md)                                 | Edição de etiquetas em Configurações                                          |
+| [docs/templates_email_send/](./docs/templates_email_send/)                                               | Templates de e-mail transacional do Supabase                                  |
+| [docs/issues_resolved/](./docs/issues_resolved/)                                                         | Histórico de problemas resolvidos                                             |
+| [supabase/setup/cron-jobs.sql](./supabase/setup/cron-jobs.sql)                                           | Script pronto de agendamento via Supabase Cron                                |
+| [n8n_automation/README.md](./n8n_automation/README.md)                                                   | Ingestão de contatos e integrações externas via n8n                           |
+| [CONTRIBUTING.md](./CONTRIBUTING.md)                                                                     | Fluxo de contribuição                                                         |
 
 ---
 

@@ -9,27 +9,22 @@
 
 import type { ChannelAdapter, ChannelType } from './types';
 import { whatsappCloudAdapter } from './adapters/whatsapp-cloud';
+import { evolutionAdapter } from './adapters/evolution';
 
 /**
  * `Record<ChannelType, …>` obriga, por exaustividade do TypeScript, a
  * registrar um adaptador para cada tipo declarado — um canal não pode
  * existir na matriz de capacidades e não ter implementação.
- *
- * O adaptador da Evolution entra aqui na F4. Até lá, `whatsapp_qr` não
- * é resolvível: o `getAdapter` lança com motivo explícito em vez de
- * devolver `undefined` e produzir um erro sem rastro três camadas
- * acima.
  */
-const ADAPTERS: Partial<Record<ChannelType, ChannelAdapter>> = {
+const ADAPTERS: Record<ChannelType, ChannelAdapter> = {
   whatsapp_cloud: whatsappCloudAdapter,
+  whatsapp_qr: evolutionAdapter,
 };
 
 export function getAdapter(type: ChannelType): ChannelAdapter {
   const adapter = ADAPTERS[type];
   if (!adapter) {
-    throw new Error(
-      `no adapter registered for channel type "${type}" — the Evolution adapter lands in PRD 047 phase F4`
-    );
+    throw new Error(`no adapter registered for channel type "${type}"`);
   }
   return adapter;
 }

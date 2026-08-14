@@ -28,8 +28,8 @@ demais ficaram com premissas do modelo antigo:
   "não existe", em silêncio (F-41-D, F-41-E);
 - e a própria 039 pode ser **apagada sem erro** por uma reaplicação da 017 (F-41-B).
 
-O risco §7 da SPEC original antecipou parte disso — *"dashboard, pipelines, broadcasts e
-automações também leem `conversations`; auditar todo `from('conversations')` do repo"* —
+O risco §7 da SPEC original antecipou parte disso — _"dashboard, pipelines, broadcasts e
+automações também leem `conversations`; auditar todo `from('conversations')` do repo"_ —
 mas a auditoria não foi feita. Esta SPEC é a auditoria, com correção item a item.
 
 ---
@@ -74,7 +74,7 @@ quando a automação foi criada, e nada o revalida na hora da execução.
 ### Três cenários, todos plausíveis sem má-fé
 
 **1. Agente desligado.** A conta remove o agente A. A seção 11 da 039 existe justamente
-para isso — *"HIGIENE — REMOÇÃO DE MEMBRO DEVOLVE A CARTEIRA À FILA"*
+para isso — _"HIGIENE — REMOÇÃO DE MEMBRO DEVOLVE A CARTEIRA À FILA"_
 ([039:786](../supabase/migrations/039_conversation_assignment.sql#L786)) — e a FK com
 `ON DELETE SET NULL` cobre a exclusão do usuário. Mas a automação segue com
 `agent_id = <uuid de A>` no `step_config`. A cada disparo, ela **reatribui conversas
@@ -91,7 +91,7 @@ devolvê-la (`INSUFFICIENT_ROLE` no RPC). Fica travada.
 **3. UUID de outra conta.** `step_config` é JSON editável pela API de automações. Um
 `agent_id` de outro inquilino passa pela FK da 039 (ela referencia `auth.users`, não
 `profiles` — a própria [assignment.ts:147-149](../src/lib/inbox/assignment.ts#L147-L149)
-avisa que *"a FK sozinha não garante que seja o MESMO inquilino"*) e produz o mesmo
+avisa que _"a FK sozinha não garante que seja o MESMO inquilino"_) e produz o mesmo
 resultado do cenário 1.
 
 ### Mitigação
@@ -161,9 +161,9 @@ END LOOP;
 O comentário logo acima declara a premissa que deixou de ser verdadeira:
 
 > `017 owns every policy on these tables (no later migration adds others), so drop them
-> all first`
+all first`
 
-A 039 quebrou essa premissa. O cabeçalho dela registra o perigo como *armadilha 2*
+A 039 quebrou essa premissa. O cabeçalho dela registra o perigo como _armadilha 2_
 ([039:44-52](../supabase/migrations/039_conversation_assignment.sql#L44-L52)) — mas
 registrar não é impedir. Hoje, reexecutar a 017 (num ambiente novo, num rebuild, num
 `supabase db reset`, ou porque alguém aplicou migrações fora de ordem) **remove todas as
@@ -202,15 +202,15 @@ END $$;
 
 3. **Item novo na PARTE A do [scripts/verify-039-rls.sql](../scripts/verify-039-rls.sql)**,
    no mesmo formato `verificacao / passou / por_que_importa` das asserções 1-6 que já
-   existem lá, mais uma linha no runbook de migrações: *"se a 017 for reaplicada, a 039
-   TEM de ser reaplicada em seguida"* — que hoje só existe dentro do comentário da 039.
+   existem lá, mais uma linha no runbook de migrações: _"se a 017 for reaplicada, a 039
+   TEM de ser reaplicada em seguida"_ — que hoje só existe dentro do comentário da 039.
 
 ---
 
 ## 3. 🟠 F-41-C — `/api/v1` é cega à atribuição, e isso não está escrito em lugar nenhum
 
-**Onde:** [api-context.ts:42](../src/lib/auth/api-context.ts#L42) — *"Service-role
-Supabase client. RLS-bypassing; scope by accountId"* — consumido por
+**Onde:** [api-context.ts:42](../src/lib/auth/api-context.ts#L42) — _"Service-role
+Supabase client. RLS-bypassing; scope by accountId"_ — consumido por
 [/api/v1/conversations](../src/app/api/v1/conversations/route.ts#L32),
 [/api/v1/conversations/[id]](../src/app/api/v1/conversations/[id]/route.ts#L24) e
 [/api/v1/conversations/[id]/messages](../src/app/api/v1/conversations/[id]/messages/route.ts#L30).
@@ -233,9 +233,9 @@ integrador terceiro achando que o mesmo limite se aplica. Não se aplica. O cabe
 `owner`. Não vamos escopá-la por agente nesta entrega.
 
 Implementação: seção nova e explícita em [docs/public-api.md](public-api.md) —
-*"Escopo e atribuição: uma API key enxerga todas as conversas da conta, inclusive as
+_"Escopo e atribuição: uma API key enxerga todas as conversas da conta, inclusive as
 atribuídas a outros agentes. Ela não é equivalente a um usuário agente. Trate-a como
-credencial de administrador."* — mais um aviso na tela de criação de API key
+credencial de administrador."_ — mais um aviso na tela de criação de API key
 (`/settings`, fluxo de [api-keys](../src/lib/api-keys/store.ts)).
 
 Fica registrado como evolução futura, **fora desta SPEC**: coluna de escopo na
@@ -264,14 +264,14 @@ A continua marcando 4 — inclusive conversas que A não consegue mais abrir. Cl
 uma lista que não as contém. O número só corrige com F5.
 
 O Inbox **já resolveu isso** para si: a reconciliação por ausência em
-[inbox/page.tsx:605-630](../src/app/(dashboard)/inbox/page.tsx#L605-L630) refaz o fetch e
+[inbox/page.tsx:605-630](<../src/app/(dashboard)/inbox/page.tsx#L605-L630>) refaz o fetch e
 trata o sumiço como revogação. O hook da sidebar ficou de fora.
 
 ### Mitigação
 
 1. Refazer o `SELECT` inteiro quando houver motivo para desconfiar do espelho:
    reconexão do WebSocket e `visibilitychange` — os mesmos gatilhos que o Inbox usa para
-   bumpar `resyncToken` ([page.tsx:581](../src/app/(dashboard)/inbox/page.tsx#L581)). É
+   bumpar `resyncToken` ([page.tsx:581](<../src/app/(dashboard)/inbox/page.tsx#L581>)). É
    uma query barata (duas colunas, escopada por RLS).
 2. Tratar `DELETE` como já trata, e **parar de assumir** que a ausência de evento
    significa "nada mudou".
@@ -318,7 +318,7 @@ Só o dashboard foi migrado.
 
 ### Mitigação
 
-Distinguir os três estados — *sem conversa*, *conversa fora do meu alcance*, *erro* — e
+Distinguir os três estados — _sem conversa_, _conversa fora do meu alcance_, _erro_ — e
 dizer isso na tela. Um texto discreto ("Este contato tem uma conversa atribuída a outro
 agente; o negócio será criado sem vínculo") resolve, e o dado para produzi-lo pode vir
 de uma contagem sem RLS via RPC escopado por conta, no mesmo espírito das RPCs
@@ -329,13 +329,13 @@ introduziu — ou, mais simples, aceitar a ambiguidade e usar um texto neutro
 **Varredura obrigatória no PR.** Todo `from('conversations')` chamado de componente
 cliente, para o mesmo padrão "0 linhas tratado como inexistência":
 
-| Arquivo | Situação |
-| --- | --- |
-| [deal-form.tsx:140](../src/components/pipelines/deal-form.tsx#L140) | **corrigir** (esta seção) |
-| [use-total-unread.ts:30](../src/hooks/use-total-unread.ts#L30) | **corrigir** (§4) |
-| [contacts-directory.tsx:80](../src/components/inbox/contacts-directory.tsx#L80) | correto — a restrição é intencional ([SPEC 042](spec-042-supervisao-e-escopo-de-contatos.md)) |
-| [message-thread.tsx:452](../src/components/inbox/message-thread.tsx#L452), [:668](../src/components/inbox/message-thread.tsx#L668) | já corrigidos na 039 (`.select()` + checagem de 0 linhas) |
-| [use-conversation-feed.ts:80](../src/hooks/use-conversation-feed.ts#L80), [inbox/page.tsx:279](../src/app/(dashboard)/inbox/page.tsx#L279) | corretos por construção |
+| Arquivo                                                                                                                                      | Situação                                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [deal-form.tsx:140](../src/components/pipelines/deal-form.tsx#L140)                                                                          | **corrigir** (esta seção)                                                                     |
+| [use-total-unread.ts:30](../src/hooks/use-total-unread.ts#L30)                                                                               | **corrigir** (§4)                                                                             |
+| [contacts-directory.tsx:80](../src/components/inbox/contacts-directory.tsx#L80)                                                              | correto — a restrição é intencional ([SPEC 042](spec-042-supervisao-e-escopo-de-contatos.md)) |
+| [message-thread.tsx:452](../src/components/inbox/message-thread.tsx#L452), [:668](../src/components/inbox/message-thread.tsx#L668)           | já corrigidos na 039 (`.select()` + checagem de 0 linhas)                                     |
+| [use-conversation-feed.ts:80](../src/hooks/use-conversation-feed.ts#L80), [inbox/page.tsx:279](<../src/app/(dashboard)/inbox/page.tsx#L279>) | corretos por construção                                                                       |
 
 ---
 
@@ -343,26 +343,27 @@ cliente, para o mesmo padrão "0 linhas tratado como inexistência":
 
 Cada item é independente; a ordem abaixo é por severidade, não por dependência.
 
-| Fase | # | Alvo | Ação |
-| --- | --- | --- | --- |
-| **1** | 1.1 | [engine.ts:474-497](../src/lib/automations/engine.ts#L474-L497) | validar destino (conta + papel) em `assign_conversation`; filtrar papel no `round_robin` (F-41-A) |
-| | 1.2 | `src/lib/automations/engine.test.ts` | teste: `agent_id` de outra conta e `agent_id` de `viewer` → passo recusa e loga, conversa intocada |
-| | 1.3 | `src/lib/flows/engine.ts` | varredura pelo mesmo padrão de escrita com service role |
-| **2** | 2.1 | [017:361-382](../supabase/migrations/017_account_sharing.sql#L361-L382) | restringir o `DROP` às políticas da própria 017 (F-41-B) |
-| | 2.2 | `supabase/migrations/041_assert_039_intact.sql` | **novo** — asserção que falha alto |
-| | 2.3 | [scripts/verify-039-rls.sql](../scripts/verify-039-rls.sql) | asserção nova na PARTE A |
-| **3** | 3.1 | [use-total-unread.ts](../src/hooks/use-total-unread.ts) | refetch em reconexão + `visibilitychange` (F-41-D) |
-| | 3.2 | — | decidir e registrar a semântica "minhas + fila" |
-| **4** | 4.1 | [docs/public-api.md](public-api.md) | seção de escopo da API key (F-41-C) |
-| | 4.2 | UI de criação de API key | aviso equivalente |
-| **5** | 5.1 | [deal-form.tsx](../src/components/pipelines/deal-form.tsx) | estados distintos + mensagem (F-41-E) |
-| | 5.2 | — | varredura da tabela da §5 |
+| Fase  | #   | Alvo                                                                    | Ação                                                                                               |
+| ----- | --- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **1** | 1.1 | [engine.ts:474-497](../src/lib/automations/engine.ts#L474-L497)         | validar destino (conta + papel) em `assign_conversation`; filtrar papel no `round_robin` (F-41-A)  |
+|       | 1.2 | `src/lib/automations/engine.test.ts`                                    | teste: `agent_id` de outra conta e `agent_id` de `viewer` → passo recusa e loga, conversa intocada |
+|       | 1.3 | `src/lib/flows/engine.ts`                                               | varredura pelo mesmo padrão de escrita com service role                                            |
+| **2** | 2.1 | [017:361-382](../supabase/migrations/017_account_sharing.sql#L361-L382) | restringir o `DROP` às políticas da própria 017 (F-41-B)                                           |
+|       | 2.2 | `supabase/migrations/041_assert_039_intact.sql`                         | **novo** — asserção que falha alto                                                                 |
+|       | 2.3 | [scripts/verify-039-rls.sql](../scripts/verify-039-rls.sql)             | asserção nova na PARTE A                                                                           |
+| **3** | 3.1 | [use-total-unread.ts](../src/hooks/use-total-unread.ts)                 | refetch em reconexão + `visibilitychange` (F-41-D)                                                 |
+|       | 3.2 | —                                                                       | decidir e registrar a semântica "minhas + fila"                                                    |
+| **4** | 4.1 | [docs/public-api.md](public-api.md)                                     | seção de escopo da API key (F-41-C)                                                                |
+|       | 4.2 | UI de criação de API key                                                | aviso equivalente                                                                                  |
+| **5** | 5.1 | [deal-form.tsx](../src/components/pipelines/deal-form.tsx)              | estados distintos + mensagem (F-41-E)                                                              |
+|       | 5.2 | —                                                                       | varredura da tabela da §5                                                                          |
 
 ---
 
 ## 7. Riscos e critérios de aceite
 
 **Riscos**
+
 - **Editar a 017** (2.1) toca uma migração já aplicada em produção. É seguro porque a
   mudança só **remove** destrutividade e o bloco é idempotente — mas exige teste num
   banco recriado do zero (`supabase db reset` com a cadeia completa 001→041).
@@ -376,6 +377,7 @@ Cada item é independente; a ordem abaixo é por severidade, não por dependênc
   revelar automações quebradas há meses.
 
 **Critérios de aceite**
+
 1. Automação com `agent_id` de **outra conta** → conversa permanece inalterada e o log
    da execução registra o motivo.
 2. Automação com `agent_id` de um **`viewer`** → idem.

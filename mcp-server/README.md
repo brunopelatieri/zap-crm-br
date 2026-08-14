@@ -13,7 +13,7 @@ Copilot e outros) operem o seu CRM em linguagem natural:
 É uma camada fina sobre a API REST pública do CRM
 ([`/api/v1`](../docs/public-api.md)). Toda autenticação, escopo de
 permissões e limite de requisições são aplicados pela sua instância —
-este servidor apenas expõe essa API como ferramentas (*tools*) MCP.
+este servidor apenas expõe essa API como ferramentas (_tools_) MCP.
 
 > 📖 Veja também a visão geral em [docs/mcp.md](../docs/mcp.md) e o
 > [README principal do repositório](../README.md) para instalar e
@@ -79,10 +79,10 @@ mais rápida de "conversar" com os dados do seu CRM.
 O servidor lê duas variáveis obrigatórias e duas travas de escrita
 opcionais:
 
-| Variável                  | Obrigatória | Finalidade                                                              |
-| -------------------------- | ----------- | ------------------------------------------------------------------------ |
-| `WACRM_BASE_URL`          | sim         | URL da sua instância, ex.: `https://crm.exemplo.com.br`                 |
-| `WACRM_API_KEY`           | sim         | Uma chave de API criada no painel                                       |
+| Variável                  | Obrigatória | Finalidade                                                               |
+| ------------------------- | ----------- | ------------------------------------------------------------------------ |
+| `WACRM_BASE_URL`          | sim         | URL da sua instância, ex.: `https://crm.exemplo.com.br`                  |
+| `WACRM_API_KEY`           | sim         | Uma chave de API criada no painel                                        |
 | `WACRM_ENABLE_WRITES`     | não         | `true` para expor criação/edição de contato e envio de mensagem          |
 | `WACRM_ENABLE_BROADCASTS` | não         | `true` para expor disparos em massa (exige `WACRM_ENABLE_WRITES` também) |
 
@@ -96,11 +96,11 @@ leitura** — a opção mais segura para começar.
 Se você já configura servidores MCP no seu dia a dia, aqui está tudo
 que precisa:
 
-| Cliente            | Arquivo de configuração                                                       | Chave raiz do JSON | Campo extra obrigatório |
-| ------------------- | ------------------------------------------------------------------------------- | ------------------- | ------------------------- |
-| **Claude Desktop**  | `claude_desktop_config.json`                                                    | `mcpServers`        | —                          |
-| **Cursor**          | `.cursor/mcp.json` (projeto) ou `~/.cursor/mcp.json` (global)                   | `mcpServers`        | —                          |
-| **VS Code + Copilot** | `.vscode/mcp.json` (workspace) ou config de usuário (`MCP: Open User Configuration`) | `servers`            | `"type": "stdio"` em cada servidor |
+| Cliente               | Arquivo de configuração                                                              | Chave raiz do JSON | Campo extra obrigatório            |
+| --------------------- | ------------------------------------------------------------------------------------ | ------------------ | ---------------------------------- |
+| **Claude Desktop**    | `claude_desktop_config.json`                                                         | `mcpServers`       | —                                  |
+| **Cursor**            | `.cursor/mcp.json` (projeto) ou `~/.cursor/mcp.json` (global)                        | `mcpServers`       | —                                  |
+| **VS Code + Copilot** | `.vscode/mcp.json` (workspace) ou config de usuário (`MCP: Open User Configuration`) | `servers`          | `"type": "stdio"` em cada servidor |
 
 Bloco base (Claude Desktop / Cursor):
 
@@ -112,10 +112,10 @@ Bloco base (Claude Desktop / Cursor):
       "args": ["-y", "wacrm-mcp"],
       "env": {
         "WACRM_BASE_URL": "https://crm.exemplo.com.br",
-        "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-      }
-    }
-  }
+        "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+      },
+    },
+  },
 }
 ```
 
@@ -131,10 +131,10 @@ Bloco equivalente para VS Code (repare em `servers` no lugar de
       "args": ["-y", "wacrm-mcp"],
       "env": {
         "WACRM_BASE_URL": "https://crm.exemplo.com.br",
-        "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-      }
-    }
-  }
+        "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+      },
+    },
+  },
 }
 ```
 
@@ -187,10 +187,10 @@ Cada seção abaixo assume que você já tem em mãos:
          "args": ["-y", "wacrm-mcp"],
          "env": {
            "WACRM_BASE_URL": "https://crm.exemplo.com.br",
-           "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-         }
-       }
-     }
+           "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+         },
+       },
+     },
    }
    ```
 
@@ -229,10 +229,10 @@ Cada seção abaixo assume que você já tem em mãos:
          "args": ["-y", "wacrm-mcp"],
          "env": {
            "WACRM_BASE_URL": "https://crm.exemplo.com.br",
-           "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-         }
-       }
-     }
+           "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+         },
+       },
+     },
    }
    ```
 
@@ -290,10 +290,10 @@ simples quanto nos outros dois clientes.
          "args": ["-y", "wacrm-mcp"],
          "env": {
            "WACRM_BASE_URL": "https://crm.exemplo.com.br",
-           "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-         }
-       }
-     }
+           "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+         },
+       },
+     },
    }
    ```
 
@@ -309,8 +309,8 @@ simples quanto nos outros dois clientes.
    > "Quantas conversas estão abertas no CRM?"
 
 > ⚠️ **Segurança em repositórios versionados:** se usar o escopo
-> *Workspace* (`.vscode/mcp.json`), evite commitar a API key em texto
-> puro — prefira o escopo *User/Global* para dados sensíveis, ou use o
+> _Workspace_ (`.vscode/mcp.json`), evite commitar a API key em texto
+> puro — prefira o escopo _User/Global_ para dados sensíveis, ou use o
 > mecanismo de variáveis de entrada (`${input:...}`) do VS Code. Veja
 > a [documentação oficial de MCP no VS Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)
 > para esse nível avançado.
@@ -349,19 +349,19 @@ servidor (Cursor: toggle desligar/ligar; VS Code: Paleta de Comandos
 As ferramentas de leitura ficam sempre disponíveis. As de escrita e
 disparo só aparecem quando a respectiva trava está ligada.
 
-| Ferramenta            | Grupo     | Escopo necessário     | O que faz                                                |
-| ----------------------- | --------- | ----------------------- | ----------------------------------------------------------- |
-| `whoami`               | leitura   | _(qualquer chave válida)_ | Mostra a conta e os escopos que a chave carrega            |
-| `list_contacts`        | leitura   | `contacts:read`         | Lista/busca contatos (paginado)                             |
-| `get_contact`          | leitura   | `contacts:read`         | Lê um contato específico                                    |
-| `list_conversations`   | leitura   | `conversations:read`    | Lista conversas, com filtro por status/contato               |
-| `get_conversation`     | leitura   | `conversations:read`    | Lê uma conversa específica                                   |
-| `list_messages`        | leitura   | `messages:read`         | Lista as mensagens de uma conversa                            |
-| `get_broadcast`        | leitura   | `broadcasts:send`       | Consulta o status de entrega de um disparo                    |
-| `send_message`         | escrita   | `messages:send`         | Envia uma mensagem no WhatsApp (texto/template/mídia)        |
-| `create_contact`       | escrita   | `contacts:write`        | Cria (ou reaproveita) um contato                              |
-| `update_contact`       | escrita   | `contacts:write`        | Atualiza um contato / substitui suas etiquetas                |
-| `send_broadcast`       | disparo   | `broadcasts:send`       | Dispara um broadcast de template (exige `confirm`)            |
+| Ferramenta           | Grupo   | Escopo necessário         | O que faz                                             |
+| -------------------- | ------- | ------------------------- | ----------------------------------------------------- |
+| `whoami`             | leitura | _(qualquer chave válida)_ | Mostra a conta e os escopos que a chave carrega       |
+| `list_contacts`      | leitura | `contacts:read`           | Lista/busca contatos (paginado)                       |
+| `get_contact`        | leitura | `contacts:read`           | Lê um contato específico                              |
+| `list_conversations` | leitura | `conversations:read`      | Lista conversas, com filtro por status/contato        |
+| `get_conversation`   | leitura | `conversations:read`      | Lê uma conversa específica                            |
+| `list_messages`      | leitura | `messages:read`           | Lista as mensagens de uma conversa                    |
+| `get_broadcast`      | leitura | `broadcasts:send`         | Consulta o status de entrega de um disparo            |
+| `send_message`       | escrita | `messages:send`           | Envia uma mensagem no WhatsApp (texto/template/mídia) |
+| `create_contact`     | escrita | `contacts:write`          | Cria (ou reaproveita) um contato                      |
+| `update_contact`     | escrita | `contacts:write`          | Atualiza um contato / substitui suas etiquetas        |
+| `send_broadcast`     | disparo | `broadcasts:send`         | Dispara um broadcast de template (exige `confirm`)    |
 
 ## Modelo de segurança
 

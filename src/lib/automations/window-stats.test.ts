@@ -83,7 +83,15 @@ describe('loadWindowStats', () => {
     // PostgREST devolve BIGINT como string em alguns caminhos; sem a
     // coerção, `reopened / sent` viraria NaN silenciosamente.
     const db = fakeClient({
-      data: [{ claims_total: '4', sent: '4', failed: '0', reopened: '1', opted_out_after: '0' }],
+      data: [
+        {
+          claims_total: '4',
+          sent: '4',
+          failed: '0',
+          reopened: '1',
+          opted_out_after: '0',
+        },
+      ],
       error: null,
     });
 

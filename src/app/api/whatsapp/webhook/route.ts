@@ -8,6 +8,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature';
 import { proxyMediaUrl } from '@/lib/storage/media-url';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 import { ingestInbound, type IngestContext } from '@/lib/channels/ingest';
+import { resolveDefaultChannelId } from '@/lib/channels/send';
 import type { NormalizedMessage } from '@/lib/channels/types';
 import {
   handleTemplateWebhookChange,
@@ -337,7 +338,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          // `channel_id` já vive em `whatsapp_config` desde a 055; o
+          // fallback só cobre uma conta que nunca passou pelo backfill.
+          config.channel_id ??
+            (await resolveDefaultChannelId(supabaseAdmin(), config.account_id))
         );
       }
     }
@@ -548,7 +553,8 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  channelId: string
 ) {
   // Tudo o que acontece DEPOIS de uma mensagem entrar (contato,
   // conversa, janela de 24h, opt-out, flows, automações, IA, webhooks de
@@ -559,6 +565,7 @@ async function processMessage(
     accountId,
     ownerUserId: configOwnerUserId,
     channelType: 'whatsapp_cloud',
+    channelId,
   };
 
   const senderPhone = normalizePhone(message.from);

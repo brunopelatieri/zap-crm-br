@@ -30,12 +30,30 @@ describe('registry', () => {
     expect(typeof adapter.sendInteractive).toBe('function');
   });
 
-  it('canal sem adaptador falha com motivo explícito, não undefined', () => {
-    // O adaptador da Evolution chega na F4. Até lá, quem tentar usar
-    // precisa saber POR QUE falhou — um `undefined` estouraria três
-    // camadas acima, sem rastro.
-    expect(hasAdapter('whatsapp_qr')).toBe(false);
-    expect(() => getAdapter('whatsapp_qr')).toThrow(/F4/);
+  it('resolve o adaptador Evolution (F4)', () => {
+    const adapter = getAdapter('whatsapp_qr');
+    expect(adapter.type).toBe('whatsapp_qr');
+    expect(hasAdapter('whatsapp_qr')).toBe(true);
+  });
+
+  it('o adaptador Evolution carrega EXATAMENTE as capacidades da matriz', () => {
+    expect(getAdapter('whatsapp_qr').capabilities).toBe(
+      capabilitiesFor('whatsapp_qr')
+    );
+  });
+
+  it('Evolution implementa os métodos das capacidades que declara', () => {
+    const adapter = getAdapter('whatsapp_qr');
+    expect(typeof adapter.sendText).toBe('function');
+    expect(typeof adapter.sendMedia).toBe('function');
+    // QR declara enquete e localização — os métodos têm de existir.
+    expect(adapter.capabilities.poll).toBe(true);
+    expect(typeof adapter.sendPoll).toBe('function');
+    expect(adapter.capabilities.location).toBe(true);
+    expect(typeof adapter.sendLocation).toBe('function');
+    // MEDIDO como false (SPEC 048 §1.1-bis) — sem sendTemplate/sendInteractive.
+    expect(adapter.capabilities.templates).toBe(false);
+    expect(adapter.sendTemplate).toBeUndefined();
   });
 
   it('todo tipo declarado ou resolve, ou explica a ausência', () => {

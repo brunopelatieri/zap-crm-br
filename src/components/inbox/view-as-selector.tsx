@@ -113,7 +113,10 @@ export function ViewAsSelector({
           !membersLoading && (
             <>
               <DropdownMenuSeparator className="bg-border" />
-              <DropdownMenuItem disabled className="text-muted-foreground text-sm">
+              <DropdownMenuItem
+                disabled
+                className="text-muted-foreground text-sm"
+              >
                 {t('viewAsNoTeammates')}
               </DropdownMenuItem>
             </>

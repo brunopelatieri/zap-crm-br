@@ -55,19 +55,19 @@ O padrão de numeração telefônica brasileiro é regulamentado pela **Anatel (
 Número completo = DDI (opcional) + DDD (2 dígitos) + Número local
 ```
 
-| Componente | Tamanho | Exemplo | Obrigatório |
-|---|---|---|---|
-| **DDI** (código do país) | 2 dígitos | `55` (Brasil) | Só em formato internacional |
-| **DDD** (código de área) | 2 dígitos | `11`, `21`, `85` | Sempre |
-| **Número local — Celular** | 9 dígitos | `9XXXX-XXXX` | — |
-| **Número local — Fixo** | 8 dígitos | `XXXX-XXXX` | — |
+| Componente                 | Tamanho   | Exemplo          | Obrigatório                 |
+| -------------------------- | --------- | ---------------- | --------------------------- |
+| **DDI** (código do país)   | 2 dígitos | `55` (Brasil)    | Só em formato internacional |
+| **DDD** (código de área)   | 2 dígitos | `11`, `21`, `85` | Sempre                      |
+| **Número local — Celular** | 9 dígitos | `9XXXX-XXXX`     | —                           |
+| **Número local — Fixo**    | 8 dígitos | `XXXX-XXXX`      | —                           |
 
 ### Contagem total de dígitos (sem DDI)
 
-| Tipo | DDD | Número local | Total |
-|---|---|---|---|
-| **Celular** | 2 | 9 | **11 dígitos** |
-| **Fixo** | 2 | 8 | **10 dígitos** |
+| Tipo        | DDD | Número local | Total          |
+| ----------- | --- | ------------ | -------------- |
+| **Celular** | 2   | 9            | **11 dígitos** |
+| **Fixo**    | 2   | 8            | **10 dígitos** |
 
 ---
 
@@ -86,15 +86,15 @@ DDD + 9 + XXXX + XXXX
 
 <cite index="21-1">A Anatel implementou o nono dígito para celulares através da Resolução nº 553/2010, com início no DDD 11 em 29 de julho de 2012.</cite> O cronograma foi gradual:
 
-| Período | DDDs afetados |
-|---|---|
-| Julho 2012 | 11 |
-| Agosto 2013 | 12, 13, 14, 15, 16, 17, 18, 19 |
-| Outubro 2013 | 21, 22, 24, 27, 28 |
-| Novembro 2014 | 91, 92, 93, 94, 95, 96, 97, 98, 99 |
-| Maio 2015 | 81, 82, 83, 84, 85, 86, 87, 88, 89 |
-| Outubro 2015 | 31, 32, 33, 34, 35, 37, 38, 71, 73, 74, 75, 77, 79 |
-| Até Dez 2016 | Todos os demais (41–69, 51–55, 61–69) |
+| Período       | DDDs afetados                                      |
+| ------------- | -------------------------------------------------- |
+| Julho 2012    | 11                                                 |
+| Agosto 2013   | 12, 13, 14, 15, 16, 17, 18, 19                     |
+| Outubro 2013  | 21, 22, 24, 27, 28                                 |
+| Novembro 2014 | 91, 92, 93, 94, 95, 96, 97, 98, 99                 |
+| Maio 2015     | 81, 82, 83, 84, 85, 86, 87, 88, 89                 |
+| Outubro 2015  | 31, 32, 33, 34, 35, 37, 38, 71, 73, 74, 75, 77, 79 |
+| Até Dez 2016  | Todos os demais (41–69, 51–55, 61–69)              |
 
 Desde o encerramento desse cronograma, **todos os DDDs do Brasil utilizam 9 dígitos para celular**. Números de 8 dígitos após o DDD são hoje exclusivos de telefones fixos.
 
@@ -123,16 +123,16 @@ DDD + XXXX + XXXX
 
 Estes são os cenários que causam erros silenciosos em sistemas de validação de telefone em produção:
 
-| Situação | Exemplo recebido | O que fazer |
-|---|---|---|
-| Número com DDI `+55` | `+55 11 98765-4321` | Remover `+55` antes de validar |
-| DDI sem `+` | `55 11 98765-4321` | Verificar se tem 13 dígitos; se sim, remover os 2 primeiros |
-| Celular com 8 dígitos (legado) | `11 9876-5432` | Rejeitar ou sinalizar para revisão manual |
-| Número formatado com máscara | `(11) 98765-4321` | Remover `(`, `)`, `-`, espaços antes de validar |
-| DDD inválido | `10 98765-4321` | Validar contra lista de DDDs permitidos |
-| Número de serviço especial | `0800 123 4567` | Tratar separadamente — não é DDD + número local |
-| Número incompleto | `9876-5432` (sem DDD) | Rejeitar ou solicitar DDD |
-| Zeros à esquerda extras | `011 98765-4321` | Remover o `0` de discagem nacional antes de validar |
+| Situação                       | Exemplo recebido      | O que fazer                                                 |
+| ------------------------------ | --------------------- | ----------------------------------------------------------- |
+| Número com DDI `+55`           | `+55 11 98765-4321`   | Remover `+55` antes de validar                              |
+| DDI sem `+`                    | `55 11 98765-4321`    | Verificar se tem 13 dígitos; se sim, remover os 2 primeiros |
+| Celular com 8 dígitos (legado) | `11 9876-5432`        | Rejeitar ou sinalizar para revisão manual                   |
+| Número formatado com máscara   | `(11) 98765-4321`     | Remover `(`, `)`, `-`, espaços antes de validar             |
+| DDD inválido                   | `10 98765-4321`       | Validar contra lista de DDDs permitidos                     |
+| Número de serviço especial     | `0800 123 4567`       | Tratar separadamente — não é DDD + número local             |
+| Número incompleto              | `9876-5432` (sem DDD) | Rejeitar ou solicitar DDD                                   |
+| Zeros à esquerda extras        | `011 98765-4321`      | Remover o `0` de discagem nacional antes de validar         |
 
 ### Fluxo de normalização recomendado
 
@@ -169,95 +169,95 @@ Validar os 2 primeiros dígitos contra lista de DDDs válidos
 
 ### Sudeste
 
-| DDD | Estado / Região |
-|---|---|
-| 11 | São Paulo — Capital e Região Metropolitana |
-| 12 | São Paulo — Vale do Paraíba e Litoral Norte |
-| 13 | São Paulo — Baixada Santista e Vale do Ribeira |
-| 14 | São Paulo — Bauru e região |
-| 15 | São Paulo — Sorocaba e região |
-| 16 | São Paulo — Ribeirão Preto e região |
-| 17 | São Paulo — São José do Rio Preto e região |
-| 18 | São Paulo — Presidente Prudente e região |
-| 19 | São Paulo — Campinas e região |
-| 21 | Rio de Janeiro — Capital e Região Metropolitana |
-| 22 | Rio de Janeiro — Norte Fluminense e Serrana |
-| 24 | Rio de Janeiro — Sul Fluminense e Costa Verde |
-| 27 | Espírito Santo — Vitória e região |
-| 28 | Espírito Santo — Sul do Estado |
-| 31 | Minas Gerais — Belo Horizonte e Região Metropolitana |
-| 32 | Minas Gerais — Zona da Mata |
-| 33 | Minas Gerais — Vale do Rio Doce |
-| 34 | Minas Gerais — Triângulo Mineiro |
-| 35 | Minas Gerais — Sul de Minas |
-| 37 | Minas Gerais — Centro-Oeste Mineiro |
-| 38 | Minas Gerais — Norte de Minas |
+| DDD | Estado / Região                                      |
+| --- | ---------------------------------------------------- |
+| 11  | São Paulo — Capital e Região Metropolitana           |
+| 12  | São Paulo — Vale do Paraíba e Litoral Norte          |
+| 13  | São Paulo — Baixada Santista e Vale do Ribeira       |
+| 14  | São Paulo — Bauru e região                           |
+| 15  | São Paulo — Sorocaba e região                        |
+| 16  | São Paulo — Ribeirão Preto e região                  |
+| 17  | São Paulo — São José do Rio Preto e região           |
+| 18  | São Paulo — Presidente Prudente e região             |
+| 19  | São Paulo — Campinas e região                        |
+| 21  | Rio de Janeiro — Capital e Região Metropolitana      |
+| 22  | Rio de Janeiro — Norte Fluminense e Serrana          |
+| 24  | Rio de Janeiro — Sul Fluminense e Costa Verde        |
+| 27  | Espírito Santo — Vitória e região                    |
+| 28  | Espírito Santo — Sul do Estado                       |
+| 31  | Minas Gerais — Belo Horizonte e Região Metropolitana |
+| 32  | Minas Gerais — Zona da Mata                          |
+| 33  | Minas Gerais — Vale do Rio Doce                      |
+| 34  | Minas Gerais — Triângulo Mineiro                     |
+| 35  | Minas Gerais — Sul de Minas                          |
+| 37  | Minas Gerais — Centro-Oeste Mineiro                  |
+| 38  | Minas Gerais — Norte de Minas                        |
 
 ### Sul
 
-| DDD | Estado / Região |
-|---|---|
-| 41 | Paraná — Curitiba e Região Metropolitana |
-| 42 | Paraná — Ponta Grossa e região |
-| 43 | Paraná — Londrina e região |
-| 44 | Paraná — Maringá e região |
-| 45 | Paraná — Cascavel e região |
-| 46 | Paraná — Sudoeste do Paraná |
-| 47 | Santa Catarina — Litoral Norte e Vale do Itajaí |
-| 48 | Santa Catarina — Florianópolis e Sul do Estado |
-| 49 | Santa Catarina — Oeste e Serrana |
-| 51 | Rio Grande do Sul — Porto Alegre e Região Metropolitana |
-| 53 | Rio Grande do Sul — Pelotas e região |
-| 54 | Rio Grande do Sul — Caxias do Sul e Serra Gaúcha |
-| 55 | Rio Grande do Sul — Santa Maria e região |
+| DDD | Estado / Região                                         |
+| --- | ------------------------------------------------------- |
+| 41  | Paraná — Curitiba e Região Metropolitana                |
+| 42  | Paraná — Ponta Grossa e região                          |
+| 43  | Paraná — Londrina e região                              |
+| 44  | Paraná — Maringá e região                               |
+| 45  | Paraná — Cascavel e região                              |
+| 46  | Paraná — Sudoeste do Paraná                             |
+| 47  | Santa Catarina — Litoral Norte e Vale do Itajaí         |
+| 48  | Santa Catarina — Florianópolis e Sul do Estado          |
+| 49  | Santa Catarina — Oeste e Serrana                        |
+| 51  | Rio Grande do Sul — Porto Alegre e Região Metropolitana |
+| 53  | Rio Grande do Sul — Pelotas e região                    |
+| 54  | Rio Grande do Sul — Caxias do Sul e Serra Gaúcha        |
+| 55  | Rio Grande do Sul — Santa Maria e região                |
 
 ### Centro-Oeste
 
-| DDD | Estado / Região |
-|---|---|
-| 61 | Distrito Federal e entorno / Goiás |
-| 62 | Goiás — Goiânia e região |
-| 63 | Tocantins |
-| 64 | Goiás — Sul do Estado |
-| 65 | Mato Grosso — Cuiabá e região |
-| 66 | Mato Grosso — Rondonópolis e região |
-| 67 | Mato Grosso do Sul |
-| 68 | Acre |
-| 69 | Rondônia |
+| DDD | Estado / Região                     |
+| --- | ----------------------------------- |
+| 61  | Distrito Federal e entorno / Goiás  |
+| 62  | Goiás — Goiânia e região            |
+| 63  | Tocantins                           |
+| 64  | Goiás — Sul do Estado               |
+| 65  | Mato Grosso — Cuiabá e região       |
+| 66  | Mato Grosso — Rondonópolis e região |
+| 67  | Mato Grosso do Sul                  |
+| 68  | Acre                                |
+| 69  | Rondônia                            |
 
 ### Nordeste
 
-| DDD | Estado / Região |
-|---|---|
-| 71 | Bahia — Salvador e Região Metropolitana |
-| 73 | Bahia — Ilhéus e Sul da Bahia |
-| 74 | Bahia — Juazeiro e Região do São Francisco |
-| 75 | Bahia — Feira de Santana e região |
-| 77 | Bahia — Vitória da Conquista e Sudoeste Baiano |
-| 79 | Sergipe |
-| 81 | Pernambuco — Recife e Região Metropolitana |
-| 82 | Alagoas |
-| 83 | Paraíba |
-| 84 | Rio Grande do Norte |
-| 85 | Ceará — Fortaleza e região |
-| 86 | Piauí — Teresina e Norte do Estado |
-| 87 | Pernambuco — Sertão |
-| 88 | Ceará — Sul do Estado |
-| 89 | Piauí — Sul do Estado |
+| DDD | Estado / Região                                |
+| --- | ---------------------------------------------- |
+| 71  | Bahia — Salvador e Região Metropolitana        |
+| 73  | Bahia — Ilhéus e Sul da Bahia                  |
+| 74  | Bahia — Juazeiro e Região do São Francisco     |
+| 75  | Bahia — Feira de Santana e região              |
+| 77  | Bahia — Vitória da Conquista e Sudoeste Baiano |
+| 79  | Sergipe                                        |
+| 81  | Pernambuco — Recife e Região Metropolitana     |
+| 82  | Alagoas                                        |
+| 83  | Paraíba                                        |
+| 84  | Rio Grande do Norte                            |
+| 85  | Ceará — Fortaleza e região                     |
+| 86  | Piauí — Teresina e Norte do Estado             |
+| 87  | Pernambuco — Sertão                            |
+| 88  | Ceará — Sul do Estado                          |
+| 89  | Piauí — Sul do Estado                          |
 
 ### Norte
 
-| DDD | Estado / Região |
-|---|---|
-| 91 | Pará — Belém e região |
-| 92 | Amazonas — Manaus e região |
-| 93 | Pará — Santarém e Oeste do Pará |
-| 94 | Pará — Marabá e Sul do Pará |
-| 95 | Roraima |
-| 96 | Amapá |
-| 97 | Amazonas — Interior do Estado |
-| 98 | Maranhão — São Luís e região |
-| 99 | Maranhão — Interior do Estado |
+| DDD | Estado / Região                 |
+| --- | ------------------------------- |
+| 91  | Pará — Belém e região           |
+| 92  | Amazonas — Manaus e região      |
+| 93  | Pará — Santarém e Oeste do Pará |
+| 94  | Pará — Marabá e Sul do Pará     |
+| 95  | Roraima                         |
+| 96  | Amapá                           |
+| 97  | Amazonas — Interior do Estado   |
+| 98  | Maranhão — São Luís e região    |
+| 99  | Maranhão — Interior do Estado   |
 
 ---
 
@@ -312,32 +312,27 @@ Fixo:     +55 11 3456-7890  →  +551134567890   (12 dígitos com +)
 
 ```typescript
 const DDD_VALIDOS = new Set([
-  11, 12, 13, 14, 15, 16, 17, 18, 19,
-  21, 22, 24, 27, 28,
-  31, 32, 33, 34, 35, 37, 38,
-  41, 42, 43, 44, 45, 46, 47, 48, 49,
-  51, 53, 54, 55,
-  61, 62, 63, 64, 65, 66, 67, 68, 69,
-  71, 73, 74, 75, 77, 79,
-  81, 82, 83, 84, 85, 86, 87, 88, 89,
-  91, 92, 93, 94, 95, 96, 97, 98, 99,
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35,
+  37, 38, 41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64,
+  65, 66, 67, 68, 69, 71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88,
+  89, 91, 92, 93, 94, 95, 96, 97, 98, 99,
 ]);
 
 function limparTelefone(tel: string): string {
   // Remove tudo que não é dígito
-  let limpo = tel.replace(/\D/g, "");
+  let limpo = tel.replace(/\D/g, '');
   // Remove DDI 55 se presente (13 dígitos = DDI+DDD+celular ou 12 = DDI+DDD+fixo)
-  if (limpo.startsWith("55") && (limpo.length === 13 || limpo.length === 12)) {
+  if (limpo.startsWith('55') && (limpo.length === 13 || limpo.length === 12)) {
     limpo = limpo.slice(2);
   }
   // Remove 0 de discagem nacional
-  if (limpo.startsWith("0") && limpo.length === 12) {
+  if (limpo.startsWith('0') && limpo.length === 12) {
     limpo = limpo.slice(1);
   }
   return limpo;
 }
 
-type TipoTelefone = "celular" | "fixo" | "invalido";
+type TipoTelefone = 'celular' | 'fixo' | 'invalido';
 
 interface ResultadoValidacao {
   valido: boolean;
@@ -354,7 +349,7 @@ function validarTelefoneBR(input: string): ResultadoValidacao {
   if (limpo.length !== 10 && limpo.length !== 11) {
     return {
       valido: false,
-      tipo: "invalido",
+      tipo: 'invalido',
       ddd: null,
       numero: null,
       e164: null,
@@ -368,7 +363,7 @@ function validarTelefoneBR(input: string): ResultadoValidacao {
   if (!DDD_VALIDOS.has(ddd)) {
     return {
       valido: false,
-      tipo: "invalido",
+      tipo: 'invalido',
       ddd,
       numero: null,
       e164: null,
@@ -377,19 +372,19 @@ function validarTelefoneBR(input: string): ResultadoValidacao {
   }
 
   if (limpo.length === 11) {
-    if (numeroLocal[0] !== "9") {
+    if (numeroLocal[0] !== '9') {
       return {
         valido: false,
-        tipo: "invalido",
+        tipo: 'invalido',
         ddd,
         numero: null,
         e164: null,
-        erro: "Celular com 11 dígitos deve começar com 9 após o DDD",
+        erro: 'Celular com 11 dígitos deve começar com 9 após o DDD',
       };
     }
     return {
       valido: true,
-      tipo: "celular",
+      tipo: 'celular',
       ddd,
       numero: numeroLocal,
       e164: `+55${limpo}`,
@@ -400,17 +395,17 @@ function validarTelefoneBR(input: string): ResultadoValidacao {
   if (!/^[2-8]/.test(numeroLocal)) {
     return {
       valido: false,
-      tipo: "invalido",
+      tipo: 'invalido',
       ddd,
       numero: null,
       e164: null,
-      erro: "Fixo deve começar com dígito entre 2 e 8",
+      erro: 'Fixo deve começar com dígito entre 2 e 8',
     };
   }
 
   return {
     valido: true,
-    tipo: "fixo",
+    tipo: 'fixo',
     ddd,
     numero: numeroLocal,
     e164: `+55${limpo}`,
@@ -418,13 +413,13 @@ function validarTelefoneBR(input: string): ResultadoValidacao {
 }
 
 // Uso
-console.log(validarTelefoneBR("+55 (11) 98765-4321"));
+console.log(validarTelefoneBR('+55 (11) 98765-4321'));
 // { valido: true, tipo: 'celular', ddd: 11, numero: '987654321', e164: '+5511987654321' }
 
-console.log(validarTelefoneBR("(21) 3456-7890"));
+console.log(validarTelefoneBR('(21) 3456-7890'));
 // { valido: true, tipo: 'fixo', ddd: 21, numero: '34567890', e164: '+552134567890' }
 
-console.log(validarTelefoneBR("10 98765-4321"));
+console.log(validarTelefoneBR('10 98765-4321'));
 // { valido: false, tipo: 'invalido', erro: 'DDD inválido: 10' }
 ```
 
@@ -491,26 +486,24 @@ Use essa expression em nós de Set ou Code no n8n para normalizar o telefone do 
 
 ```javascript
 // Em nó Code — normaliza para E.164 sem o +
-const raw = $json.telefone ?? "";
-let tel = raw.replace(/\D/g, "");
+const raw = $json.telefone ?? '';
+let tel = raw.replace(/\D/g, '');
 
 // Remove DDI 55 se já presente
-if (tel.startsWith("55") && (tel.length === 13 || tel.length === 12)) {
+if (tel.startsWith('55') && (tel.length === 13 || tel.length === 12)) {
   tel = tel.slice(2);
 }
 
 // Remove 0 de discagem
-if (tel.startsWith("0") && tel.length === 12) {
+if (tel.startsWith('0') && tel.length === 12) {
   tel = tel.slice(1);
 }
 
 const dddsValidos = new Set([
-  11,12,13,14,15,16,17,18,19,
-  21,22,24,27,28,31,32,33,34,35,37,38,
-  41,42,43,44,45,46,47,48,49,51,53,54,55,
-  61,62,63,64,65,66,67,68,69,
-  71,73,74,75,77,79,81,82,83,84,85,86,87,88,89,
-  91,92,93,94,95,96,97,98,99
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35,
+  37, 38, 41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64,
+  65, 66, 67, 68, 69, 71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88,
+  89, 91, 92, 93, 94, 95, 96, 97, 98, 99,
 ]);
 
 const ddd = parseInt(tel.slice(0, 2));
@@ -518,9 +511,9 @@ const valido = (tel.length === 11 || tel.length === 10) && dddsValidos.has(ddd);
 
 return {
   telefone_original: raw,
-  telefone_e164: valido ? `55${tel}` : null,  // sem o + para Evolution API
+  telefone_e164: valido ? `55${tel}` : null, // sem o + para Evolution API
   ddd: valido ? ddd : null,
-  tipo: valido ? (tel.length === 11 ? "celular" : "fixo") : null,
+  tipo: valido ? (tel.length === 11 ? 'celular' : 'fixo') : null,
   valido,
 };
 ```
@@ -534,15 +527,10 @@ return {
 ```json
 {
   "ddds_validos": [
-    11, 12, 13, 14, 15, 16, 17, 18, 19,
-    21, 22, 24, 27, 28,
-    31, 32, 33, 34, 35, 37, 38,
-    41, 42, 43, 44, 45, 46, 47, 48, 49,
-    51, 53, 54, 55,
-    61, 62, 63, 64, 65, 66, 67, 68, 69,
-    71, 73, 74, 75, 77, 79,
-    81, 82, 83, 84, 85, 86, 87, 88, 89,
-    91, 92, 93, 94, 95, 96, 97, 98, 99
+    11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35,
+    37, 38, 41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64,
+    65, 66, 67, 68, 69, 71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88,
+    89, 91, 92, 93, 94, 95, 96, 97, 98, 99
   ],
   "total": 67,
   "fonte": "Anatel — Resolução nº 553/2010",
@@ -665,7 +653,9 @@ if (!tel || (tel.length !== 13 && tel.length !== 12)) {
 
 // Apenas celulares para WhatsApp (13 dígitos)
 if (tel.length !== 13) {
-  throw new Error(`WhatsApp requer celular (13 dígitos). Recebido: ${tel.length}`);
+  throw new Error(
+    `WhatsApp requer celular (13 dígitos). Recebido: ${tel.length}`
+  );
 }
 
 return { numero_whatsapp: tel };
@@ -686,6 +676,6 @@ return { numero_whatsapp: tel };
 
 <div align="center">
 
-*Documentação mantida com foco em uso real em sistemas de automação e validação de leads.*
+_Documentação mantida com foco em uso real em sistemas de automação e validação de leads._
 
 </div>

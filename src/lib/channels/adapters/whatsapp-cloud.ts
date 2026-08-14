@@ -27,6 +27,7 @@ import {
   sendTemplateMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendReactionMessage,
 } from '@/lib/whatsapp/meta-api';
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
 import type { MessageTemplate } from '@/types';
@@ -37,6 +38,7 @@ import type {
   NormalizedInbound,
   SendInteractiveParams,
   SendMediaParams,
+  SendReactionParams,
   SendResult,
   SendTemplateParams,
   SendTextParams,
@@ -144,6 +146,19 @@ export const whatsappCloudAdapter: ChannelAdapter = {
       headerText: payload.header,
       footerText: payload.footer,
       contextMessageId: p.quotedProviderMessageId ?? undefined,
+    });
+    return { providerMessageId: r.messageId };
+  },
+
+  async sendReaction(ctx, p: SendReactionParams): Promise<SendResult> {
+    const { phoneNumberId, accessToken } = credentials(ctx);
+    const r = await sendReactionMessage({
+      phoneNumberId,
+      accessToken,
+      to: p.to,
+      targetMessageId: p.targetProviderMessageId,
+      // Emoji vazio remove a reação (spec da Cloud API).
+      emoji: p.emoji,
     });
     return { providerMessageId: r.messageId };
   },

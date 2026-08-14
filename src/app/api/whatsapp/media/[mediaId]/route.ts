@@ -69,10 +69,7 @@ export async function GET(
       .maybeSingle();
 
     if (ownershipError) {
-      console.error(
-        '[media] ownership lookup failed:',
-        ownershipError.message
-      );
+      console.error('[media] ownership lookup failed:', ownershipError.message);
       return NextResponse.json(
         { error: 'Failed to fetch media' },
         { status: 500 }

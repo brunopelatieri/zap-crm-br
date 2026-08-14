@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
+import {
+  resolveChannelForConversation,
+  ChannelNotConfiguredError,
+} from '@/lib/channels/send';
+import { can } from '@/lib/channels/capabilities';
+import { getAdapter } from '@/lib/channels/registry';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -110,37 +114,51 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
-      .single();
+    // Credenciais do canal DA CONVERSA (SPEC 048 F4.1). Antes disto a
+    // rota ia sempre para a `whatsapp_config` do canal oficial, então
+    // reagir numa thread do WhatsApp QRCode mandava a reação para a Meta
+    // com um wa_id que ela não conhece — 502 garantido, e a reação nem
+    // chegava a ser gravada localmente.
+    let channelCtx;
+    try {
+      ({ ctx: channelCtx } = await resolveChannelForConversation(
+        supabase,
+        accountId,
+        conversation.id
+      ));
+    } catch (err) {
+      if (err instanceof ChannelNotConfiguredError) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured.' },
+          { status: 400 }
+        );
+      }
+      throw err;
+    }
 
-    if (configError || !config) {
+    const channelType = channelCtx.channel.type;
+    const adapter = getAdapter(channelType);
+    if (!can(channelType, 'reactions') || !adapter.sendReaction) {
       return NextResponse.json(
-        { error: 'WhatsApp not configured.' },
+        { error: `This channel does not support reactions` },
         { status: 400 }
       );
     }
 
-    const accessToken = decrypt(config.access_token);
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {
-      await sendReactionMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      await adapter.sendReaction(channelCtx, {
         to: sanitizedPhone,
-        targetMessageId: targetMessage.message_id,
+        targetProviderMessageId: targetMessage.message_id,
         emoji,
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Unknown Meta API error';
-      console.error('[whatsapp/react] Meta send failed:', message);
+        err instanceof Error ? err.message : 'Unknown provider error';
+      console.error('[whatsapp/react] provider send failed:', message);
       return NextResponse.json(
-        { error: `Meta API error: ${message}` },
+        { error: `Provider error: ${message}` },
         { status: 502 }
       );
     }

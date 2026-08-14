@@ -41,6 +41,15 @@ export const EVOLUTION_KEY_SCOPE = {
   '/instance/reconnect': 'instance',
   '/instance/advanced-settings': 'instance',
   '/instance/logs': 'instance',
+  // Mensageria (F4, SPEC 048 §2) — todas de escopo 'instance'.
+  '/send/text': 'instance',
+  '/send/media': 'instance',
+  '/send/location': 'instance',
+  '/send/poll': 'instance',
+  '/message/react': 'instance',
+  '/message/markread': 'instance',
+  '/message/presence': 'instance',
+  '/message/downloadmedia': 'instance',
 } as const satisfies Record<string, EvolutionKeyScope>;
 
 export type EvolutionErrorKind =

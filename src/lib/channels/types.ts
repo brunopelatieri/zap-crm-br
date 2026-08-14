@@ -162,6 +162,15 @@ export interface SendInteractiveParams {
   quotedProviderMessageId?: string | null;
 }
 
+export interface SendReactionParams {
+  to: string;
+  /** Mensagem alvo, no id DO PROVEDOR. */
+  targetProviderMessageId: string;
+  /** Emoji aplicado. String VAZIA remove a reação (convenção dos dois
+   *  provedores). */
+  emoji: string;
+}
+
 // ------------------------------------------------------------
 // Recebimento
 // ------------------------------------------------------------
@@ -203,6 +212,15 @@ export interface NormalizedMessage {
   text?: string | null;
   mediaUrl?: string | null;
   mediaId?: string | null;
+  /**
+   * Caminho do objeto no bucket privado `chat-media` (migração 040),
+   * quando o canal baixa a mídia recebida e a reenvia ao NOSSO storage
+   * em vez de usar o padrão de proxy da Meta (`mediaId` + `mediaUrl`
+   * apontando para a rota-proxy). O canal QRCode usa este campo — a
+   * Evolution não expõe um id reconsultável como a Graph API expõe
+   * (SPEC 048 §6.5). `resolveMediaRef` prioriza `path` sobre `url`.
+   */
+  mediaPath?: string | null;
   /** Id do botão/linha tocado, quando o canal suporta interativos. */
   interactiveReplyId?: string | null;
   /** Instante DO PROVEDOR — nunca do nosso servidor (SPEC 045 §5.2.1). */
@@ -294,6 +312,11 @@ export interface ChannelAdapter {
   sendInteractive?(
     ctx: ChannelContext,
     p: SendInteractiveParams
+  ): Promise<SendResult>;
+  /** Presente quando `capabilities.reactions` é true. */
+  sendReaction?(
+    ctx: ChannelContext,
+    p: SendReactionParams
   ): Promise<SendResult>;
 
   /** Traduz o payload cru do provedor em eventos normalizados. */

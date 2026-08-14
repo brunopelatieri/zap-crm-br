@@ -123,6 +123,24 @@ describe('resolveMediaRef', () => {
     });
   });
 
+  it('resolve SÓ com o path, sem URL nenhuma — o caso do canal QRCode', () => {
+    // O webhook da Evolution baixa a mídia e sobe ao bucket; não existe
+    // URL pública em momento algum (SPEC 048 §6.5). É por isso que a
+    // bolha do inbox pergunta a ESTA função se há mídia, em vez de
+    // testar `media_url` — o gate por URL mandava toda foto e todo
+    // áudio recebidos por esse canal para "indisponível".
+    expect(
+      resolveMediaRef(null, 'account-abc/1786737246472-media.ogg')
+    ).toEqual({
+      kind: 'storage',
+      bucket: 'chat-media',
+      path: 'account-abc/1786737246472-media.ogg',
+    });
+    expect(resolveMediaRef(undefined, 'account-abc/media.jpg').kind).toBe(
+      'storage'
+    );
+  });
+
   it('reports absence for null/empty input', () => {
     expect(resolveMediaRef(null)).toEqual({ kind: 'none' });
     expect(resolveMediaRef(undefined, null)).toEqual({ kind: 'none' });

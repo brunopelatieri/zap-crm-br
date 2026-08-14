@@ -20,7 +20,10 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
 }));
 
 import { BroadcastError } from './broadcast-core';
-import { MAX_TEST_SEND_RECIPIENTS, sendBroadcastTest } from './broadcast-test-send';
+import {
+  MAX_TEST_SEND_RECIPIENTS,
+  sendBroadcastTest,
+} from './broadcast-test-send';
 
 const ACCOUNT = 'acct-1';
 

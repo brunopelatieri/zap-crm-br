@@ -94,7 +94,8 @@ vi.mock('./admin-client', () => {
       let rows = state.steps.slice();
       for (const [op, k, v] of ops.filters) {
         if (op === 'eq') rows = rows.filter((r) => r[k] === v);
-        else if (op === 'gte') rows = rows.filter((r) => (r[k] as number) >= (v as number));
+        else if (op === 'gte')
+          rows = rows.filter((r) => (r[k] as number) >= (v as number));
         else if (op === 'is')
           rows = rows.filter((r) => (v === null ? r[k] == null : r[k] === v));
       }
@@ -757,15 +758,12 @@ describe('runSingleAutomation runs ONE automation (SPEC 045 §5.5.3)', () => {
   it('sends once, even with a second active automation of the same trigger', async () => {
     twoAutomationsEachWithASend();
 
-    await runSingleAutomation(
-      h.state.automations[0] as unknown as Automation,
-      {
-        accountId: ACCOUNT,
-        triggerType: 'session_window_expiring',
-        contactId: 'c1',
-        context: { conversation_id: 'conv1' },
-      }
-    );
+    await runSingleAutomation(h.state.automations[0] as unknown as Automation, {
+      accountId: ACCOUNT,
+      triggerType: 'session_window_expiring',
+      contactId: 'c1',
+      context: { conversation_id: 'conv1' },
+    });
 
     expect(engineSendText).toHaveBeenCalledTimes(1);
   });

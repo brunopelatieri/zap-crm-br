@@ -58,9 +58,14 @@ function makeSupabaseMock() {
               account_id: 'acct-1',
               phone_number_id: 'PNID-1',
               access_token: 'enc-token',
+              channel_id: 'chan-1',
             },
             error: null,
           };
+        case 'channels':
+          // `resolveDefaultChannelId` tenta este primeiro; devolver vazio
+          // aqui faz o teste exercitar o fallback real (whatsapp_config).
+          return { data: null, error: null };
         case 'message_templates':
           return { data: null, error: null };
         default:

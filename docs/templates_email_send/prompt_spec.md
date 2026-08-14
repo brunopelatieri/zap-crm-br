@@ -36,7 +36,6 @@ Email reauthentication template hoje:
 
 <p>{{ .Token }}</p>"
 
-
 Importante:
 Se precisar elementos de imagem, utilize a url da logo: https://bio.brunogoulart.com.br/001_repo_external/zap-crm-br_bruno_pelatieri_goulart-bizu-hub.png
 Reformate os email para um template profissional que remeta a tecnologia e comunicação através de whatsapp do CRM Zap CRM BR.

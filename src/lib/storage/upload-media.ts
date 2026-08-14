@@ -34,6 +34,32 @@ export const MEDIA_MAX_BYTES_BY_KIND = {
 } as const;
 
 /**
+ * Tipo MIME sem os parâmetros — `audio/ogg; codecs=opus` → `audio/ogg`.
+ *
+ * `allowed_mime_types` do bucket (migrações 016/020/023) é comparado como
+ * STRING LITERAL pelo Supabase Storage. A lista tem tipos puros
+ * (`audio/ogg`, `video/mp4`, …), então qualquer valor com parâmetro é
+ * recusado com `mime type ... is not supported` — mesmo sendo exatamente
+ * um dos tipos permitidos.
+ *
+ * Isso morde em toda mídia que carrega um mimetype de terceiro:
+ * áudio de voz do WhatsApp chega como `audio/ogg; codecs=opus`, e o
+ * `MediaRecorder` do browser produz `audio/webm;codecs=opus` (com e sem
+ * espaço — as duas grafias são válidas na RFC 2045). O sintoma é upload
+ * que falha e bolha sem mídia, não erro visível.
+ *
+ * O parâmetro é só uma dica de codec: `audio/ogg` é o tipo real, e é com
+ * ele que o player toca. Descartá-lo não perde nada.
+ */
+export function baseMimeType(
+  mimeType: string | null | undefined
+): string | null {
+  if (!mimeType) return null;
+  const base = mimeType.split(';')[0].trim().toLowerCase();
+  return base || null;
+}
+
+/**
  * Build the account-scoped object path for an upload. Pure + exported so
  * it can be unit-tested without a Supabase client.
  *
@@ -108,7 +134,9 @@ export async function uploadAccountMedia(
     .upload(path, file, {
       cacheControl: '3600',
       upsert: false,
-      contentType: file.type,
+      // Sem os parâmetros: `MediaRecorder` entrega
+      // `audio/webm;codecs=opus`, que o bucket recusa literalmente.
+      contentType: baseMimeType(file.type) ?? undefined,
     });
   if (upErr) throw new Error(upErr.message);
 

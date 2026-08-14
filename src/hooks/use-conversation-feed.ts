@@ -6,7 +6,10 @@ import {
   CONVERSATION_SELECT,
   normalizeConversations,
 } from '@/lib/inbox/conversations';
-import { conversationTabPredicate, type ConversationTabId } from '@/lib/inbox/tabs';
+import {
+  conversationTabPredicate,
+  type ConversationTabId,
+} from '@/lib/inbox/tabs';
 import type { Conversation } from '@/types';
 
 interface UseConversationFeedOptions {

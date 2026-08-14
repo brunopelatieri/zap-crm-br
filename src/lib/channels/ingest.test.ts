@@ -153,6 +153,7 @@ function ctxFor(
     accountId: 'acct-1',
     ownerUserId: 'user-1',
     channelType,
+    channelId: 'chan-1',
   };
 }
 
@@ -257,12 +258,38 @@ describe('ingestInbound — mensagem', () => {
   });
 });
 
+describe('ingestInbound — conversa por canal (migração 059)', () => {
+  it('filtra a busca da conversa por channel_id, não só account/contact', async () => {
+    const db = existingThread();
+
+    await ingestInbound(ctxFor(db), textMessage());
+
+    const select = opsFor(db, 'conversations', 'select')[0];
+    expect(select.filters).toContainEqual(['eq', 'channel_id', 'chan-1']);
+  });
+
+  it('grava channel_id ao criar uma conversa nova', async () => {
+    findExistingContact.mockResolvedValue(CONTACT);
+    const db = makeDb({
+      'conversations.select': { data: [], error: null },
+      'conversations.insert': { data: CONVERSATION, error: null },
+      'messages.select': { data: null, error: null, count: 0 },
+    });
+
+    await ingestInbound(ctxFor(db), textMessage());
+
+    const insert = opsFor(db, 'conversations', 'insert')[0];
+    expect(insert.payload).toMatchObject({ channel_id: 'chan-1' });
+  });
+});
+
 describe('ingestInbound — eco do operador (fromMe)', () => {
-  it('não grava como mensagem do cliente o que saiu do aparelho do operador', async () => {
+  it('grava como sender_type agent, não como mensagem do cliente', async () => {
     // O canal QRCode devolve `SEND_MESSAGE` do que o operador digitou no
     // próprio celular. Gravar isso como `sender_type: 'customer'` faria
     // a mensagem contar como não-lida, disparar automações de conteúdo e
-    // — o pior — a IA responder ao próprio operador.
+    // — o pior — a IA responder ao próprio operador. F4: grava como
+    // 'agent' (sender_id null), sem disparar nenhum gatilho de entrada.
     const db = existingThread();
 
     await ingestInbound(
@@ -270,10 +297,30 @@ describe('ingestInbound — eco do operador (fromMe)', () => {
       textMessage({ fromMe: true, text: 'respondendo pelo celular' })
     );
 
-    expect(opsFor(db, 'messages', 'insert')).toHaveLength(0);
-    expect(opsFor(db, 'conversations', 'update')).toHaveLength(0);
+    const insert = opsFor(db, 'messages', 'insert')[0];
+    expect(insert.payload).toMatchObject({
+      sender_type: 'agent',
+      sender_id: null,
+      content_text: 'respondendo pelo celular',
+    });
+    expect(opsFor(db, 'conversations', 'update')).toHaveLength(1);
     expect(runAutomationsForTrigger).not.toHaveBeenCalled();
     expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
+    expect(dispatchInboundToFlows).not.toHaveBeenCalled();
+  });
+
+  it('suprime o eco de uma mensagem que o PRÓPRIO CRM já mandou (mesmo message_id)', async () => {
+    const db = existingThread({
+      'messages.select': { data: { id: 'msg-ja-gravada' }, error: null },
+    });
+
+    await ingestInbound(
+      ctxFor(db, 'whatsapp_qr'),
+      textMessage({ fromMe: true })
+    );
+
+    expect(opsFor(db, 'messages', 'insert')).toHaveLength(0);
+    expect(opsFor(db, 'conversations', 'update')).toHaveLength(0);
   });
 
   it('a conversa continua sendo aberta antes da recusa', async () => {

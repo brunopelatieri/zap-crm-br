@@ -44,6 +44,11 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble } from './message-bubble';
 import { MediaLightbox, type LightboxItem } from './media-lightbox';
+import { resolveMediaRef } from '@/lib/storage/media-url';
+import {
+  channelTypeOf,
+  useAccountChannels,
+} from '@/lib/channels/use-account-channels';
 import { MessageActions } from './message-actions';
 import {
   MessageComposer,
@@ -226,6 +231,7 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  const accountChannels = useAccountChannels();
 
   // 24-hour session timer (SPEC 045 §5.1/§5.9). `computeSessionWindow`
   // is the single source of truth shared with the server-side guard in
@@ -248,10 +254,16 @@ export function MessageThread({
     // falso sobre uma regra que não existe ali; mostrar contagem
     // regressiva seria inventar um prazo.
     //
-    // `channel` só é preenchido depois da migração 057; até lá toda
-    // conversa é do canal oficial, que é a verdade de hoje.
+    // O tipo vem de `useAccountChannels`, e NÃO de `conversation.channel`:
+    // o `CONVERSATION_SELECT` não faz embed de `channels`, então aquele
+    // campo chega sempre indefinido. Lendo só dele, toda thread caía no
+    // padrão `whatsapp_cloud` e uma conversa do QRCode exibia
+    // "23h restantes" — um prazo que não existe naquele canal
+    // (PRD 047 §7.1.1). O `conversation.channel` continua tendo
+    // precedência para quem um dia hidratar de verdade.
     const { applicable, isOpen, minutesRemaining } = resolveSessionWindow(
-      conversation?.channel?.type ?? 'whatsapp_cloud',
+      conversation?.channel?.type ??
+        channelTypeOf(accountChannels, conversation?.channel_id),
       lastCustomerMsg ? new Date(lastCustomerMsg.created_at) : null
     );
 
@@ -269,7 +281,13 @@ export function MessageThread({
         : tTimer('xmRemaining', { minutes: minutesRemaining });
 
     return { hidden: false, expired: false, remaining };
-  }, [messages, tTimer, conversation?.channel?.type]);
+  }, [
+    messages,
+    tTimer,
+    conversation?.channel?.type,
+    conversation?.channel_id,
+    accountChannels,
+  ]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -807,14 +825,18 @@ export function MessageThread({
     () =>
       messages
         .filter(
-          (m): m is Message & { media_url: string } =>
+          (m) =>
             (m.content_type === 'image' || m.content_type === 'video') &&
-            !!m.media_url
+            // NÃO é `!!m.media_url`: o canal WhatsApp QRCode preenche só
+            // `media_path` (SPEC 048 §6.5), e filtrar pela URL deixava
+            // toda imagem recebida por ele FORA da galeria — a bolha
+            // renderizava, o clique para ampliar não fazia nada.
+            resolveMediaRef(m.media_url, m.media_path).kind !== 'none'
         )
         .map((m) => ({
           id: m.id,
           type: m.content_type as 'image' | 'video',
-          url: m.media_url,
+          url: m.media_url ?? null,
           path: m.media_path ?? null,
           caption: m.content_text ?? null,
           downloadable: m.sender_type === 'customer',

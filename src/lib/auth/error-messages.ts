@@ -39,7 +39,9 @@ export function getAuthErrorMessageKey(error: unknown): string {
  * devtools without ever including credentials or tokens — those are
  * never part of the auth-js error object to begin with.
  */
-export function getAuthErrorLogDetails(error: unknown): Record<string, unknown> {
+export function getAuthErrorLogDetails(
+  error: unknown
+): Record<string, unknown> {
   if (error instanceof Error) {
     const { name, message } = error;
     const code = isAuthApiError(error) ? error.code : undefined;

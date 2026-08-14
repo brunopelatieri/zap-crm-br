@@ -34,7 +34,10 @@ import { BroadcastError } from '@/lib/whatsapp/broadcast-core';
 import { excludesOptedOut, isOptedOut } from '@/lib/contacts/consent';
 import { isWhatsappInvalid } from '@/lib/contacts/whatsapp-status';
 import { decrypt } from '@/lib/whatsapp/encryption';
-import { withSignedHeaderMedia, isMediaHeaderTemplate } from '@/lib/whatsapp/header-media';
+import {
+  withSignedHeaderMedia,
+  isMediaHeaderTemplate,
+} from '@/lib/whatsapp/header-media';
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
 import { isValidE164, sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';

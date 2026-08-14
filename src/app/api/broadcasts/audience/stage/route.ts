@@ -150,9 +150,7 @@ function parseAudience(raw: unknown): StageAudienceInput | null {
         rawPhone: row.rawPhone,
         name: typeof row.name === 'string' ? row.name : undefined,
         reason: row.reason as
-          | 'missing_phone'
-          | 'invalid_phone'
-          | 'duplicate_in_file',
+          'missing_phone' | 'invalid_phone' | 'duplicate_in_file',
       });
     }
 

@@ -15,14 +15,18 @@ const EXTERNAL = 'https://cdn.terceiro.com/banner.jpg';
  * Cliente falso que só entende `storage.from().createSignedUrl()`.
  * `signed` a `null` simula objeto inexistente / sem permissão.
  */
-function fakeSupabase(signed: string | null = 'https://signed.example/x?token=t') {
+function fakeSupabase(
+  signed: string | null = 'https://signed.example/x?token=t'
+) {
   const createSignedUrl = vi.fn(async () =>
     signed
       ? { data: { signedUrl: signed }, error: null }
       : { data: null, error: { message: 'Object not found' } }
   );
   return {
-    client: { storage: { from: () => ({ createSignedUrl }) } } as unknown as SupabaseClient,
+    client: {
+      storage: { from: () => ({ createSignedUrl }) },
+    } as unknown as SupabaseClient,
     createSignedUrl,
   };
 }
@@ -41,12 +45,18 @@ function template(over: Partial<MessageTemplate> = {}): MessageTemplate {
 
 describe('isMediaHeaderTemplate', () => {
   it('is true only for image/video/document headers', () => {
-    expect(isMediaHeaderTemplate(template({ header_type: 'image' }))).toBe(true);
-    expect(isMediaHeaderTemplate(template({ header_type: 'video' }))).toBe(true);
+    expect(isMediaHeaderTemplate(template({ header_type: 'image' }))).toBe(
+      true
+    );
+    expect(isMediaHeaderTemplate(template({ header_type: 'video' }))).toBe(
+      true
+    );
     expect(isMediaHeaderTemplate(template({ header_type: 'document' }))).toBe(
       true
     );
-    expect(isMediaHeaderTemplate(template({ header_type: 'text' }))).toBe(false);
+    expect(isMediaHeaderTemplate(template({ header_type: 'text' }))).toBe(
+      false
+    );
     expect(isMediaHeaderTemplate(null)).toBe(false);
   });
 });

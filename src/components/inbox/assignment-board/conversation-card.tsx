@@ -187,9 +187,7 @@ export function ConversationCard({
                         <InboxIcon className="mr-2 h-3 w-3 shrink-0" />
                       )}
                       <span className="flex-1 truncate">{target.label}</span>
-                      {isCurrent && (
-                        <Check className="ml-2 h-3 w-3 shrink-0" />
-                      )}
+                      {isCurrent && <Check className="ml-2 h-3 w-3 shrink-0" />}
                     </DropdownMenuItem>
                   );
                 })}

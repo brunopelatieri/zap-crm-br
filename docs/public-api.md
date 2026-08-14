@@ -54,7 +54,7 @@ it. Grant the minimum.
 A key with **no scopes** still authenticates and can call
 `GET /api/v1/me` — useful for verifying a key works.
 
-### Scope is the *account*, never a single agent
+### Scope is the _account_, never a single agent
 
 > **An API key sees every conversation and every message in the
 > account — including threads assigned to other agents.** It is not

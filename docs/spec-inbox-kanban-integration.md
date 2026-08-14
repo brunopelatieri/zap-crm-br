@@ -8,12 +8,12 @@
 
 > **Quem pode fazer o quê (resumo):**
 >
-> | Ação                                | Role mínima     | Onde                              |
-> | ----------------------------------- | --------------- | --------------------------------- |
-> | **Criar** negócio a partir do lead  | `agent`         | Botão "＋" da seção Negócios      |
-> | Escolher funil / etapa              | `agent`         | Selects do modal                  |
-> | Ver os negócios do lead             | qualquer membro | Cards da sidebar                  |
-> | Criar / editar **funis e etapas**   | `admin`         | Fora de escopo — `/pipelines`     |
+> | Ação                               | Role mínima     | Onde                          |
+> | ---------------------------------- | --------------- | ----------------------------- |
+> | **Criar** negócio a partir do lead | `agent`         | Botão "＋" da seção Negócios  |
+> | Escolher funil / etapa             | `agent`         | Selects do modal              |
+> | Ver os negócios do lead            | qualquer membro | Cards da sidebar              |
+> | Criar / editar **funis e etapas**  | `admin`         | Fora de escopo — `/pipelines` |
 >
 > Diferente das etiquetas (onde criar era `admin+`), aqui a criação é
 > `agent+`: `deals` é **dado operacional**, não configuração de conta.
@@ -27,16 +27,16 @@
 
 Esta feature **não cria modelo de dados**. Todo o esquema de funil já está no banco desde a migração 001; o que falta é uma superfície de UI no Inbox.
 
-| Peça existente             | Localização                                                                                                    | Papel                                                       |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Tabela `pipelines`         | [001_initial_schema.sql:234](../supabase/migrations/001_initial_schema.sql#L234) + `account_id` na [017](../supabase/migrations/017_account_sharing.sql) | Funil de negócios (escopo de conta)                         |
-| Tabela `pipeline_stages`   | [001_initial_schema.sql:248](../supabase/migrations/001_initial_schema.sql#L248)                               | Coluna/etapa, ordenada por `position`. **Sem `account_id`** |
-| Tabela `deals`             | [001:267](../supabase/migrations/001_initial_schema.sql#L267) + [002](../supabase/migrations/002_pipelines_enhancements.sql) + [004](../supabase/migrations/004_contact_delete_set_null.sql) + [017](../supabase/migrations/017_account_sharing.sql) | Card/negócio, com `contact_id` nullable                     |
-| Board Kanban               | [pipelines/page.tsx](<../src/app/(dashboard)/pipelines/page.tsx>) + [pipeline-board.tsx](../src/components/pipelines/pipeline-board.tsx) | Drag-drop entre etapas, seed do funil padrão                |
-| Formulário completo        | [deal-form.tsx](../src/components/pipelines/deal-form.tsx)                                                     | Sheet de criar/editar/status/excluir, a partir de `/pipelines` |
-| Seed do funil padrão       | [default-stages.ts](../src/lib/pipelines/default-stages.ts)                                                    | `DEFAULT_STAGE_DEFS`, `isStockDefaultPipeline()`            |
-| Criação automática         | [engine.ts:598](../src/lib/automations/engine.ts#L598) (step `create_deal`)                                    | Já cria deal a partir de `contactId` — **via service role** |
-| Exibição no Inbox          | [contact-sidebar.tsx:226](../src/components/inbox/contact-sidebar.tsx#L226)                                    | **Somente leitura** hoje                                    |
+| Peça existente           | Localização                                                                                                                                                                                                                                          | Papel                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Tabela `pipelines`       | [001_initial_schema.sql:234](../supabase/migrations/001_initial_schema.sql#L234) + `account_id` na [017](../supabase/migrations/017_account_sharing.sql)                                                                                             | Funil de negócios (escopo de conta)                            |
+| Tabela `pipeline_stages` | [001_initial_schema.sql:248](../supabase/migrations/001_initial_schema.sql#L248)                                                                                                                                                                     | Coluna/etapa, ordenada por `position`. **Sem `account_id`**    |
+| Tabela `deals`           | [001:267](../supabase/migrations/001_initial_schema.sql#L267) + [002](../supabase/migrations/002_pipelines_enhancements.sql) + [004](../supabase/migrations/004_contact_delete_set_null.sql) + [017](../supabase/migrations/017_account_sharing.sql) | Card/negócio, com `contact_id` nullable                        |
+| Board Kanban             | [pipelines/page.tsx](<../src/app/(dashboard)/pipelines/page.tsx>) + [pipeline-board.tsx](../src/components/pipelines/pipeline-board.tsx)                                                                                                             | Drag-drop entre etapas, seed do funil padrão                   |
+| Formulário completo      | [deal-form.tsx](../src/components/pipelines/deal-form.tsx)                                                                                                                                                                                           | Sheet de criar/editar/status/excluir, a partir de `/pipelines` |
+| Seed do funil padrão     | [default-stages.ts](../src/lib/pipelines/default-stages.ts)                                                                                                                                                                                          | `DEFAULT_STAGE_DEFS`, `isStockDefaultPipeline()`               |
+| Criação automática       | [engine.ts:598](../src/lib/automations/engine.ts#L598) (step `create_deal`)                                                                                                                                                                          | Já cria deal a partir de `contactId` — **via service role**    |
+| Exibição no Inbox        | [contact-sidebar.tsx:226](../src/components/inbox/contact-sidebar.tsx#L226)                                                                                                                                                                          | **Somente leitura** hoje                                       |
 
 ### 1.2 O que esta feature entrega
 
@@ -187,24 +187,24 @@ Aninhar dentro do `TagPickerProvider` (e não ao lado) é arbitrário quanto ao 
 
 ### 3.3 Arquivos novos
 
-| Arquivo                                                     | Responsabilidade                                                                                                                   |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `src/components/inbox/deal-picker/deal-picker-context.tsx`  | Context + `DealPickerProvider` + hook `useDealPicker()`. Guarda `contact` e o `onCreated` do trigger. Renderiza `<DealPickerDialog />`. |
-| `src/components/inbox/deal-picker/deal-picker-dialog.tsx`   | UI do modal: selects de funil/etapa, campos de título/valor/moeda/responsável, botões. **Sem lógica de rede.**                      |
-| `src/components/inbox/deal-picker/use-deal-draft.ts`        | Hook de dados: carrega funis, carrega etapas sob demanda (com cache), mantém o rascunho, expõe `submit()`.                          |
-| `src/lib/pipelines/deals.ts`                                | Helpers puros de leitura/mutação Supabase (`fetchPipelines`, `fetchStages`, `createDeal`) — testáveis, reutilizáveis fora do Inbox. |
+| Arquivo                                                    | Responsabilidade                                                                                                                        |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/inbox/deal-picker/deal-picker-context.tsx` | Context + `DealPickerProvider` + hook `useDealPicker()`. Guarda `contact` e o `onCreated` do trigger. Renderiza `<DealPickerDialog />`. |
+| `src/components/inbox/deal-picker/deal-picker-dialog.tsx`  | UI do modal: selects de funil/etapa, campos de título/valor/moeda/responsável, botões. **Sem lógica de rede.**                          |
+| `src/components/inbox/deal-picker/use-deal-draft.ts`       | Hook de dados: carrega funis, carrega etapas sob demanda (com cache), mantém o rascunho, expõe `submit()`.                              |
+| `src/lib/pipelines/deals.ts`                               | Helpers puros de leitura/mutação Supabase (`fetchPipelines`, `fetchStages`, `createDeal`) — testáveis, reutilizáveis fora do Inbox.     |
 
 A pasta `src/lib/pipelines/` já existe ([default-stages.ts](../src/lib/pipelines/default-stages.ts)) — o helper entra ao lado, não em `src/lib/deals.ts` solto.
 
 ### 3.4 Arquivos alterados
 
-| Arquivo                                                              | Alteração                                                                                                              |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| [`inbox/page.tsx`](<../src/app/(dashboard)/inbox/page.tsx>)          | Envolve o conteúdo com `<DealPickerProvider>` (linhas 1044/1162, dentro do `TagPickerProvider`). **Nenhum estado novo.** |
-| [`contact-sidebar.tsx`](../src/components/inbox/contact-sidebar.tsx) | Seção "Negócios" ganha botão "＋" gatado; `handleDealCreated` faz prepend em `deals`.                                    |
-| [`src/types/index.ts`](../src/types/index.ts)                        | `Pipeline.account_id` e `Deal.account_id` (§2.2).                                                                       |
+| Arquivo                                                              | Alteração                                                                                                                                                                                   |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`inbox/page.tsx`](<../src/app/(dashboard)/inbox/page.tsx>)          | Envolve o conteúdo com `<DealPickerProvider>` (linhas 1044/1162, dentro do `TagPickerProvider`). **Nenhum estado novo.**                                                                    |
+| [`contact-sidebar.tsx`](../src/components/inbox/contact-sidebar.tsx) | Seção "Negócios" ganha botão "＋" gatado; `handleDealCreated` faz prepend em `deals`.                                                                                                       |
+| [`src/types/index.ts`](../src/types/index.ts)                        | `Pipeline.account_id` e `Deal.account_id` (§2.2).                                                                                                                                           |
 | [`deal-form.tsx`](../src/components/pipelines/deal-form.tsx)         | Migrar o insert de `handleSave` para `createDeal()` de `src/lib/pipelines/deals.ts` — mesma consolidação que a etapa 12 da SPEC de etiquetas fez com `tag-manager` e `contact-detail-view`. |
-| `messages/pt-BR.json`, `messages/en.json`                            | Novas chaves em `Inbox.dealPicker` e `Inbox.sidebar.newDeal` (§7).                                                      |
+| `messages/pt-BR.json`, `messages/en.json`                            | Novas chaves em `Inbox.dealPicker` e `Inbox.sidebar.newDeal` (§7).                                                                                                                          |
 
 ### 3.5 Contrato do modal
 
@@ -217,7 +217,10 @@ interface DealPickerContextValue {
    * `onCreated` é por-chamada, e não uma prop do provider (como o
    * `onTagsChanged` do TagPickerProvider): ver §4.2 para o porquê.
    */
-  open: (contact: Contact, options?: { onCreated?: (deal: Deal) => void }) => void;
+  open: (
+    contact: Contact,
+    options?: { onCreated?: (deal: Deal) => void }
+  ) => void;
   close: () => void;
   /** Contato atualmente no modal, ou null quando fechado. */
   contact: Contact | null;
@@ -277,12 +280,12 @@ Usa os primitivos existentes: [`Dialog`](../src/components/ui/dialog.tsx) (base-
 
 **Estados especiais:**
 
-| Situação                                 | O que o modal mostra                                                                                                                                      |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Carregando funis                         | `<Loader2 className="animate-spin">` no corpo (padrão do repo — **não há `ui/skeleton.tsx`**)                                                              |
-| **Conta sem nenhum funil**               | Estado vazio: `noPipelines` + link para `/pipelines`. Botão Criar oculto. Ver nota abaixo.                                                                 |
-| Funil selecionado sem nenhuma etapa      | `noStages` + link para `/pipelines`. Botão Criar desabilitado (o `stage_id` é `NOT NULL`).                                                                 |
-| Falha ao carregar funis / etapas         | `toast.error` + o modal permanece aberto com o corpo em estado vazio                                                                                       |
+| Situação                            | O que o modal mostra                                                                          |
+| ----------------------------------- | --------------------------------------------------------------------------------------------- |
+| Carregando funis                    | `<Loader2 className="animate-spin">` no corpo (padrão do repo — **não há `ui/skeleton.tsx`**) |
+| **Conta sem nenhum funil**          | Estado vazio: `noPipelines` + link para `/pipelines`. Botão Criar oculto. Ver nota abaixo.    |
+| Funil selecionado sem nenhuma etapa | `noStages` + link para `/pipelines`. Botão Criar desabilitado (o `stage_id` é `NOT NULL`).    |
+| Falha ao carregar funis / etapas    | `toast.error` + o modal permanece aberto com o corpo em estado vazio                          |
 
 > **Por que não semear o funil padrão automaticamente.** `seedDefaultPipeline()` ([pipelines/page.tsx:121](<../src/app/(dashboard)/pipelines/page.tsx#L121>)) escreve em `pipelines` e `pipeline_stages`, ambas `admin+` na RLS (§2.1) — para o `agent`, que é justamente quem vive no Inbox, a semeadura falharia com 42501 e o beco sem saída continuaria, só que com um erro no lugar de uma explicação. O link é honesto para as duas roles.
 
@@ -337,11 +340,11 @@ Consequência aceita: se o agente colapsar o painel de contato com o modal abert
 ```ts
 interface UseDealDraftResult {
   pipelines: Pipeline[];
-  stages: PipelineStage[];        // do funil selecionado
+  stages: PipelineStage[]; // do funil selecionado
   members: Profile[];
   loadingPipelines: boolean;
   loadingStages: boolean;
-  submitting: boolean;            // criação NÃO é otimista
+  submitting: boolean; // criação NÃO é otimista
   // rascunho controlado
   draft: DealDraft;
   setDraft: (patch: Partial<DealDraft>) => void;
@@ -352,9 +355,9 @@ interface DealDraft {
   pipelineId: string;
   stageId: string;
   title: string;
-  value: string;                  // string, não number — é input controlado
+  value: string; // string, não number — é input controlado
   currency: string;
-  assignedTo: string;             // '' = não atribuído
+  assignedTo: string; // '' = não atribuído
 }
 ```
 
@@ -403,7 +406,9 @@ Todas em `src/lib/pipelines/deals.ts`, funções puras recebendo o client como p
 #### Listar funis
 
 ```ts
-export async function fetchPipelines(supabase: SupabaseClient): Promise<Pipeline[]> {
+export async function fetchPipelines(
+  supabase: SupabaseClient
+): Promise<Pipeline[]> {
   const { data, error } = await supabase
     .from('pipelines')
     .select('*')
@@ -511,14 +516,14 @@ Não fechar o modal no erro é deliberado: fechar descartaria o título digitado
 
 ### 5.4 Matriz de erros
 
-| Cenário                                              | Código               | Tratamento                                                                                             |
-| ---------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------- |
-| `viewer` tenta criar                                 | `42501`              | `toast.error` de permissão. **Não deve acontecer** — a UI já é gatada por `canSendMessages` (§2.1)      |
-| Etapa/funil excluído por um admin entre o load e o submit | `23503` (FK)      | `toast.error` + recarrega os funis e limpa `stageId`. Modal segue aberto                                |
-| Perfil sem conta vinculada (`accountId` null)        | —                    | Botão Criar desabilitado; toast reusando `Pipelines.form.toastNotLinked`                                |
-| Sessão expirada                                      | —                    | Toast reusando `Pipelines.form.toastNotSignedIn`                                                        |
-| Rede offline                                         | `PGRST` / network    | Toast genérico `toastFailedCreate`; rascunho preservado                                                 |
-| Duplo-clique no botão Criar                          | —                    | Absorvido por `disabled={submitting}` — **não** há constraint de unicidade a proteger disso (§2.3)      |
+| Cenário                                                   | Código            | Tratamento                                                                                         |
+| --------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------- |
+| `viewer` tenta criar                                      | `42501`           | `toast.error` de permissão. **Não deve acontecer** — a UI já é gatada por `canSendMessages` (§2.1) |
+| Etapa/funil excluído por um admin entre o load e o submit | `23503` (FK)      | `toast.error` + recarrega os funis e limpa `stageId`. Modal segue aberto                           |
+| Perfil sem conta vinculada (`accountId` null)             | —                 | Botão Criar desabilitado; toast reusando `Pipelines.form.toastNotLinked`                           |
+| Sessão expirada                                           | —                 | Toast reusando `Pipelines.form.toastNotSignedIn`                                                   |
+| Rede offline                                              | `PGRST` / network | Toast genérico `toastFailedCreate`; rascunho preservado                                            |
+| Duplo-clique no botão Criar                               | —                 | Absorvido por `disabled={submitting}` — **não** há constraint de unicidade a proteger disso (§2.3) |
 
 O `23503` merece tratamento próprio (e não o toast genérico) porque é o único caso em que o estado carregado pelo modal está comprovadamente velho: repuxar é a ação correta, e o agente não tem como adivinhar isso sozinho.
 
@@ -556,41 +561,41 @@ Nenhuma string hard-coded — tudo via `useTranslations`, nos dois idiomas.
 
 O namespace já tem 42 chaves traduzidas nos dois idiomas. **Reusar**, não duplicar — mesmo princípio que a §7 da SPEC de etiquetas aplicou às cores de `Settings.tagsAndFields.colors.*`:
 
-| Uso no modal                | Chave existente                    |
-| --------------------------- | ---------------------------------- |
-| Label "Título"              | `Pipelines.form.title`             |
-| Placeholder do título       | `Pipelines.form.titlePlaceholder`  |
-| Label "Etapa"               | `Pipelines.form.stage`             |
-| Label "Valor"               | `Pipelines.form.value`             |
-| Label "Moeda"               | `Pipelines.form.currency`          |
-| Label "Atribuído a"         | `Pipelines.form.assignedTo`        |
-| Opção "Não atribuído"       | `Pipelines.form.unassigned`        |
-| Botão "Cancelar"            | `Pipelines.form.cancel`            |
-| Botão "Criar negócio"       | `Pipelines.form.createDeal`        |
-| Estado "Salvando..."        | `Pipelines.form.saving`            |
-| Toast de sucesso            | `Pipelines.form.toastCreated`      |
-| Toast de falha              | `Pipelines.form.toastFailedCreate` |
-| Toast "não conectado"       | `Pipelines.form.toastNotSignedIn`  |
-| Toast "perfil sem conta"    | `Pipelines.form.toastNotLinked`    |
+| Uso no modal             | Chave existente                    |
+| ------------------------ | ---------------------------------- |
+| Label "Título"           | `Pipelines.form.title`             |
+| Placeholder do título    | `Pipelines.form.titlePlaceholder`  |
+| Label "Etapa"            | `Pipelines.form.stage`             |
+| Label "Valor"            | `Pipelines.form.value`             |
+| Label "Moeda"            | `Pipelines.form.currency`          |
+| Label "Atribuído a"      | `Pipelines.form.assignedTo`        |
+| Opção "Não atribuído"    | `Pipelines.form.unassigned`        |
+| Botão "Cancelar"         | `Pipelines.form.cancel`            |
+| Botão "Criar negócio"    | `Pipelines.form.createDeal`        |
+| Estado "Salvando..."     | `Pipelines.form.saving`            |
+| Toast de sucesso         | `Pipelines.form.toastCreated`      |
+| Toast de falha           | `Pipelines.form.toastFailedCreate` |
+| Toast "não conectado"    | `Pipelines.form.toastNotSignedIn`  |
+| Toast "perfil sem conta" | `Pipelines.form.toastNotLinked`    |
 
 ### 7.2 Chaves novas
 
 Novo namespace `Inbox.dealPicker`:
 
-| Chave                  | pt-BR                                                    | en                                                     |
-| ---------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
-| `title`                | `Novo negócio — {name}`                                  | `New deal — {name}`                                    |
-| `description`          | `O negócio será vinculado a este contato.`               | `The deal will be linked to this contact.`             |
-| `pipeline`             | `Funil`                                                  | `Pipeline`                                             |
-| `selectPipeline`       | `Selecione um funil`                                     | `Select a pipeline`                                    |
-| `selectStage`          | `Selecione uma etapa`                                    | `Select a stage`                                       |
-| `moreOptions`          | `Mais opções`                                            | `More options`                                         |
-| `noPipelines`          | `Nenhum funil configurado nesta conta.`                  | `No pipelines set up in this account.`                 |
-| `noStages`             | `Este funil ainda não tem etapas.`                       | `This pipeline has no stages yet.`                     |
-| `goToPipelines`        | `Configurar funis`                                       | `Set up pipelines`                                     |
-| `failedToLoad`         | `Falha ao carregar os funis`                             | `Failed to load pipelines`                             |
-| `stageGone`            | `A etapa escolhida não existe mais. Selecione outra.`    | `The selected stage no longer exists. Pick another.`   |
-| `onlyAgentsCanCreate`  | `Você não tem permissão para criar negócios.`            | `You don't have permission to create deals.`           |
+| Chave                 | pt-BR                                                 | en                                                   |
+| --------------------- | ----------------------------------------------------- | ---------------------------------------------------- |
+| `title`               | `Novo negócio — {name}`                               | `New deal — {name}`                                  |
+| `description`         | `O negócio será vinculado a este contato.`            | `The deal will be linked to this contact.`           |
+| `pipeline`            | `Funil`                                               | `Pipeline`                                           |
+| `selectPipeline`      | `Selecione um funil`                                  | `Select a pipeline`                                  |
+| `selectStage`         | `Selecione uma etapa`                                 | `Select a stage`                                     |
+| `moreOptions`         | `Mais opções`                                         | `More options`                                       |
+| `noPipelines`         | `Nenhum funil configurado nesta conta.`               | `No pipelines set up in this account.`               |
+| `noStages`            | `Este funil ainda não tem etapas.`                    | `This pipeline has no stages yet.`                   |
+| `goToPipelines`       | `Configurar funis`                                    | `Set up pipelines`                                   |
+| `failedToLoad`        | `Falha ao carregar os funis`                          | `Failed to load pipelines`                           |
+| `stageGone`           | `A etapa escolhida não existe mais. Selecione outra.` | `The selected stage no longer exists. Pick another.` |
+| `onlyAgentsCanCreate` | `Você não tem permissão para criar negócios.`         | `You don't have permission to create deals.`         |
 
 Uma chave nova em `Inbox.sidebar`, junto de `manageTags`:
 
@@ -604,18 +609,18 @@ Uma chave nova em `Inbox.sidebar`, junto de `manageTags`:
 
 ## 8. Plano de implementação
 
-| #   | Etapa                                                                                                | Depende de |
-| --- | ---------------------------------------------------------------------------------------------------- | ---------- |
-| 1   | `Pipeline.account_id` e `Deal.account_id` em [`types/index.ts`](../src/types/index.ts) (§2.2)         | —          |
-| 2   | `src/lib/pipelines/deals.ts` — `fetchPipelines`, `fetchStages`, `createDeal` (§5.2)                   | 1          |
-| 3   | Chaves i18n nos 2 idiomas (§7)                                                                       | —          |
-| 4   | `use-deal-draft.ts` — dados, cache de etapas, rascunho, `submit` (§4.3)                              | 2          |
-| 5   | `deal-picker-dialog.tsx` — UI pura, sem rede (§3.6)                                                  | 3, 4       |
-| 6   | `deal-picker-context.tsx` — provider + hook (§3.5)                                                   | 5          |
-| 7   | Fiação em [`inbox/page.tsx`](<../src/app/(dashboard)/inbox/page.tsx>) — envolver com o provider      | 6          |
-| 8   | Trigger + `handleDealCreated` em [`contact-sidebar.tsx`](../src/components/inbox/contact-sidebar.tsx) (§4.2) | 7   |
-| 9   | Migrar o insert de [`deal-form.tsx`](../src/components/pipelines/deal-form.tsx) para `createDeal` (§5.2) | 2       |
-| 10  | Último funil usado via `localStorage` (§4.4)                                                         | 4          |
+| #   | Etapa                                                                                                        | Depende de |
+| --- | ------------------------------------------------------------------------------------------------------------ | ---------- |
+| 1   | `Pipeline.account_id` e `Deal.account_id` em [`types/index.ts`](../src/types/index.ts) (§2.2)                | —          |
+| 2   | `src/lib/pipelines/deals.ts` — `fetchPipelines`, `fetchStages`, `createDeal` (§5.2)                          | 1          |
+| 3   | Chaves i18n nos 2 idiomas (§7)                                                                               | —          |
+| 4   | `use-deal-draft.ts` — dados, cache de etapas, rascunho, `submit` (§4.3)                                      | 2          |
+| 5   | `deal-picker-dialog.tsx` — UI pura, sem rede (§3.6)                                                          | 3, 4       |
+| 6   | `deal-picker-context.tsx` — provider + hook (§3.5)                                                           | 5          |
+| 7   | Fiação em [`inbox/page.tsx`](<../src/app/(dashboard)/inbox/page.tsx>) — envolver com o provider              | 6          |
+| 8   | Trigger + `handleDealCreated` em [`contact-sidebar.tsx`](../src/components/inbox/contact-sidebar.tsx) (§4.2) | 7          |
+| 9   | Migrar o insert de [`deal-form.tsx`](../src/components/pipelines/deal-form.tsx) para `createDeal` (§5.2)     | 2          |
+| 10  | Último funil usado via `localStorage` (§4.4)                                                                 | 4          |
 
 **Validação obrigatória antes de fechar:** `tsc --noEmit` limpo · `eslint` com 0 erros · suíte de testes passando · `next build` OK · `i18n:check` em paridade entre `pt-BR` e `en`.
 
@@ -627,35 +632,35 @@ Onde esta especificação **espelha** o padrão aprovado, e onde diverge **de pr
 
 ### 9.1 O que é idêntico
 
-| Padrão                                                      | Etiquetas                              | Aqui                                    |
-| ----------------------------------------------------------- | -------------------------------------- | --------------------------------------- |
-| Provider no nível da página, `<Dialog>` montado uma vez      | `TagPickerProvider`                    | `DealPickerProvider`                    |
-| `isOpen` derivado de `contact !== null`, nunca duplicado     | tag-picker-context.tsx:64              | §3.5                                    |
-| Hook lança se usado fora do provider                         | tag-picker-context.tsx:91              | §3.5                                    |
-| UI pura sem rede + hook de dados separado                    | `tag-picker-dialog` / `use-contact-tags` | `deal-picker-dialog` / `use-deal-draft` |
-| Helpers puros em `src/lib`, client como 1º argumento         | `src/lib/tags.ts`                      | `src/lib/pipelines/deals.ts`            |
-| Supabase client direto; RLS como fronteira de autorização    | §5.1                                   | §5.1                                    |
-| Gates por predicados de `roles.ts`, nunca string inline      | §5.5                                   | §5.5                                    |
-| Criação não-otimista, com spinner no botão                   | §5.3                                   | §5.3                                    |
-| `toast` do sonner apenas na camada de dados                  | use-contact-tags.ts                    | use-deal-draft.ts                        |
-| Flag `cancelled` no cleanup de todo fetch                    | use-contact-tags.ts:93                 | §4.3                                    |
-| Reusar chaves i18n existentes em vez de duplicar             | §7 (cores)                             | §7.1 (`Pipelines.form.*`)               |
-| Consolidar o call site antigo no helper novo                 | etapa 12                               | etapa 9                                 |
-| Corrigir o tipo desatualizado como parte da entrega          | §2.3 (`Tag.account_id`)                | §2.2 (`Pipeline`/`Deal`)                |
-| Sem realtime nesta entrega, com justificativa                | §4.5                                   | §4.5                                    |
-| Sem dependência nova (`cmdk`, `zod`, combobox)               | §3.6                                   | §3.6, §5.1                              |
+| Padrão                                                    | Etiquetas                                | Aqui                                    |
+| --------------------------------------------------------- | ---------------------------------------- | --------------------------------------- |
+| Provider no nível da página, `<Dialog>` montado uma vez   | `TagPickerProvider`                      | `DealPickerProvider`                    |
+| `isOpen` derivado de `contact !== null`, nunca duplicado  | tag-picker-context.tsx:64                | §3.5                                    |
+| Hook lança se usado fora do provider                      | tag-picker-context.tsx:91                | §3.5                                    |
+| UI pura sem rede + hook de dados separado                 | `tag-picker-dialog` / `use-contact-tags` | `deal-picker-dialog` / `use-deal-draft` |
+| Helpers puros em `src/lib`, client como 1º argumento      | `src/lib/tags.ts`                        | `src/lib/pipelines/deals.ts`            |
+| Supabase client direto; RLS como fronteira de autorização | §5.1                                     | §5.1                                    |
+| Gates por predicados de `roles.ts`, nunca string inline   | §5.5                                     | §5.5                                    |
+| Criação não-otimista, com spinner no botão                | §5.3                                     | §5.3                                    |
+| `toast` do sonner apenas na camada de dados               | use-contact-tags.ts                      | use-deal-draft.ts                       |
+| Flag `cancelled` no cleanup de todo fetch                 | use-contact-tags.ts:93                   | §4.3                                    |
+| Reusar chaves i18n existentes em vez de duplicar          | §7 (cores)                               | §7.1 (`Pipelines.form.*`)               |
+| Consolidar o call site antigo no helper novo              | etapa 12                                 | etapa 9                                 |
+| Corrigir o tipo desatualizado como parte da entrega       | §2.3 (`Tag.account_id`)                  | §2.2 (`Pipeline`/`Deal`)                |
+| Sem realtime nesta entrega, com justificativa             | §4.5                                     | §4.5                                    |
+| Sem dependência nova (`cmdk`, `zod`, combobox)            | §3.6                                     | §3.6, §5.1                              |
 
 ### 9.2 O que diverge, e por quê
 
-| Ponto                            | Etiquetas                                          | Aqui                                                          | Motivo                                                                                                                       |
-| -------------------------------- | -------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Callback de mutação**          | Prop do provider (`onTagsChanged`)                 | Por-chamada em `open(contact, { onCreated })`                 | Quem precisa do resultado é o trigger, não a página. `deals` não vive no estado da página (§4.2)                             |
-| **Propagação**                   | 3 destinos, o ponto mais delicado da feature       | 1 destino, o próprio trigger                                  | `deals` não está em `CONVERSATION_SELECT` nem em nenhum filtro da lista                                                       |
-| **Role para criar**              | `admin+` (etiqueta é configuração)                 | `agent+` (negócio é dado operacional)                         | A RLS já é assim; nenhuma decisão A/B/C a tomar (§2.1)                                                                       |
-| **Migração**                     | 038 obrigatória (unicidade)                        | **Nenhuma**                                                   | Esquema já suporta o caso; não há requisito de unicidade (§2.3)                                                              |
-| **Mutação otimista**             | Toggle é otimista; só criar não é                  | Nada é otimista                                               | A única mutação da feature é a criação                                                                                       |
-| **Persistência da escolha**      | Não se aplica                                      | `localStorage` para o último funil (§4.4)                     | Padrão já usado em `inbox/page.tsx` e `flow-editor-shell.tsx`                                                                |
-| **Fonte de verdade do estado**   | Sidebar deixou de ter fetch próprio (§4.3)         | Sidebar **mantém** seu fetch de deals                         | Não há duplicação: a página não hidrata deals, então a sidebar é a única fonte — o problema que a §4.3 resolveu não existe    |
+| Ponto                          | Etiquetas                                    | Aqui                                          | Motivo                                                                                                                     |
+| ------------------------------ | -------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **Callback de mutação**        | Prop do provider (`onTagsChanged`)           | Por-chamada em `open(contact, { onCreated })` | Quem precisa do resultado é o trigger, não a página. `deals` não vive no estado da página (§4.2)                           |
+| **Propagação**                 | 3 destinos, o ponto mais delicado da feature | 1 destino, o próprio trigger                  | `deals` não está em `CONVERSATION_SELECT` nem em nenhum filtro da lista                                                    |
+| **Role para criar**            | `admin+` (etiqueta é configuração)           | `agent+` (negócio é dado operacional)         | A RLS já é assim; nenhuma decisão A/B/C a tomar (§2.1)                                                                     |
+| **Migração**                   | 038 obrigatória (unicidade)                  | **Nenhuma**                                   | Esquema já suporta o caso; não há requisito de unicidade (§2.3)                                                            |
+| **Mutação otimista**           | Toggle é otimista; só criar não é            | Nada é otimista                               | A única mutação da feature é a criação                                                                                     |
+| **Persistência da escolha**    | Não se aplica                                | `localStorage` para o último funil (§4.4)     | Padrão já usado em `inbox/page.tsx` e `flow-editor-shell.tsx`                                                              |
+| **Fonte de verdade do estado** | Sidebar deixou de ter fetch próprio (§4.3)   | Sidebar **mantém** seu fetch de deals         | Não há duplicação: a página não hidrata deals, então a sidebar é a única fonte — o problema que a §4.3 resolveu não existe |
 
 ---
 

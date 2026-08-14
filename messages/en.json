@@ -328,7 +328,8 @@
       "manageTags": "Manage tags for {name}",
       "manageTagsShort": "Manage tags",
       "claimConversation": "Claim conversation with {name}",
-      "claimConversationShort": "Claim conversation"
+      "claimConversationShort": "Claim conversation",
+      "channelBadgeTitle": "This conversation goes through {channel}"
     },
     "messageThread": {
       "assignedElsewhereWarning": "This conversation belongs to {name}. Sending a message will assign it to you.",

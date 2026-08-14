@@ -248,7 +248,7 @@ export function AudienceTriageTable({
   }
 
   return (
-    <div className="max-h-[520px] overflow-y-auto overflow-x-auto">
+    <div className="max-h-[520px] overflow-x-auto overflow-y-auto">
       <Table>
         <TableHeader className="bg-card sticky top-0 z-10">
           <TableRow className="border-border hover:bg-transparent">
@@ -290,9 +290,7 @@ export function AudienceTriageTable({
                 />
               </TableCell>
               <TableCell>
-                <p className="text-foreground font-medium">
-                  {row.name || '—'}
-                </p>
+                <p className="text-foreground font-medium">{row.name || '—'}</p>
                 <p className="text-muted-foreground font-mono text-xs">
                   {row.phone}
                 </p>
@@ -351,7 +349,10 @@ export function AudienceTriageTable({
 
           {/* Sentinela do scroll infinito — sem altura própria quando
               tudo já carregou, então não fica um espaço vazio no fim. */}
-          <TableRow ref={sentinelRef} className="border-none hover:bg-transparent">
+          <TableRow
+            ref={sentinelRef}
+            className="border-none hover:bg-transparent"
+          >
             <TableCell colSpan={9} className="p-0">
               {loadingMore && (
                 <div className="flex items-center justify-center py-3">

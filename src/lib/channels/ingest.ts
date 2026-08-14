@@ -68,6 +68,12 @@ export interface IngestContext {
    */
   ownerUserId: string;
   channelType: ChannelType;
+  /**
+   * `channels.id` da conversa (migração 059 — `conversations.channel_id`
+   * é NOT NULL). Quem chama já resolveu isto: a rota da Meta lê
+   * `whatsapp_config.channel_id`, a Evolution lê `evolution_instances`.
+   */
+  channelId: string;
 }
 
 /** Evento de entrada que a ingestão sabe consumir. */
@@ -143,7 +149,7 @@ export async function ingestInbound(
   }
 
   // ============================================================
-  // Eco do próprio operador (`fromMe`) — recusado, não adivinhado.
+  // Eco do próprio operador (`fromMe`) — SPEC 048 §6.3.
   //
   // O canal QRCode entrega de volta o que o operador digitou NO PRÓPRIO
   // APARELHO (`SEND_MESSAGE`), algo que a Cloud API não faz. Sem esta
@@ -152,17 +158,59 @@ export async function ingestInbound(
   // `new_message_received`/`keyword_match` e poderia fazer a IA
   // responder ao próprio operador.
   //
-  // Não é papel da F2 decidir COMO persistir esse eco — é decisão de
-  // produto da F4 (mostrar como mensagem de agente? ignorar?). O que a
-  // F2 pode garantir é que ninguém herde o comportamento errado por
-  // omissão: aqui ele para, com log. O canal oficial nunca entra neste
+  // Decisão de produto (F4): grava como `sender_type: 'agent'`,
+  // `sender_id: null` — mesma convenção de um envio pela API pública
+  // (nenhum usuário do CRM autorou isto; ver `send-message.ts`).
+  // Suprime apenas o EFETIVO eco de algo que o PRÓPRIO CRM já mandou
+  // via `send.ts` (mesmo `message_id` já gravado) — sem isso, toda
+  // resposta do inbox reapareceria duplicada quando a Evolution
+  // confirma via `SEND_MESSAGE`. Nunca dispara automações, flows, IA
+  // ou opt-out: é saída, não entrada. O canal oficial nunca entra neste
   // ramo (a rota da Meta fixa `fromMe: false`), então nada muda nele.
   // ============================================================
   if (event.fromMe) {
-    console.warn(
-      '[ingest] ignoring operator echo (fromMe) — persisting it lands in PRD 047 phase F4:',
-      event.providerMessageId
-    );
+    const { data: alreadyStored } = await db
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversation.id)
+      .eq('message_id', event.providerMessageId)
+      .limit(1)
+      .maybeSingle();
+    if (alreadyStored) {
+      return;
+    }
+
+    const { error: echoError } = await db.from('messages').insert({
+      conversation_id: conversation.id,
+      sender_type: 'agent',
+      sender_id: null,
+      content_type: event.contentType,
+      content_text: event.text ?? null,
+      media_url: event.mediaUrl ?? null,
+      media_id: event.mediaId ?? null,
+      // O canal QRCode preenche SÓ este campo (o webhook baixa a mídia e
+      // sobe ao bucket). Sem ele a foto que o operador mandou pelo
+      // celular vira bolha vazia — e o objeto já subido fica órfão.
+      media_path: event.mediaPath ?? null,
+      message_id: event.providerMessageId,
+      status: 'sent',
+      created_at: event.occurredAt.toISOString(),
+    });
+    if (echoError) {
+      console.error('[ingest] failed to persist operator echo:', echoError);
+      return;
+    }
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text:
+          event.text || `[${event.providerContentLabel ?? event.contentType}]`,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id);
+
     return;
   }
 
@@ -238,6 +286,10 @@ export async function ingestInbound(
     // download (F-40-A). Sem ela, a mídia recebida fica inacessível
     // até para quem é dono da conversa.
     media_id: event.mediaId ?? null,
+    // Canal QRCode (SPEC 048 §6.5): mídia já baixada e reenviada ao
+    // bucket privado — `resolveMediaRef` prioriza este campo sobre
+    // `media_url`/`media_id`, que são específicos do proxy da Meta.
+    media_path: event.mediaPath ?? null,
     message_id: event.providerMessageId,
     status: 'delivered',
     created_at: occurredAt.toISOString(),
@@ -580,9 +632,11 @@ async function findOrCreateContact(
 }
 
 async function findOrCreateConversation(ctx: IngestContext, contactId: string) {
-  const { db, accountId } = ctx;
+  const { db, accountId, channelId } = ctx;
 
-  // Look for an existing conversation in this account, oldest-first.
+  // Look for an existing conversation in this account AND CHANNEL,
+  // oldest-first (D-2, migração 059: uma conversa por canal — o mesmo
+  // contato falando pelo Cloud e pelo QRCode gera DUAS threads).
   //
   // We deliberately do NOT use `.single()` here. `.single()` errors on
   // *both* 0 rows and ≥2 rows, and the old code treated any error as
@@ -594,13 +648,14 @@ async function findOrCreateConversation(ctx: IngestContext, contactId: string) {
   // #363).
   //
   // Ordering oldest-first and taking one row makes the lookup resolve to
-  // the same canonical survivor the dedup migration (036) keeps, so any
-  // pre-existing duplicates converge instead of compounding.
+  // the same canonical survivor the dedup migration (036/059) keeps, so
+  // any pre-existing duplicates converge instead of compounding.
   const { data: existingRows, error: findError } = await db
     .from('conversations')
     .select('*')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('channel_id', channelId)
     .order('created_at', { ascending: true })
     .limit(1);
 
@@ -621,6 +676,7 @@ async function findOrCreateConversation(ctx: IngestContext, contactId: string) {
       account_id: accountId,
       user_id: ctx.ownerUserId,
       contact_id: contactId,
+      channel_id: channelId,
     })
     .select()
     .single();
@@ -628,14 +684,16 @@ async function findOrCreateConversation(ctx: IngestContext, contactId: string) {
   if (createError) {
     // Lost a race: a concurrent inbound delivery created the
     // conversation between our lookup and insert, and the unique index
-    // (migration 036) rejected the duplicate. Re-resolve the winning
-    // row instead of dropping the message — mirrors findOrCreateContact.
+    // (migração 059: account_id, contact_id, channel_id) rejected the
+    // duplicate. Re-resolve the winning row instead of dropping the
+    // message — mirrors findOrCreateContact.
     if (isUniqueViolation(createError)) {
       const { data: raced } = await db
         .from('conversations')
         .select('*')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .eq('channel_id', channelId)
         .order('created_at', { ascending: true })
         .limit(1);
       if (raced && raced.length > 0) {

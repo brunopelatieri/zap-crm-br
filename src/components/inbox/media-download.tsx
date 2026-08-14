@@ -43,8 +43,7 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'application/vnd.ms-powerpoint': 'ppt',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
     'docx',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-    'xlsx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation':
     'pptx',
   'audio/mpeg': 'mp3',
@@ -61,7 +60,7 @@ function guessExtension(mimeType: string): string {
 /** Baixa via blob + link efêmero, em vez de deixar o navegador navegar
  * para a URL — é o que força "Salvar como" mesmo numa aba já aberta. */
 export async function downloadMedia(
-  url: string,
+  url: string | null | undefined,
   suggestedName: string | null | undefined,
   fallbackId: string,
   path?: string | null
@@ -102,7 +101,8 @@ export function DownloadIconButton({
   fallbackId,
   className,
 }: {
-  url: string;
+  /** Pode ser nulo: no canal QRCode só `path` existe (SPEC 048 §6.5). */
+  url: string | null | undefined;
   /** `messages.media_path`, quando o objeto é nosso (migração 040). */
   path?: string | null;
   filename: string | null | undefined;

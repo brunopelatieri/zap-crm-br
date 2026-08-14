@@ -96,8 +96,7 @@ export function TriageToolbar({
     }
   }
 
-  const activeFilterLabel =
-    filter === 'all' ? tFilter('all') : tFilter(filter);
+  const activeFilterLabel = filter === 'all' ? tFilter('all') : tFilter(filter);
 
   return (
     <div className="flex flex-col gap-3">
@@ -153,7 +152,9 @@ export function TriageToolbar({
                   key={value}
                   onClick={() => onFilterChange(value)}
                   className={
-                    filter === value ? 'text-primary' : 'text-popover-foreground'
+                    filter === value
+                      ? 'text-primary'
+                      : 'text-popover-foreground'
                   }
                 >
                   {tFilter(value)}
@@ -170,7 +171,9 @@ export function TriageToolbar({
                   key={value}
                   onClick={() => onFilterChange(value)}
                   className={
-                    filter === value ? 'text-primary' : 'text-popover-foreground'
+                    filter === value
+                      ? 'text-primary'
+                      : 'text-popover-foreground'
                   }
                 >
                   {tFilter(value)}

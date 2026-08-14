@@ -19,8 +19,14 @@ import {
   MessageCircleMore,
   MessageCircleWarning,
   MessageCircleCheck,
+  QrCode,
+  BadgeCheck,
   type LucideIcon,
 } from 'lucide-react';
+import {
+  useAccountChannels,
+  type AccountChannels,
+} from '@/lib/channels/use-account-channels';
 import { formatDistanceToNow } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
@@ -116,6 +122,7 @@ export function ConversationList({
 }: ConversationListProps) {
   const t = useTranslations('Inbox.conversationList');
   const { open: openTagPicker } = useTagPicker();
+  const accountChannels = useAccountChannels();
 
   const FILTER_OPTIONS: {
     label: string;
@@ -454,6 +461,7 @@ export function ConversationList({
               <ConversationItem
                 key={conv.id}
                 conversation={conv}
+                channels={accountChannels}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
                 onOpenTags={openTagPicker}
@@ -472,6 +480,8 @@ export function ConversationList({
 
 interface ConversationItemProps {
   conversation: Conversation;
+  /** Canais da conta — o item resolve o seu pelo `channel_id`. */
+  channels: AccountChannels;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
   /** Abre o picker de etiquetas para o contato desta conversa. */
@@ -485,6 +495,7 @@ interface ConversationItemProps {
 
 function ConversationItem({
   conversation,
+  channels,
   isActive,
   onSelect,
   onOpenTags,
@@ -556,6 +567,18 @@ function ConversationItem({
       })
     : '';
 
+  // Selo de canal. Uma conversa por (contato, canal) desde a 059, então
+  // o mesmo contato falando pelo oficial e por uma instância QRCode
+  // rende DUAS linhas — sem o selo, idênticas, e o operador não tem como
+  // saber por qual número vai responder.
+  //
+  // Só com mais de um canal: numa conta que só usa o oficial, repetir
+  // "WhatsApp Oficial" em toda linha é ruído puro.
+  const channel = conversation.channel_id
+    ? channels.byId.get(conversation.channel_id)
+    : undefined;
+  const showChannelBadge = channels.count > 1 && !!channel;
+
   return (
     <div
       role="button"
@@ -590,6 +613,21 @@ function ConversationItem({
             {timeAgo}
           </span>
         </div>
+        {showChannelBadge && (
+          <div className="mt-0.5 flex items-center gap-1">
+            {channel.type === 'whatsapp_qr' ? (
+              <QrCode className="text-muted-foreground h-3 w-3 shrink-0" />
+            ) : (
+              <BadgeCheck className="text-muted-foreground h-3 w-3 shrink-0" />
+            )}
+            <span
+              className="text-muted-foreground truncate text-[10px]"
+              title={t('channelBadgeTitle', { channel: channel.name })}
+            >
+              {channel.name}
+            </span>
+          </div>
+        )}
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <p className="text-muted-foreground truncate text-xs">
             {conversation.last_message_text || t('noMessagesYet')}

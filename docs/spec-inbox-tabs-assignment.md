@@ -10,12 +10,12 @@
 
 O pedido é de UI ("três abas"), mas o núcleo do trabalho é de **autorização**. Hoje o
 modelo de permissão do ZAP CRM BR é **plano por conta**: qualquer membro (`viewer`+)
-enxerga *todas* as conversas e *todas* as mensagens da conta via RLS
+enxerga _todas_ as conversas e _todas_ as mensagens da conta via RLS
 (`is_account_member(account_id)`). A coluna `conversations.assigned_agent_id` existe
 desde a migração 001, mas é **puramente decorativa** — nenhuma policy, nenhum índice,
 nenhuma FK, nenhuma checagem de servidor a consulta.
 
-Implementar a aba "Chat" com a regra *"apenas o agente atribuído e Admins veem"*
+Implementar a aba "Chat" com a regra _"apenas o agente atribuído e Admins veem"_
 significa passar de **isolamento por conta** para **isolamento por linha dentro da
 conta**. Isso não pode ser feito no cliente: filtrar o array `conversations` em React
 esconde a conversa da lista, mas **não impede** que o agente leia a linha (e todas as
@@ -25,10 +25,10 @@ no bundle.
 Além disso, dois requisitos do enunciado **não têm suporte no schema atual** e precisam
 de decisão de produto antes do código (ver §5, itens D1 e D2):
 
-| Requisito | Situação |
-| --- | --- |
-| Aba 3: "agentes veem só contatos atribuídos a eles" | **Não existe** coluna de atribuição em `contacts`. |
-| Aba 2 "Open" = "não atribuídas (badge verde)" | O badge verde hoje é `status = 'open'`, **não** "sem responsável". São conceitos diferentes. |
+| Requisito                                           | Situação                                                                                     |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Aba 3: "agentes veem só contatos atribuídos a eles" | **Não existe** coluna de atribuição em `contacts`.                                           |
+| Aba 2 "Open" = "não atribuídas (badge verde)"       | O badge verde hoje é `status = 'open'`, **não** "sem responsável". São conceitos diferentes. |
 
 ---
 
@@ -36,22 +36,22 @@ de decisão de produto antes do código (ver §5, itens D1 e D2):
 
 ### 1.1 Onde mora cada pedaço de estado
 
-| Estado | Dono hoje | Observação |
-| --- | --- | --- |
-| `conversations[]` (array completo) | [inbox/page.tsx:42](src/app/(dashboard)/inbox/page.tsx#L42) | Fonte única; alimentada pelo filho. |
-| `activeConversation` / `activeContact` / `messages` | [inbox/page.tsx:43-46](src/app/(dashboard)/inbox/page.tsx#L43-L46) | |
-| **Fetch** das conversas | [conversation-list.tsx:101-135](src/components/inbox/conversation-list.tsx#L101-L135) | O filho busca e devolve pelo callback `onConversationsLoaded`. |
-| `search` | [conversation-list.tsx:74](src/components/inbox/conversation-list.tsx#L74) | Local ao filho. |
-| `filter` (`InboxFilter`) | [conversation-list.tsx:75](src/components/inbox/conversation-list.tsx#L75) | Default `'open'`. |
-| `selectedTagIds` / `selectedCompany` | [conversation-list.tsx:81-82](src/components/inbox/conversation-list.tsx#L81-L82) | |
-| `tags[]` (definições) | [conversation-list.tsx:139-149](src/components/inbox/conversation-list.tsx#L139-L149) | Fetch próprio, uma vez. |
-| Realtime (`messages` + `conversations`) | [use-realtime.ts](src/hooks/use-realtime.ts) via page.tsx | Canal único `inbox-realtime`, sem filtro. |
-| Deep-link `?c=<id>` | [inbox/page.tsx:40](src/app/(dashboard)/inbox/page.tsx#L40) | Auto-seleção com guarda por `useRef`. |
+| Estado                                              | Dono hoje                                                                             | Observação                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `conversations[]` (array completo)                  | [inbox/page.tsx:42](<src/app/(dashboard)/inbox/page.tsx#L42>)                         | Fonte única; alimentada pelo filho.                            |
+| `activeConversation` / `activeContact` / `messages` | [inbox/page.tsx:43-46](<src/app/(dashboard)/inbox/page.tsx#L43-L46>)                  |                                                                |
+| **Fetch** das conversas                             | [conversation-list.tsx:101-135](src/components/inbox/conversation-list.tsx#L101-L135) | O filho busca e devolve pelo callback `onConversationsLoaded`. |
+| `search`                                            | [conversation-list.tsx:74](src/components/inbox/conversation-list.tsx#L74)            | Local ao filho.                                                |
+| `filter` (`InboxFilter`)                            | [conversation-list.tsx:75](src/components/inbox/conversation-list.tsx#L75)            | Default `'open'`.                                              |
+| `selectedTagIds` / `selectedCompany`                | [conversation-list.tsx:81-82](src/components/inbox/conversation-list.tsx#L81-L82)     |                                                                |
+| `tags[]` (definições)                               | [conversation-list.tsx:139-149](src/components/inbox/conversation-list.tsx#L139-L149) | Fetch próprio, uma vez.                                        |
+| Realtime (`messages` + `conversations`)             | [use-realtime.ts](src/hooks/use-realtime.ts) via page.tsx                             | Canal único `inbox-realtime`, sem filtro.                      |
+| Deep-link `?c=<id>`                                 | [inbox/page.tsx:40](<src/app/(dashboard)/inbox/page.tsx#L40>)                         | Auto-seleção com guarda por `useRef`.                          |
 
-**Inversão de responsabilidade a corrigir:** o componente de *apresentação da lista*
+**Inversão de responsabilidade a corrigir:** o componente de _apresentação da lista_
 é quem faz o fetch. Com três abas isso vira um problema real — cada aba tem um
 predicado de servidor diferente, e três fetches concorrentes escrevendo no mesmo
-`setConversations(loaded)` (substituição total, [page.tsx:399](src/app/(dashboard)/inbox/page.tsx#L399)) se
+`setConversations(loaded)` (substituição total, [page.tsx:399](<src/app/(dashboard)/inbox/page.tsx#L399>)) se
 sobrescrevem mutuamente.
 
 ### 1.2 Desacoplamento proposto
@@ -75,7 +75,7 @@ Regras do refactor:
    (o `onConversationsLoadedRef` só existe porque o fetch vivia ali).
 2. **O `filter` de status (`all | unread | open | pending | closed`) permanece**, mas
    passa a ser **estado por aba** e é renderizado **somente na aba "Open"**, conforme a
-   *Migration Note* do enunciado. Na aba "Chat" o dropdown de status é ocultado ou
+   _Migration Note_ do enunciado. Na aba "Chat" o dropdown de status é ocultado ou
    reduzido (ver D3).
 3. **`search`, `selectedTagIds`, `selectedCompany` sobem** para o hook de aba, guardados
    num `Record<TabId, FilterState>` — trocar de aba e voltar preserva os filtros
@@ -112,17 +112,19 @@ curl "$SUPABASE_URL/rest/v1/conversations?select=*,messages(*)" \
 
 Não há gateway: o front fala com o banco. **Portanto, filtro em React nunca é
 controle de acesso** — é apenas ergonomia. Toda regra do enunciado precisa existir
-como *policy* de RLS.
+como _policy_ de RLS.
 
 ---
 
 ### 🔴 F-01 — Filtro de aba no cliente não é autorização (CRÍTICO)
 
 **Onde:** `conversations_select` ([017_account_sharing.sql:414](supabase/migrations/017_account_sharing.sql#L414))
+
 ```sql
 CREATE POLICY conversations_select ON conversations FOR SELECT
   USING (is_account_member(account_id));
 ```
+
 **Cenário:** Agente A recebe a UI com a aba "Chat" mostrando 3 conversas suas.
 Abre o DevTools, roda o `curl` acima, e lê as 400 conversas dos colegas — incluindo
 o histórico completo de mensagens, pois `messages_select`
@@ -168,8 +170,10 @@ Notas de implementação que **não podem ser esquecidas**:
 
 **Onde:** o único caminho de atribuição hoje é client-side, sem condição:
 [message-thread.tsx:878-896](src/components/inbox/message-thread.tsx#L878-L896)
+
 ```ts
-await supabase.from('conversations')
+await supabase
+  .from('conversations')
   .update({ assigned_agent_id: agentId })
   .eq('id', conversation.id);
 ```
@@ -184,7 +188,7 @@ Ambos os `UPDATE` passam (o segundo simplesmente sobrescreve o primeiro). Result
 4. O trigger `on_conversation_assigned` ([027:115](supabase/migrations/027_notifications.sql#L115))
    dispara **duas** notificações contraditórias.
 
-**Mitigação:** claim atômico via RPC com *compare-and-set*, nunca `UPDATE` direto:
+**Mitigação:** claim atômico via RPC com _compare-and-set_, nunca `UPDATE` direto:
 
 ```sql
 CREATE OR REPLACE FUNCTION claim_conversation(conv_id UUID)
@@ -222,7 +226,7 @@ mensagem antes de descobrir que perdeu a corrida.
 
 ### 🔴 F-03 — Escalada de privilégio na reatribuição (CRÍTICO)
 
-**Requisito:** *"apenas o agente atribuído ou um Admin podem reatribuir"*.
+**Requisito:** _"apenas o agente atribuído ou um Admin podem reatribuir"_.
 
 **Onde:** `conversations_update` ([017:416](supabase/migrations/017_account_sharing.sql#L416)) é
 `is_account_member(account_id, 'agent')` — **qualquer** agente pode escrever qualquer
@@ -254,8 +258,8 @@ CREATE POLICY conversations_update ON conversations FOR UPDATE
   );
 ```
 
-> **`USING` vs `WITH CHECK` — a pegadinha:** `USING` decide *quais linhas posso tocar*;
-> `WITH CHECK` decide *como a linha pode ficar depois*. Só com `USING`, o agente dono
+> **`USING` vs `WITH CHECK` — a pegadinha:** `USING` decide _quais linhas posso tocar_;
+> `WITH CHECK` decide _como a linha pode ficar depois_. Só com `USING`, o agente dono
 > conseguiria transferir a conversa para um terceiro arbitrário — que é exatamente o que
 > o requisito proíbe fora do caso Admin.
 
@@ -278,9 +282,9 @@ então a RLS nova **corta o fluxo automaticamente**. O problema é o inverso:
 aberta. Um Admin reatribui X para B. O `UPDATE` já **não passa** na policy de A, logo A
 **não recebe evento nenhum**. O React de A continua com `activeConversation = X` e a
 thread renderizada na tela — e `messages` continua no `useState`. A perde o acesso ao
-*banco*, mas a *tela* segue exibindo o histórico até um F5.
+_banco_, mas a _tela_ segue exibindo o histórico até um F5.
 → **Mitigação:** ao receber qualquer evento (ou no `resyncToken`), reconciliar por
-*ausência*: se a conversa ativa não voltar no refetch, limpar `activeConversation`,
+_ausência_: se a conversa ativa não voltar no refetch, limpar `activeConversation`,
 `messages`, `activeContact` e mostrar "Esta conversa foi reatribuída". Nunca confiar
 apenas em eventos `UPDATE` para revogação — **revogação é silêncio, não evento.**
 
@@ -289,7 +293,7 @@ apenas em eventos `UPDATE` para revogação — **revogação é silêncio, não
 não deve inferir existência a partir disso.
 
 **Cenário C — o refetch de segurança.** `resyncToken` é bumpado em reconexão de WS e em
-`visibilitychange` ([page.tsx:357-385](src/app/(dashboard)/inbox/page.tsx#L357-L385)). Esse refetch
+`visibilitychange` ([page.tsx:357-385](<src/app/(dashboard)/inbox/page.tsx#L357-L385>)). Esse refetch
 tem de respeitar a aba ativa; caso contrário reintroduz na memória do cliente as linhas
 que a aba deveria ter descartado.
 
@@ -298,6 +302,7 @@ que a aba deveria ter descartado.
 ### 🟠 F-05 — `isAdmin` exclui o `owner` (armadilha de implementação)
 
 **Onde:** [use-auth.tsx:93](src/hooks/use-auth.tsx#L93)
+
 ```ts
 /** True if `accountRole === 'admin'` (does NOT include owner ...) */
 isAdmin: boolean;
@@ -328,7 +333,7 @@ o que **conflita** com o requisito literal "apenas o agente atribuído e Admins"
 
 **Onde:** [/api/whatsapp/send/route.ts](src/app/api/whatsapp/send/route.ts) resolve/cria a conversa
 e envia — **sem** tocar em `assigned_agent_id`. Com a regra nova, "quem responde assume"
-tem de ser atômico *com* o envio:
+tem de ser atômico _com_ o envio:
 
 - A rota deve chamar `claim_conversation` **antes** de falar com a Meta.
 - Se o claim falhar (`CONVERSATION_ALREADY_CLAIMED`) → **abortar com 409**, nunca enviar.
@@ -346,7 +351,7 @@ já escreve `assigned_agent_id` (take over = atribui a mim; resume = `= null`). 
 
 - O `resume` **libera a atribuição de qualquer um** (`update.assigned_agent_id = null`
   incondicional). Sob as regras novas isso é uma reatribuição — precisa passar pelo
-  mesmo gate de F-03 (dono ou admin), senão vira o *bypass* mais fácil: "resume" para
+  mesmo gate de F-03 (dono ou admin), senão vira o _bypass_ mais fácil: "resume" para
   soltar a conversa de outro agente e "take over" para pegá-la.
 - O bot responde em conversas **sem dono** (fila "Open"). Ele roda com service role e
   ignora RLS — comportamento correto, mas significa que a aba "Open" pode ter
@@ -384,7 +389,7 @@ que ele devolve muda, e a paginação da página `/contacts` precisa ser retesta
 ### 🟡 F-11 — Enumeração via deep-link `?c=<id>`
 
 Com a RLS nova, `/inbox?c=<id-de-outro-agente>` retorna 0 linhas e a auto-seleção
-([page.tsx:405-438](src/app/(dashboard)/inbox/page.tsx#L405-L438)) simplesmente não encontra o match
+([page.tsx:405-438](<src/app/(dashboard)/inbox/page.tsx#L405-L438>)) simplesmente não encontra o match
 — **fail-closed, correto**. Cuidado apenas para que a mensagem de erro seja genérica
 ("Conversa não encontrada"), e não "Você não tem permissão para esta conversa", que
 confirmaria a existência do recurso.
@@ -394,7 +399,7 @@ confirmaria a existência do recurso.
 ### 🟡 F-12 — Notificações e contadores agregados
 
 - `notifications` (027) já é por destinatário; o trigger `on_conversation_assigned`
-  passa a disparar em *todo* claim. Com a auto-atribuição do F-07, isso gera uma
+  passa a disparar em _todo_ claim. Com a auto-atribuição do F-07, isso gera uma
   notificação para o próprio agente que acabou de assumir → **ruído**. O trigger deve
   ignorar `NEW.assigned_agent_id = auth.uid()`.
 - [use-total-unread.ts](src/hooks/use-total-unread.ts) conta não lidas para o badge da sidebar.
@@ -413,7 +418,7 @@ type TabId = 'chat' | 'open' | 'contacts';
 
 interface TabFilters {
   search: string;
-  statusFilter: InboxFilter;   // só usado em 'open'
+  statusFilter: InboxFilter; // só usado em 'open'
   selectedTagIds: string[];
   selectedCompany: string | null;
 }
@@ -421,13 +426,13 @@ interface TabFilters {
 
 - **Fonte de verdade da aba: a URL** (`/inbox?tab=chat&c=<id>`), via `useSearchParams` +
   `router.replace(..., { scroll: false })` — mesmo padrão já usado para `?c=`
-  ([page.tsx:478](src/app/(dashboard)/inbox/page.tsx#L478)). Ganha-se refresh estável,
+  ([page.tsx:478](<src/app/(dashboard)/inbox/page.tsx#L478>)). Ganha-se refresh estável,
   compartilhamento de link e botão "voltar" coerente. `useState` local perderia a aba a
   cada re-render de navegação.
 - **Filtros: `Record<TabId, TabFilters>` em memória**, não na URL (poluiria o link).
   Trocar de aba preserva; recarregar a página reseta — comportamento aceitável e
   consistente com o `localStorage` já usado só para o painel de contato
-  ([page.tsx:29](src/app/(dashboard)/inbox/page.tsx#L29)).
+  ([page.tsx:29](<src/app/(dashboard)/inbox/page.tsx#L29>)).
 
 ### 3.2 Cache por aba (não perder dados ao alternar)
 
@@ -445,7 +450,7 @@ const [fetchedAt, setFetchedAt] = useState<Record<'chat'|'open', number|null>>(.
 - **`activeConversation` vive fora dos caches** — é estado global da página. Assim,
   clicar em "Chat", abrir a conversa X, ir em "Contacts" e voltar mantém X aberta e as
   `messages` carregadas (o `MessageThread` só refaz o fetch quando `conversationId`
-  muda — ver o comentário em [page.tsx:443-449](src/app/(dashboard)/inbox/page.tsx#L443-L449)).
+  muda — ver o comentário em [page.tsx:443-449](<src/app/(dashboard)/inbox/page.tsx#L443-L449>)).
 
 ### 3.3 Transição de aba após o claim (o caso mais delicado)
 
@@ -471,15 +476,15 @@ zeraria `messages` — exatamente o bug já documentado nas linhas 411-419 do `p
 
 O canal continua único. O que muda é o roteamento do evento para o cache certo:
 
-| Evento | Ação |
-| --- | --- |
-| `INSERT` conversation (`assigned_agent_id` nulo) | entra em `feeds.open` |
-| `UPDATE` com `old.assigned = null → new.assigned = X` | remove de `feeds.open`; se `X === user.id`, entra em `feeds.chat` |
-| `UPDATE` com `new.assigned` ≠ eu e não sou admin | **não chega** (RLS) → tratar por ausência no resync (F-04) |
-| `INSERT` message | patch de preview no cache que contiver a conversa; se em nenhum, `hydrateConversation` |
+| Evento                                                | Ação                                                                                   |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `INSERT` conversation (`assigned_agent_id` nulo)      | entra em `feeds.open`                                                                  |
+| `UPDATE` com `old.assigned = null → new.assigned = X` | remove de `feeds.open`; se `X === user.id`, entra em `feeds.chat`                      |
+| `UPDATE` com `new.assigned` ≠ eu e não sou admin      | **não chega** (RLS) → tratar por ausência no resync (F-04)                             |
+| `INSERT` message                                      | patch de preview no cache que contiver a conversa; se em nenhum, `hydrateConversation` |
 
-`knownConvIdsRef` ([page.tsx:112](src/app/(dashboard)/inbox/page.tsx#L112)) passa a ser um
-`Map<convId, TabId>` — o handler precisa saber *em qual cache* a conversa está,
+`knownConvIdsRef` ([page.tsx:112](<src/app/(dashboard)/inbox/page.tsx#L112>)) passa a ser um
+`Map<convId, TabId>` — o handler precisa saber _em qual cache_ a conversa está,
 sincronamente, pelo mesmo motivo já documentado nas linhas 100-111.
 
 ---
@@ -524,67 +529,68 @@ Ordem importa: **banco antes do front**. A RLS nova é compatível com a UI anti
 
 ### Fase 1 — Banco (PR isolado, deploy independente)
 
-| # | Arquivo | Ação |
-| --- | --- | --- |
+| #   | Arquivo                                               | Ação                                                                                                                                                                                         |
+| --- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.1 | `supabase/migrations/039_conversation_assignment.sql` | **novo** — FK, 2 índices, `can_access_conversation()`, policies de `conversations`/`messages`/satélites, `claim_conversation()`, `reassign_conversation()`, ajuste do trigger de notificação |
-| 1.2 | — | Rodar `get_advisors` (security + performance) após aplicar |
-| 1.3 | — | Testes manuais de RLS: `curl` direto ao PostgREST com JWT de agent / admin / owner / viewer (§2 §2.1) |
+| 1.2 | —                                                     | Rodar `get_advisors` (security + performance) após aplicar                                                                                                                                   |
+| 1.3 | —                                                     | Testes manuais de RLS: `curl` direto ao PostgREST com JWT de agent / admin / owner / viewer (§2 §2.1)                                                                                        |
 
 ### Fase 2 — Servidor
 
-| # | Arquivo | Ação |
-| --- | --- | --- |
-| 2.1 | `src/app/api/inbox/conversations/[id]/claim/route.ts` | **novo** — `POST`, `requireRole('agent')`, chama `claim_conversation`, mapeia `55006` → **409** |
-| 2.2 | `src/app/api/inbox/conversations/[id]/assign/route.ts` | **novo** — `POST`, valida destino na mesma conta, gate dono-ou-admin |
-| 2.3 | [src/app/api/whatsapp/send/route.ts](src/app/api/whatsapp/send/route.ts) | claim **antes** do envio; 409 aborta (F-07) |
-| 2.4 | [src/app/api/ai/autoreply/[conversationId]/route.ts](src/app/api/ai/autoreply/[conversationId]/route.ts) | aplicar o gate de reatribuição ao `resume` (F-08) |
-| 2.5 | [src/lib/auth/roles.ts](src/lib/auth/roles.ts) | novo predicado `canViewAllConversations(role)` (admin+) |
+| #   | Arquivo                                                                                                  | Ação                                                                                            |
+| --- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 2.1 | `src/app/api/inbox/conversations/[id]/claim/route.ts`                                                    | **novo** — `POST`, `requireRole('agent')`, chama `claim_conversation`, mapeia `55006` → **409** |
+| 2.2 | `src/app/api/inbox/conversations/[id]/assign/route.ts`                                                   | **novo** — `POST`, valida destino na mesma conta, gate dono-ou-admin                            |
+| 2.3 | [src/app/api/whatsapp/send/route.ts](src/app/api/whatsapp/send/route.ts)                                 | claim **antes** do envio; 409 aborta (F-07)                                                     |
+| 2.4 | [src/app/api/ai/autoreply/[conversationId]/route.ts](src/app/api/ai/autoreply/[conversationId]/route.ts) | aplicar o gate de reatribuição ao `resume` (F-08)                                               |
+| 2.5 | [src/lib/auth/roles.ts](src/lib/auth/roles.ts)                                                           | novo predicado `canViewAllConversations(role)` (admin+)                                         |
 
 ### Fase 3 — Cliente
 
-| # | Arquivo | Ação |
-| --- | --- | --- |
-| 3.1 | `src/lib/inbox/tabs.ts` | **novo** — `TabId`, predicados de fetch, `TAB_DEFINITIONS` |
-| 3.2 | `src/hooks/use-inbox-tabs.ts` | **novo** — aba ativa ↔ URL, filtros por aba |
-| 3.3 | `src/hooks/use-conversation-feed.ts` | **novo** — fetch por aba, cache, roteamento de realtime |
-| 3.4 | `src/components/inbox/inbox-tabs.tsx` | **novo** — barra das 3 abas (a 3ª só ícone + `aria-label`) |
-| 3.5 | `src/components/inbox/contacts-directory.tsx` | **novo** — aba 3 (busca + paginação; reusar `filter_contacts_by_tags`) |
-| 3.6 | [src/components/inbox/conversation-list.tsx](src/components/inbox/conversation-list.tsx) | **refactor** — remover fetch (101-135) e `onConversationsLoaded`; virar apresentação pura; dropdown de status só na aba "Open" |
-| 3.7 | [src/app/(dashboard)/inbox/page.tsx](src/app/(dashboard)/inbox/page.tsx) | **refactor** — orquestrar abas, cache duplo, reconciliação por ausência (F-04) |
-| 3.8 | [src/components/inbox/message-thread.tsx](src/components/inbox/message-thread.tsx) | trocar o `UPDATE` direto (878-896) pela rota 2.2; esconder o dropdown de atribuir para não-dono/não-admin |
-| 3.9 | [src/hooks/use-can.ts](src/hooks/use-can.ts) | nova `CanAction: 'view-all-conversations'` \| `'reassign-conversation'` |
-| 3.10 | [src/hooks/use-realtime.ts](src/hooks/use-realtime.ts) | (provável) expor o `payload.old` completo para detectar transição de assignee |
-| 3.11 | `messages/pt-BR.json`, `messages/en.json` | namespace `Inbox.tabs.*` + strings de erro do claim (D4) |
-| 3.12 | `src/types/index.ts` | `assigned_agent_id` de `string \| undefined` → `string \| null` (o banco usa `null`; o código já converte com `?? undefined` em [page.tsx:533](src/app/(dashboard)/inbox/page.tsx#L533) — inconsistência a limpar) |
+| #    | Arquivo                                                                                  | Ação                                                                                                                                                                                                                 |
+| ---- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1  | `src/lib/inbox/tabs.ts`                                                                  | **novo** — `TabId`, predicados de fetch, `TAB_DEFINITIONS`                                                                                                                                                           |
+| 3.2  | `src/hooks/use-inbox-tabs.ts`                                                            | **novo** — aba ativa ↔ URL, filtros por aba                                                                                                                                                                          |
+| 3.3  | `src/hooks/use-conversation-feed.ts`                                                     | **novo** — fetch por aba, cache, roteamento de realtime                                                                                                                                                              |
+| 3.4  | `src/components/inbox/inbox-tabs.tsx`                                                    | **novo** — barra das 3 abas (a 3ª só ícone + `aria-label`)                                                                                                                                                           |
+| 3.5  | `src/components/inbox/contacts-directory.tsx`                                            | **novo** — aba 3 (busca + paginação; reusar `filter_contacts_by_tags`)                                                                                                                                               |
+| 3.6  | [src/components/inbox/conversation-list.tsx](src/components/inbox/conversation-list.tsx) | **refactor** — remover fetch (101-135) e `onConversationsLoaded`; virar apresentação pura; dropdown de status só na aba "Open"                                                                                       |
+| 3.7  | [src/app/(dashboard)/inbox/page.tsx](<src/app/(dashboard)/inbox/page.tsx>)               | **refactor** — orquestrar abas, cache duplo, reconciliação por ausência (F-04)                                                                                                                                       |
+| 3.8  | [src/components/inbox/message-thread.tsx](src/components/inbox/message-thread.tsx)       | trocar o `UPDATE` direto (878-896) pela rota 2.2; esconder o dropdown de atribuir para não-dono/não-admin                                                                                                            |
+| 3.9  | [src/hooks/use-can.ts](src/hooks/use-can.ts)                                             | nova `CanAction: 'view-all-conversations'` \| `'reassign-conversation'`                                                                                                                                              |
+| 3.10 | [src/hooks/use-realtime.ts](src/hooks/use-realtime.ts)                                   | (provável) expor o `payload.old` completo para detectar transição de assignee                                                                                                                                        |
+| 3.11 | `messages/pt-BR.json`, `messages/en.json`                                                | namespace `Inbox.tabs.*` + strings de erro do claim (D4)                                                                                                                                                             |
+| 3.12 | `src/types/index.ts`                                                                     | `assigned_agent_id` de `string \| undefined` → `string \| null` (o banco usa `null`; o código já converte com `?? undefined` em [page.tsx:533](<src/app/(dashboard)/inbox/page.tsx#L533>) — inconsistência a limpar) |
 
 ### Fase 4 — Testes
 
-| # | Alvo |
-| --- | --- |
-| 4.1 | `src/lib/inbox/tabs.test.ts` — predicados de aba (Vitest, padrão do repo) |
-| 4.2 | Teste de concorrência do `claim_conversation` (2 sessões simultâneas → exatamente 1 vencedor) |
+| #   | Alvo                                                                                                                    |
+| --- | ----------------------------------------------------------------------------------------------------------------------- |
+| 4.1 | `src/lib/inbox/tabs.test.ts` — predicados de aba (Vitest, padrão do repo)                                               |
+| 4.2 | Teste de concorrência do `claim_conversation` (2 sessões simultâneas → exatamente 1 vencedor)                           |
 | 4.3 | Matriz de RLS: {owner, admin, agent-dono, agent-outro, viewer} × {conversa atribuída, não atribuída} × {SELECT, UPDATE} |
-| 4.4 | Regressão: deep-link `?c=`, reset de `unread_count`, resync por reconexão/visibilidade |
+| 4.4 | Regressão: deep-link `?c=`, reset de `unread_count`, resync por reconexão/visibilidade                                  |
 
 ---
 
 ## 6. Decisões pendentes (bloqueiam a implementação)
 
-| # | Questão | Impacto |
-| --- | --- | --- |
-| **D1** | Aba "Open" = `assigned_agent_id IS NULL` ou `status = 'open'`? O enunciado diz "não atribuídas (badge verde)", mas o badge verde hoje é `status='open'` ([conversation-list.tsx:41](src/components/inbox/conversation-list.tsx#L41)). São conjuntos diferentes. | Define o predicado central. **Recomendação: `assigned_agent_id IS NULL`**, e o `status` vira filtro *dentro* da aba. |
-| **D2** | Aba "Contacts": como um contato é "atribuído a um agente"? Nova coluna `contacts.assigned_agent_id`? Ou derivado ("tenho ao menos uma conversa com este contato")? | **Recomendação: derivado**, via view/RPC — evita nova coluna + UI de atribuição de contatos, e casa naturalmente com o modelo de conversa. |
-| **D3** | Na aba "Chat", o filtro de status (`Todas/Não lidas/Abertas/Pendentes/Encerradas`) aparece? | O enunciado só o ancora na "Open". |
-| **D4** | Rótulos literais `"Chat"` e `"Open"` mesmo em PT-BR, ou traduzidos (`"Chat"` / `"Fila"`)? | Strings de i18n; "Open" em PT-BR conflita com "Abertas". |
-| **D5** | O `viewer` perde a visão global do inbox? (F-06) | Sob a regra literal, sim. Pode quebrar o uso de supervisão. |
-| **D6** | Backfill: tudo para a fila, ou inferir dono pelo último agente que respondeu? | "Tudo para a fila" esvazia a aba "Chat" no dia 1. |
-| **D7** | Admin vê "todas" na aba "Chat" (fica ilegível em contas grandes) ou tem um seletor "ver como: {agente}"? | UX + performance da query. |
+| #      | Questão                                                                                                                                                                                                                                                         | Impacto                                                                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **D1** | Aba "Open" = `assigned_agent_id IS NULL` ou `status = 'open'`? O enunciado diz "não atribuídas (badge verde)", mas o badge verde hoje é `status='open'` ([conversation-list.tsx:41](src/components/inbox/conversation-list.tsx#L41)). São conjuntos diferentes. | Define o predicado central. **Recomendação: `assigned_agent_id IS NULL`**, e o `status` vira filtro _dentro_ da aba.                       |
+| **D2** | Aba "Contacts": como um contato é "atribuído a um agente"? Nova coluna `contacts.assigned_agent_id`? Ou derivado ("tenho ao menos uma conversa com este contato")?                                                                                              | **Recomendação: derivado**, via view/RPC — evita nova coluna + UI de atribuição de contatos, e casa naturalmente com o modelo de conversa. |
+| **D3** | Na aba "Chat", o filtro de status (`Todas/Não lidas/Abertas/Pendentes/Encerradas`) aparece?                                                                                                                                                                     | O enunciado só o ancora na "Open".                                                                                                         |
+| **D4** | Rótulos literais `"Chat"` e `"Open"` mesmo em PT-BR, ou traduzidos (`"Chat"` / `"Fila"`)?                                                                                                                                                                       | Strings de i18n; "Open" em PT-BR conflita com "Abertas".                                                                                   |
+| **D5** | O `viewer` perde a visão global do inbox? (F-06)                                                                                                                                                                                                                | Sob a regra literal, sim. Pode quebrar o uso de supervisão.                                                                                |
+| **D6** | Backfill: tudo para a fila, ou inferir dono pelo último agente que respondeu?                                                                                                                                                                                   | "Tudo para a fila" esvazia a aba "Chat" no dia 1.                                                                                          |
+| **D7** | Admin vê "todas" na aba "Chat" (fica ilegível em contas grandes) ou tem um seletor "ver como: {agente}"?                                                                                                                                                        | UX + performance da query.                                                                                                                 |
 
 ---
 
 ## 7. Riscos e critérios de aceite
 
 **Riscos**
+
 - **Performance:** `can_access_conversation` roda por linha em `messages`. Com o índice
   parcial e `STABLE` o planner cacheia dentro da query, mas threads longas devem ser
   medidas antes do deploy (`EXPLAIN ANALYZE` em uma conta real).
@@ -596,6 +602,7 @@ Ordem importa: **banco antes do front**. A RLS nova é compatível com a UI anti
   verificar sob qual identidade roda e se a nova RLS a afeta.
 
 **Critérios de aceite (segurança)**
+
 1. `curl` direto ao PostgREST com JWT de agente não-dono retorna **0 linhas** para
    conversa alheia — e **0 mensagens** dela.
 2. Dois claims simultâneos → exatamente 1 sucesso, 1 × HTTP 409.

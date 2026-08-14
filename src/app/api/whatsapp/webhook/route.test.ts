@@ -63,6 +63,7 @@ vi.mock('@supabase/supabase-js', () => ({
                 user_id: 'user-1',
                 phone_number_id: 'pnid-1',
                 access_token: 'cipher',
+                channel_id: 'chan-1',
               },
             ],
             error: null,

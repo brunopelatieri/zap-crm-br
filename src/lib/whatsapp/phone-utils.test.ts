@@ -172,7 +172,9 @@ describe('isInvalidWhatsappNumberError', () => {
   it('matches the human-readable text variants, case-insensitive', () => {
     expect(isInvalidWhatsappNumberError('not a WhatsApp user')).toBe(true);
     expect(
-      isInvalidWhatsappNumberError('The recipient phone number is not a WhatsApp phone number.')
+      isInvalidWhatsappNumberError(
+        'The recipient phone number is not a WhatsApp phone number.'
+      )
     ).toBe(true);
     expect(isInvalidWhatsappNumberError('NOT A WHATSAPP USER')).toBe(true);
   });

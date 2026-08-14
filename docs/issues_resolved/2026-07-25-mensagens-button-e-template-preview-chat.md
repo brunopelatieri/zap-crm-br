@@ -12,11 +12,11 @@ Duas falhas distintas encontradas na mesma área (renderização de mensagens no
 
 ### Sintoma inicial
 
-Conversas inbound mostravam o texto literal `[Unsupported message type: button]` no lugar do clique do cliente em botões de *quick reply* de mensagens **template**, tanto na bolha da mensagem quanto no preview da lista de conversas.
+Conversas inbound mostravam o texto literal `[Unsupported message type: button]` no lugar do clique do cliente em botões de _quick reply_ de mensagens **template**, tanto na bolha da mensagem quanto no preview da lista de conversas.
 
 ### Investigação
 
-O sintoma sugeria o bug em `conversation-list.tsx`, mas esse componente só exibe `conversation.last_message_text` — não tem lógica por tipo de mensagem. A causa real estava em `parseMessageContent()` dentro do webhook (`src/app/api/whatsapp/webhook/route.ts`): a Cloud API da Meta envia cliques em botões de *quick reply* de **templates** com `message.type === "button"`, um tipo distinto de `interactive` (que cobre apenas botões/listas de mensagens interativas enviadas por nós). Esse tipo não tinha `case` no switch e caía no `default`, gravando o texto de erro como conteúdo permanente da mensagem.
+O sintoma sugeria o bug em `conversation-list.tsx`, mas esse componente só exibe `conversation.last_message_text` — não tem lógica por tipo de mensagem. A causa real estava em `parseMessageContent()` dentro do webhook (`src/app/api/whatsapp/webhook/route.ts`): a Cloud API da Meta envia cliques em botões de _quick reply_ de **templates** com `message.type === "button"`, um tipo distinto de `interactive` (que cobre apenas botões/listas de mensagens interativas enviadas por nós). Esse tipo não tinha `case` no switch e caía no `default`, gravando o texto de erro como conteúdo permanente da mensagem.
 
 Auditoria adicional revelou que `contacts` (cliente compartilhando um cartão de contato) tinha o mesmo problema — nenhum tratamento.
 

@@ -341,15 +341,16 @@ export async function stageAudience(
     const chunk = rows
       .slice(i, i + INSERT_CHUNK)
       .map((r) => ({ ...r, broadcast_id: draftId }));
-    const { error } = await db
-      .from('broadcast_audience_staging')
-      .insert(chunk);
+    const { error } = await db.from('broadcast_audience_staging').insert(chunk);
 
     if (error) {
       // Rascunho sem a audiência inteira é pior do que nenhum — a
       // triagem mostraria uma foto incompleta sem avisar. Marca como
       // falho em vez de deixar um draft fantasma na lista.
-      await db.from('broadcasts').update({ status: 'failed' }).eq('id', draftId);
+      await db
+        .from('broadcasts')
+        .update({ status: 'failed' })
+        .eq('id', draftId);
       console.error('[stage-audience] insert staging rows error:', error);
       throw new BroadcastError('internal', 'Failed to stage audience', 500);
     }

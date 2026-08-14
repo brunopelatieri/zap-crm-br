@@ -66,9 +66,7 @@ export function isValidMarginMinutes(v: unknown): v is number {
  * escrita direta no banco) precisa fazer algo sensato, não explodir a
  * varredura inteira das outras contas.
  */
-export function resolveMarginMinutes(
-  triggerConfig: unknown
-): number {
+export function resolveMarginMinutes(triggerConfig: unknown): number {
   const raw = (triggerConfig as { margin_minutes?: unknown } | null)
     ?.margin_minutes;
   if (typeof raw !== 'number' || !Number.isFinite(raw)) {

@@ -28,8 +28,9 @@ import {
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
 import {
-  resolveChannelContext,
+  resolveChannelForConversation,
   sendWithPhoneVariants,
+  ChannelCapabilityError,
   ChannelNotConfiguredError,
   type OutboundContent,
 } from '@/lib/channels/send';
@@ -278,17 +279,17 @@ export async function sendMessageToConversation(
     );
   }
 
-  // Credenciais do canal da conta (hoje sempre a `whatsapp_config` do
-  // canal oficial; ver `lib/channels/send.ts`). O cliente `db` é o mesmo
-  // de antes — o do usuário no painel, service-role na API pública —,
-  // então o alcance da consulta e a RLS não mudam.
+  // Credenciais do canal DA CONVERSA (F4.1), não do padrão da conta.
+  // Antes disto a resolução era fixa em `whatsapp_cloud`, então
+  // responder uma thread do WhatsApp QRCode saía pelo número oficial da
+  // Meta — ver o cabeçalho de `resolveChannelForConversation`. O cliente
+  // `db` é o mesmo de antes — o do usuário no painel, service-role na
+  // API pública —, então o alcance da consulta e a RLS não mudam.
   let channelCtx;
   let config;
   try {
-    ({ ctx: channelCtx, configRow: config } = await resolveChannelContext(
-      db,
-      accountId
-    ));
+    ({ ctx: channelCtx, configRow: config } =
+      await resolveChannelForConversation(db, accountId, conversationId));
   } catch (err) {
     if (err instanceof ChannelNotConfiguredError) {
       throw new SendMessageError(
@@ -300,10 +301,13 @@ export async function sendMessageToConversation(
     throw err;
   }
 
+  const isCloudChannel = channelCtx.channel.type === 'whatsapp_cloud';
   const accessToken = channelCtx.credentials.accessToken;
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
+  // Só no canal oficial: fora dele `config` é a instância Evolution
+  // (sem `access_token`) e não há `whatsapp_config` a reparar.
+  if (isCloudChannel && isLegacyFormat(config.access_token)) {
     void db
       .from('whatsapp_config')
       .update({ access_token: encrypt(accessToken) })
@@ -463,6 +467,13 @@ export async function sendMessageToConversation(
     waMessageId = result.providerMessageId;
     workingPhone = result.workingPhone;
   } catch (err) {
+    // O canal não sabe fazer o que foi pedido (template ou botão numa
+    // conversa QRCode, por exemplo). É erro do PEDIDO, não do provedor —
+    // 400 com o motivo, em vez de um 502 "Meta API error" que culpa a
+    // Meta por algo que nunca chegou a ela.
+    if (err instanceof ChannelCapabilityError) {
+      throw new SendMessageError('unsupported_by_channel', err.message, 400);
+    }
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
     console.error('[send-message] Meta send failed for all variants:', message);

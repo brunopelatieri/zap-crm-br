@@ -17,17 +17,17 @@ que o ZAP CRM BR pode ser. Em vez de um CRM que só recebe dados digitados manua
 por CSV, ele passa a ser o destino natural de qualquer fluxo de captura ou automação que já exista
 no negócio. Alguns exemplos concretos do que dá para plugar **sem alterar uma linha do app**:
 
-| Cenário | Como o n8n resolve |
-|---|---|
-| **Formulário do site / landing page** | Typeform, Google Forms, ou um `<form>` próprio → webhook n8n → contato criado com tag `origem_site` e campos customizados (UTM, produto de interesse). |
-| **E-commerce / checkout** | Novo pedido na Shopify/Nuvemshop/WooCommerce → contato criado com tag `cliente`, custom field `ultimo_pedido`, `ticket_medio`. |
-| **Eventos e webinars** | Inscrição em Eventbrite/Sympla → contato com tag do evento (`webinar_marco_2026`) — depois vira campanha de disparo segmentada no próprio CRM. |
-| **Enriquecimento de dados** | Antes ou depois do insert, um node HTTP no mesmo workflow consulta uma API de CNPJ/CPF, CEP ou score de crédito e grava o resultado num custom field. |
-| **Importação em massa / migração** | Planilha Google Sheets ou CSV lido por um node `Schedule Trigger` + loop, chamando este mesmo webhook por linha — dedup automático por telefone já embutido (§ **Duplicatas** abaixo). |
-| **Sincronização com outro CRM/ESP** | RD Station, Mailchimp, ActiveCampaign, HubSpot → n8n replica o lead como contato do ZAP CRM BR, mantendo os dois sistemas em paralelo sem integração nativa. |
-| **Múltiplos canais convergindo num contato só** | WhatsApp, formulário, planilha e e-commerce podem todos apontar para o mesmo webhook (ou para variações dele) — o dedup por `phone_normalized` garante que é **um único contato**, não quatro duplicados. |
-| **Automação interna disparando automação** | Um workflow n8n de "lead scoring" pode chamar este webhook como etapa final para *carimbar* o contato com o resultado, sem que o app precise expor essa lógica. |
-| **Histórico de atendimento centralizado** | Central telefônica, chatbot ou script de atendimento gera uma nota por interação (`contact_notes`) — o histórico completo do cliente fica no CRM, mesmo vindo de sistemas que nunca foram integrados ao app. |
+| Cenário                                         | Como o n8n resolve                                                                                                                                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Formulário do site / landing page**           | Typeform, Google Forms, ou um `<form>` próprio → webhook n8n → contato criado com tag `origem_site` e campos customizados (UTM, produto de interesse).                                                       |
+| **E-commerce / checkout**                       | Novo pedido na Shopify/Nuvemshop/WooCommerce → contato criado com tag `cliente`, custom field `ultimo_pedido`, `ticket_medio`.                                                                               |
+| **Eventos e webinars**                          | Inscrição em Eventbrite/Sympla → contato com tag do evento (`webinar_marco_2026`) — depois vira campanha de disparo segmentada no próprio CRM.                                                               |
+| **Enriquecimento de dados**                     | Antes ou depois do insert, um node HTTP no mesmo workflow consulta uma API de CNPJ/CPF, CEP ou score de crédito e grava o resultado num custom field.                                                        |
+| **Importação em massa / migração**              | Planilha Google Sheets ou CSV lido por um node `Schedule Trigger` + loop, chamando este mesmo webhook por linha — dedup automático por telefone já embutido (§ **Duplicatas** abaixo).                       |
+| **Sincronização com outro CRM/ESP**             | RD Station, Mailchimp, ActiveCampaign, HubSpot → n8n replica o lead como contato do ZAP CRM BR, mantendo os dois sistemas em paralelo sem integração nativa.                                                 |
+| **Múltiplos canais convergindo num contato só** | WhatsApp, formulário, planilha e e-commerce podem todos apontar para o mesmo webhook (ou para variações dele) — o dedup por `phone_normalized` garante que é **um único contato**, não quatro duplicados.    |
+| **Automação interna disparando automação**      | Um workflow n8n de "lead scoring" pode chamar este webhook como etapa final para _carimbar_ o contato com o resultado, sem que o app precise expor essa lógica.                                              |
+| **Histórico de atendimento centralizado**       | Central telefônica, chatbot ou script de atendimento gera uma nota por interação (`contact_notes`) — o histórico completo do cliente fica no CRM, mesmo vindo de sistemas que nunca foram integrados ao app. |
 
 O padrão usado aqui (webhook → validação → upsert no Supabase via REST) é **replicável**: dá para
 copiar este workflow como ponto de partida para qualquer nova integração que precise conversar com
@@ -37,12 +37,12 @@ as tabelas `contacts` / `tags` / `custom_fields` / `contact_notes` do CRM.
 
 ## O que existe nesta pasta
 
-| Arquivo | Conteúdo |
-|---|---|
-| [`SPEC_contact_ingestion_workflow.md`](./SPEC_contact_ingestion_workflow.md) | Especificação técnica completa: contrato de dados, decisões de design (D1–D7), fluxo node a node, critérios de aceite e **bugs de n8n encontrados/corrigidos** (leitura recomendada antes de alterar o workflow). |
-| [`workflow_contact_ingestion.json`](./workflow_contact_ingestion.json) | Export fiel do workflow ativo no n8n — 49 nodes, pronto para reimportar via `n8n import:workflow` ou colar na UI. ⚠️ **O valor de `supabase_anon_service_role` no node `CONFIG` está como `<REDACTED>` de propósito** — troque pelo valor real da sua service_role key **antes** de importar, senão o workflow importado fica sem credencial válida e todas as chamadas ao Supabase falham. |
-| [`supabase_schema_contatos.txt`](./supabase_schema_contatos.txt) | DDL das tabelas envolvidas (`contacts`, `tags`, `contact_tags`, `custom_fields`, `contact_custom_values`, `contact_notes`). |
-| `README.md` (este arquivo) | Visão de produto, casos de uso e guia rápido de utilização do endpoint. |
+| Arquivo                                                                      | Conteúdo                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`SPEC_contact_ingestion_workflow.md`](./SPEC_contact_ingestion_workflow.md) | Especificação técnica completa: contrato de dados, decisões de design (D1–D7), fluxo node a node, critérios de aceite e **bugs de n8n encontrados/corrigidos** (leitura recomendada antes de alterar o workflow).                                                                                                                                                                           |
+| [`workflow_contact_ingestion.json`](./workflow_contact_ingestion.json)       | Export fiel do workflow ativo no n8n — 49 nodes, pronto para reimportar via `n8n import:workflow` ou colar na UI. ⚠️ **O valor de `supabase_anon_service_role` no node `CONFIG` está como `<REDACTED>` de propósito** — troque pelo valor real da sua service_role key **antes** de importar, senão o workflow importado fica sem credencial válida e todas as chamadas ao Supabase falham. |
+| [`supabase_schema_contatos.txt`](./supabase_schema_contatos.txt)             | DDL das tabelas envolvidas (`contacts`, `tags`, `contact_tags`, `custom_fields`, `contact_custom_values`, `contact_notes`).                                                                                                                                                                                                                                                                 |
+| `README.md` (este arquivo)                                                   | Visão de produto, casos de uso e guia rápido de utilização do endpoint.                                                                                                                                                                                                                                                                                                                     |
 
 ---
 
@@ -126,7 +126,7 @@ Em erro de validação, a resposta vem com HTTP 422: `{ "ok": false, "reason": "
 - **Duplicata de contato** (mesmo telefone na mesma conta): controlado pela variável fixa
   `update_existing_contact` no node `CONFIG` — hoje `true` (sobrescreve nome/e-mail/empresa em
   contato repetido). Trocar para `false` preserva os dados existentes.
-- **Tags nunca são removidas.** O fluxo só *acrescenta* — mandar um contato sem uma tag que ele já
+- **Tags nunca são removidas.** O fluxo só _acrescenta_ — mandar um contato sem uma tag que ele já
   tinha não apaga a tag antiga. Ideal para ir enriquecendo o mesmo contato por canais diferentes ao
   longo do tempo.
 - **Telefone é sempre normalizado com DDI, sem `+`** (ex.: `5519992496598`), tanto em `phone` quanto

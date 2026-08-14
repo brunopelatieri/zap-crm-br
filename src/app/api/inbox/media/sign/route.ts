@@ -71,16 +71,15 @@ export async function POST(request: Request) {
     const target = resolveTarget(body);
     if (!target) {
       return NextResponse.json(
-        { error: 'Body must be { url } pointing at a managed bucket, or { bucket, path }' },
+        {
+          error:
+            'Body must be { url } pointing at a managed bucket, or { bucket, path }',
+        },
         { status: 400 }
       );
     }
 
-    const signed = await signStoragePath(
-      supabase,
-      target.bucket,
-      target.path
-    );
+    const signed = await signStoragePath(supabase, target.bucket, target.path);
 
     if (!signed) {
       return NextResponse.json({ error: 'Media not found' }, { status: 404 });

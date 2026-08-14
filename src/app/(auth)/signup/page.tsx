@@ -86,7 +86,10 @@ function SignupPageInner() {
     });
 
     if (error) {
-      console.error('[signup] auth.signUp failed:', getAuthErrorLogDetails(error));
+      console.error(
+        '[signup] auth.signUp failed:',
+        getAuthErrorLogDetails(error)
+      );
       setError(t(getAuthErrorMessageKey(error)));
       setLoading(false);
       return;

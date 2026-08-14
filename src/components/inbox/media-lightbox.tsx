@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect } from 'react';
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
@@ -10,7 +10,8 @@ import { DownloadIconButton, useMediaSrc } from './media-download';
 export interface LightboxItem {
   id: string;
   type: 'image' | 'video';
-  url: string;
+  /** Nulo quando só existe `path` — é o caso do canal QRCode. */
+  url: string | null;
   /** `messages.media_path` — objeto no bucket privado (migração 040). */
   path?: string | null;
   caption?: string | null;
@@ -31,7 +32,7 @@ function LightboxImage({
   path,
   alt,
 }: {
-  url: string;
+  url: string | null;
   path?: string | null;
   alt: string;
 }) {
@@ -62,7 +63,13 @@ function LightboxImage({
   );
 }
 
-function LightboxVideo({ url, path }: { url: string; path?: string | null }) {
+function LightboxVideo({
+  url,
+  path,
+}: {
+  url: string | null;
+  path?: string | null;
+}) {
   const { src, loading, error } = useMediaSrc(url, path);
 
   if (error) {
@@ -141,7 +148,7 @@ export function MediaLightbox({
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/90 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+        <DialogPrimitive.Backdrop className="data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 fixed inset-0 z-50 bg-black/90" />
         <DialogPrimitive.Popup className="fixed inset-0 z-50 flex items-center justify-center p-4 outline-none">
           <DialogPrimitive.Title className="sr-only">
             {t('mediaViewer')}

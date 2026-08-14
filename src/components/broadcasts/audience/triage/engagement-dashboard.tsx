@@ -75,14 +75,13 @@ type SeriesMetric =
  *  paleta segue o mesmo Funnel de `[id]/page.tsx` (primary/teal/blue/
  *  indigo), com vermelho tracejado para falhas destacando o sinal de
  *  qualidade de número que a §5.1 monitora. */
-const SERIES_LINES: { key: SeriesMetric; color: string; dashed?: boolean }[] =
-  [
-    { key: 'messages_sent', color: '#8b5cf6' },
-    { key: 'messages_delivered', color: '#14b8a6' },
-    { key: 'messages_read', color: '#3b82f6' },
-    { key: 'messages_replied', color: '#6366f1' },
-    { key: 'messages_failed', color: '#ef4444', dashed: true },
-  ];
+const SERIES_LINES: { key: SeriesMetric; color: string; dashed?: boolean }[] = [
+  { key: 'messages_sent', color: '#8b5cf6' },
+  { key: 'messages_delivered', color: '#14b8a6' },
+  { key: 'messages_read', color: '#3b82f6' },
+  { key: 'messages_replied', color: '#6366f1' },
+  { key: 'messages_failed', color: '#ef4444', dashed: true },
+];
 
 interface ChartRow extends EngagementSeriesPoint {
   label: string;
@@ -226,12 +225,8 @@ export function EngagementDashboard({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-foreground text-sm font-semibold">
-          {t('title')}
-        </h2>
-        <p className="text-muted-foreground mt-0.5 text-xs">
-          {t('subtitle')}
-        </p>
+        <h2 className="text-foreground text-sm font-semibold">{t('title')}</h2>
+        <p className="text-muted-foreground mt-0.5 text-xs">{t('subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -397,7 +392,9 @@ export function EngagementDashboard({
 }
 
 function SeriesTooltip({ active, payload, label }: TooltipContentProps) {
-  const t = useTranslations('Broadcasts.audience.triage.dashboard.chart.legend');
+  const t = useTranslations(
+    'Broadcasts.audience.triage.dashboard.chart.legend'
+  );
 
   if (!active || !payload || payload.length === 0) return null;
 
