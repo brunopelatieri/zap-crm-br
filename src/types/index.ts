@@ -335,6 +335,15 @@ export interface Message {
    * badge in the inbox. Migration 033.
    */
   ai_generated?: boolean;
+  /**
+   * Canal por onde esta mensagem SAIU, quando é diferente do canal da
+   * própria conversa (`conversations.channel_id`). Nula no caso comum
+   * — hoje, só o desvio por canal (SPEC 049 §6.1 / F6.3) grava isto: a
+   * bolha fica na conversa do WhatsApp Oficial mas o envio saiu por uma
+   * instância QRCode, e sem este selo o agente não teria como saber
+   * que o cliente recebeu de um número diferente. Migração 063.
+   */
+  channel_id?: string | null;
 }
 
 export type ReactionActor = 'customer' | 'agent';

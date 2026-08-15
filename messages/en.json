@@ -411,6 +411,7 @@
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
       "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "channelBadgeTitle": "Delivered via {channel} — a different channel than the one this conversation normally uses",
       "bot": "Automation",
       "customerFallback": "Customer",
       "download": "Download",

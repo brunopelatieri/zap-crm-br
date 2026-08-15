@@ -411,6 +411,7 @@
       "unsupported": "[Tipo de mensagem não suportado]",
       "aiBadge": "IA",
       "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
+      "channelBadgeTitle": "Entregue via {channel} — um canal diferente do que esta conversa normalmente usa",
       "bot": "Automação",
       "customerFallback": "Cliente",
       "download": "Baixar",

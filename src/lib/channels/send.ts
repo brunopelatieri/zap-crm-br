@@ -637,11 +637,21 @@ export async function sendAndPersistOutbound(input: {
   db: SupabaseClient;
   accountId: string;
   /**
-   * Força um tipo de canal, ignorando o da conversa. Não usado por
-   * nenhum motor — existe só para teste e para um chamador futuro que
-   * precise sobrescrever de propósito.
+   * Envia por um canal EXPLÍCITO, ignorando o da conversa.
+   *
+   * Único chamador legítimo (SPEC 049 §6.1 ponto 1): o desvio por canal
+   * das automações (`sendViaFallbackChannel`) — o caso em que sair pelo
+   * canal da conversa seria justamente o errado, porque é a janela DELE
+   * que fechou. Todo o resto tem de continuar respondendo pelo canal da
+   * thread.
+   *
+   * `type` e `id` viajam JUNTOS por obrigação: `resolveChannelContext`
+   * recusa `whatsapp_qr` sem id, já que uma conta pode ter várias
+   * instâncias e o tipo sozinho não desambigua (ver L169). Um campo só,
+   * em vez de dois soltos, é o que impede a combinação sem sentido
+   * "id sem tipo".
    */
-  channelType?: ChannelType;
+  channel?: { type: ChannelType; id?: string };
   conversationId: string;
   contactId: string;
   content: OutboundContent;
@@ -653,8 +663,13 @@ export async function sendAndPersistOutbound(input: {
   // O canal vem da CONVERSA, não do padrão da conta (F4.1): uma
   // automação disparada por uma mensagem que entrou pelo QRCode tem de
   // responder pelo QRCode. Ver `resolveChannelForConversation`.
-  const { ctx } = input.channelType
-    ? await resolveChannelContext(db, accountId, input.channelType)
+  const { ctx } = input.channel
+    ? await resolveChannelContext(
+        db,
+        accountId,
+        input.channel.type,
+        input.channel.id
+      )
     : await resolveChannelForConversation(db, accountId, conversationId);
 
   // Teto de envio frio (SPEC 049 §6.2, D-1): só em canal sem janela da
@@ -703,6 +718,11 @@ export async function sendAndPersistOutbound(input: {
     ...(persist.extra ?? {}),
     message_id: providerMessageId,
     status: 'sent',
+    // Selo do canal de desvio (SPEC 049 §6.1 ponto 2, migração 063): só
+    // gravado quando o CANAL é explícito — o único caso em que ele
+    // diverge do `conversations.channel_id` da própria thread. Nos
+    // demais envios a coluna fica NULL, que é o estado "sem selo".
+    ...(input.channel ? { channel_id: ctx.channel.id } : {}),
   });
   if (msgErr) {
     // O provedor JÁ tem a mensagem; não se pode fingir que o envio

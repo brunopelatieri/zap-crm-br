@@ -27,6 +27,7 @@ import {
 } from './meta-send';
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
 import { resolveSessionWindow } from '@/lib/channels/session-window';
+import { sendAndPersistOutbound } from '@/lib/channels/send';
 import { ColdSendLimitError } from '@/lib/channels/cold-send-wiring';
 import type { ChannelType } from '@/lib/channels/types';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
@@ -438,9 +439,7 @@ async function runStep(
         );
       }
       if (guard.kind === 'fallback_channel') {
-        return success(
-          await sendViaFallbackChannel(guard, text, conversationId, args)
-        );
+        return sendViaFallbackChannel(guard, text, conversationId, args);
       }
       try {
         const { whatsapp_message_id } = await engineSendText({
@@ -969,30 +968,73 @@ async function fallbackTemplateAllowed(
 }
 
 /**
- * Executa o desvio por canal (PRD 047 §10.2): a MESMA mensagem, pelo
- * canal escolhido, sem template e sem custo de Meta.
+ * Executa o desvio por canal (PRD 047 §10.2, SPEC 049 §6.1): a MESMA
+ * mensagem, pelo canal escolhido, sem template e sem custo de Meta.
  *
- * O envio em si depende do adaptador da Evolution (PRD 047 F4), que
- * ainda não existe. Enquanto isso, esta função LANÇA com um motivo
- * explícito em vez de devolver sucesso silencioso — a rota só é
- * alcançável depois que a migração 055 popular `channels`, e um
- * "sucesso" que não entregou mensagem é a pior falha possível num CRM
- * de atendimento.
+ * É o ÚNICO ponto do sistema que manda mensagem por um canal diferente
+ * do da conversa. Daí os quatro pontos abaixo, que a decisão de rota
+ * (`window-fallback.ts`) não cobre porque não fala com o banco:
  *
- * Na F4, o corpo vira uma chamada a `sendViaChannel({ channelId, … })`.
+ * 1. O canal é explícito, não o da conversa. Sair pelo canal da thread
+ *    seria justamente o errado — é a janela DELE que fechou. `type` e
+ *    `id` viajam juntos: `resolveChannelContext` recusa `whatsapp_qr`
+ *    sem id (uma conta pode ter várias instâncias). Como consequência,
+ *    este caminho nunca toca `whatsapp_config`.
+ *
+ * 2. A bolha é persistida na conversa ORIGINAL (a do canal oficial onde
+ *    a janela fechou), não numa thread nova do canal de desvio: a
+ *    automação foi disparada por aquela thread e o log tem de estar
+ *    lá; e abrir thread sem o cliente ter escrito poluiria a lista.
+ *    ⚠️ O agente vê a bolha na thread do oficial embora o cliente tenha
+ *    recebido de OUTRO número — o selo de canal na bolha (F5) é o que
+ *    fecha essa lacuna de leitura.
+ *
+ * 3. Teto de envio frio negado é `skip`, não falha (PRD §10.3: cota
+ *    estourada é adiamento). `sendAndPersistOutbound` já verifica antes
+ *    de entregar e registra o consumo DEPOIS — contar antes faria uma
+ *    falha de rede consumir cota que nunca saiu.
+ *
+ * 4. Qualquer OUTRO erro é falha do passo, com motivo. Em especial
+ *    `channel_unavailable`: a rota foi decidida com
+ *    `channels.status === 'connected'` lido da tabela, e entre a decisão
+ *    e o envio a instância pode ter caído. Canal que caiu é problema a
+ *    resolver, não cota a esperar — pular em silêncio esconderia uma
+ *    instância desconectada de quem precisa reconectá-la.
  */
 async function sendViaFallbackChannel(
   guard: { channelId: string; channelName: string },
   text: string,
   conversationId: string,
   args: ExecuteArgs
-): Promise<string> {
-  void text;
-  void conversationId;
-  void args;
-  throw new Error(
-    `channel fallback to "${guard.channelName}" (${guard.channelId}) is configured but the channel send layer is not available yet — see PRD 047 phase F4`
-  );
+): Promise<StepResult> {
+  if (!args.contactId) throw new Error('fallback_channel needs a contact');
+
+  try {
+    const { whatsapp_message_id } = await sendAndPersistOutbound({
+      db: supabaseAdmin(),
+      accountId: args.automation.account_id,
+      channel: { type: 'whatsapp_qr', id: guard.channelId },
+      conversationId,
+      contactId: args.contactId,
+      content: { kind: 'text', text },
+      persist: {
+        senderType: 'bot',
+        contentType: 'text',
+        contentText: text,
+        previewText: text,
+      },
+    });
+    return success(
+      `sent via fallback channel "${guard.channelName}" (${whatsapp_message_id})`
+    );
+  } catch (err) {
+    if (err instanceof ColdSendLimitError) return skipped(err.message);
+    // O nome do canal entra no motivo porque a thread onde este log
+    // será lido é a do canal oficial: sem ele, "instance unavailable"
+    // aponta para o número errado.
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`fallback channel "${guard.channelName}": ${reason}`);
+  }
 }
 
 async function sendFallbackTemplate(

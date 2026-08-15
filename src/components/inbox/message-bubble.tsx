@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message, MessageReaction } from '@/types';
+import type { Channel } from '@/lib/channels/types';
 import {
   Clock,
   Check,
@@ -15,6 +16,8 @@ import {
   CornerDownLeft,
   Sparkles,
   Maximize2,
+  QrCode,
+  BadgeCheck,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ReplyQuote } from './reply-quote';
@@ -41,6 +44,14 @@ interface MessageBubbleProps {
   senderName?: string;
   /** Abre o lightbox nesta mensagem — só passado para image/video. */
   onOpenMedia?: (messageId: string) => void;
+  /**
+   * Canal que REALMENTE entregou esta mensagem, quando é diferente do
+   * canal da conversa (`message.channel_id`, migração 063 — SPEC 049
+   * §6.1 ponto 2). `null`/`undefined` no caso comum, resolvido pelo
+   * chamador via `useAccountChannels().byId` — nunca um embed, pelo
+   * mesmo motivo do selo de thread (`use-account-channels.ts`).
+   */
+  channelBadge?: Channel | null;
 }
 
 function StatusIcon({
@@ -490,6 +501,7 @@ export function MessageBubble({
   onToggleReaction,
   senderName,
   onOpenMedia,
+  channelBadge,
 }: MessageBubbleProps) {
   const t = useTranslations('Inbox.bubble');
 
@@ -553,6 +565,29 @@ export function MessageBubble({
             >
               <Sparkles className="h-2.5 w-2.5" />
               {t('aiBadge')}
+            </span>
+          )}
+          {/* Selo do canal de desvio (SPEC 049 §6.1 ponto 2, migração
+              063) — só existe em mensagem de saída, e só quando o
+              chamador resolveu `message.channel_id` para um canal (ele
+              só vem preenchido quando o envio saiu por um número
+              diferente do desta conversa). */}
+          {isAgent && channelBadge && (
+            <span
+              className={cn(
+                'inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] leading-none font-semibold',
+                isAgent
+                  ? 'bg-neutral-900/10 text-neutral-900'
+                  : 'bg-primary-foreground/20 text-primary-foreground'
+              )}
+              title={t('channelBadgeTitle', { channel: channelBadge.name })}
+            >
+              {channelBadge.type === 'whatsapp_qr' ? (
+                <QrCode className="h-2.5 w-2.5" />
+              ) : (
+                <BadgeCheck className="h-2.5 w-2.5" />
+              )}
+              {channelBadge.name}
             </span>
           )}
           <span

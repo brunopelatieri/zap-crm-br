@@ -894,6 +894,93 @@ describe('sendAndPersistOutbound', () => {
       expect(db.ops.some((o) => o.table === 'channel_cold_sends')).toBe(false);
     });
   });
+
+  describe('selo do canal de desvio (SPEC 049 §6.1 ponto 2, migração 063)', () => {
+    it('canal EXPLÍCITO: a bolha carrega channel_id do canal que entregou', async () => {
+      // Mesmo cenário de `dbWithQrConversation`, mas SEM `conversations.
+      // channel_id` apontar para o QR — a conversa é do oficial; o
+      // desvio (`channel` explícito) é o único motivo de o envio sair
+      // pelo QR mesmo assim.
+      adapterOverrides.set('whatsapp_qr', qrAdapterStub);
+      resolveInstanceByChannelId.mockResolvedValue({
+        instanceId: 'inst-1',
+        channelId: 'chan-qr-1',
+        accountId: 'acct-1',
+        remoteInstanceId: 'remote-1',
+        remoteInstanceName: 'zapcrm_acct1_vendas',
+        token: 'plain-instance-token',
+        channelName: 'Vendas',
+      });
+      const db = makeDb({
+        'channels.select': {
+          data: {
+            id: 'chan-qr-1',
+            account_id: 'acct-1',
+            type: 'whatsapp_qr',
+            name: 'Vendas',
+            status: 'connected',
+            created_at: '2020-01-01T00:00:00Z',
+          },
+          error: null,
+        },
+        'contacts.select': {
+          data: { id: 'contact-1', phone: '+55 11 99999-9999' },
+          error: null,
+        },
+        'channel_cold_sends.select': { count: 0, data: null },
+      });
+
+      await sendAndPersistOutbound({
+        db: db.client,
+        accountId: 'acct-1',
+        channel: { type: 'whatsapp_qr', id: 'chan-qr-1' },
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        content: { kind: 'text', text: 'oi' },
+        persist: {
+          senderType: 'bot',
+          contentType: 'text',
+          contentText: 'oi',
+          previewText: 'oi',
+        },
+      });
+
+      const insert = db.ops.find(
+        (o) => o.table === 'messages' && o.verb === 'insert'
+      );
+      expect(insert?.payload).toMatchObject({ channel_id: 'chan-qr-1' });
+
+      // E a `conversations` consultada por `channel_id` NUNCA acontece
+      // — a única leitura de `conversations` é a âncora do teto de
+      // envio frio, sem filtro de canal envolvido.
+      expect(
+        db.ops.some((o) => o.table === 'conversations' && o.verb === 'select')
+      ).toBe(true);
+    });
+
+    it('canal IMPLÍCITO (o da própria conversa): channel_id fica de fora do INSERT', async () => {
+      const db = dbWithConfigAndContact();
+
+      await sendAndPersistOutbound({
+        db: db.client,
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        content: { kind: 'text', text: 'oi' },
+        persist: {
+          senderType: 'bot',
+          contentType: 'text',
+          contentText: 'oi',
+          previewText: 'oi',
+        },
+      });
+
+      const insert = db.ops.find(
+        (o) => o.table === 'messages' && o.verb === 'insert'
+      );
+      expect(insert?.payload).not.toHaveProperty('channel_id');
+    });
+  });
 });
 
 describe('ChannelCapabilityError', () => {

@@ -1378,6 +1378,18 @@ export function MessageThread({
                           onToggleReaction={handlePillToggle}
                           senderName={senderNameFor(msg)}
                           onOpenMedia={openLightbox}
+                          // Selo do canal de desvio (SPEC 049 §6.1 ponto
+                          // 2, migração 063): `msg.channel_id` só vem
+                          // preenchido quando o envio saiu por um canal
+                          // diferente do desta conversa (F6.3). Resolvido
+                          // aqui, não embutido — mesma razão do selo de
+                          // thread logo acima (`use-account-channels.ts`).
+                          channelBadge={
+                            msg.channel_id
+                              ? (accountChannels.byId.get(msg.channel_id) ??
+                                null)
+                              : null
+                          }
                         />
                       </MessageActions>
                     );
