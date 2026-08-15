@@ -82,6 +82,15 @@ interface ListResponse {
   limit: LimitStatus | null;
 }
 
+/** Consumo do teto de envio frio por instância (SPEC 049 §6.2, F6.1) —
+ *  espelha o que `/api/channels/cold-send-limits` devolve em `instances`. */
+interface ColdSendInstanceUsage {
+  channelId: string;
+  last24h: number;
+  dailyLimit: number;
+  warmingUp: boolean;
+}
+
 const QR_TTL_SECONDS = 60;
 const STATUS_POLL_MS = 4000;
 
@@ -96,6 +105,9 @@ export function WhatsappQrcodeConfig() {
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<ListResponse | null>(null);
+  const [coldSendUsage, setColdSendUsage] = useState<
+    Record<string, ColdSendInstanceUsage>
+  >({});
   const [createOpen, setCreateOpen] = useState(false);
   const [connectTarget, setConnectTarget] = useState<InstanceSummary | null>(
     null
@@ -124,9 +136,32 @@ export function WhatsappQrcodeConfig() {
     }
   }, [t]);
 
+  // Consumo do teto de envio frio (SPEC 049 §6.2) — silencioso de
+  // propósito em caso de falha: é um dado informativo, e uma rede
+  // instável aqui não pode travar a tela de instâncias.
+  const loadColdSendUsage = useCallback(async () => {
+    try {
+      const res = await fetch('/api/channels/cold-send-limits', {
+        cache: 'no-store',
+      });
+      if (!res.ok) return;
+      const payload = (await res.json()) as {
+        instances?: ColdSendInstanceUsage[];
+      };
+      const byChannel: Record<string, ColdSendInstanceUsage> = {};
+      for (const usage of payload.instances ?? []) {
+        byChannel[usage.channelId] = usage;
+      }
+      setColdSendUsage(byChannel);
+    } catch {
+      // Silencioso — ver comentário acima.
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadColdSendUsage();
+  }, [load, loadColdSendUsage]);
 
   async function runAction(
     instance: InstanceSummary,
@@ -277,6 +312,7 @@ export function WhatsappQrcodeConfig() {
             <InstanceCard
               key={instance.id}
               instance={instance}
+              coldSendUsage={coldSendUsage[instance.channelId]}
               busy={busyId === instance.id}
               onConnect={() => setConnectTarget(instance)}
               onEdit={() => setEditTarget(instance)}
@@ -386,6 +422,7 @@ const STATUS_DOT: Record<InstanceSummary['status'], string> = {
 
 function InstanceCard({
   instance,
+  coldSendUsage,
   busy,
   onConnect,
   onEdit,
@@ -395,6 +432,7 @@ function InstanceCard({
   onReconnect,
 }: {
   instance: InstanceSummary;
+  coldSendUsage?: ColdSendInstanceUsage;
   busy: boolean;
   onConnect: () => void;
   onEdit: () => void;
@@ -427,6 +465,19 @@ function InstanceCard({
             {instance.connectedPhone && (
               <p className="text-muted-foreground mt-0.5 font-mono text-xs">
                 {instance.connectedPhone}
+              </p>
+            )}
+            {coldSendUsage && (
+              <p className="text-muted-foreground mt-1 text-xs">
+                {t('coldSendUsageLabel', {
+                  used: coldSendUsage.last24h,
+                  limit: coldSendUsage.dailyLimit,
+                })}
+                {coldSendUsage.warmingUp && (
+                  <Badge className="border-border bg-muted text-muted-foreground ml-1.5 text-[10px] tracking-wide uppercase">
+                    {t('coldSendWarmingUp')}
+                  </Badge>
+                )}
               </p>
             )}
           </div>

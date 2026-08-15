@@ -41,6 +41,15 @@ interface UseConversationFeedOptions {
    * o `resyncToken` já usado no restante do Inbox.
    */
   resyncToken: number;
+  /**
+   * Seletor de canal do inbox (SPEC 049 §4.1). `null`/ausente = todos
+   * os canais (comportamento de hoje). O predicado entra NA QUERY, não
+   * filtrado depois em memória — do mesmo jeito que o filtro de
+   * contatos por canal virou RPC (§1.4): filtrar em memória aqui
+   * quebraria a paginação do feed se um dia ela existir, e hoje já
+   * mentiria sobre o que "esta aba" realmente contém.
+   */
+  channelId?: string | null;
 }
 
 interface UseConversationFeedResult {
@@ -81,6 +90,7 @@ export function useConversationFeed({
   userId,
   enabled,
   resyncToken,
+  channelId,
 }: UseConversationFeedOptions): UseConversationFeedResult {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,10 +109,11 @@ export function useConversationFeed({
         .from('conversations')
         .select(CONVERSATION_SELECT)
         .order('last_message_at', { ascending: false });
-      const query =
+      let query =
         predicate.op === 'eq'
           ? base.eq(predicate.column, predicate.value)
           : base.is(predicate.column, predicate.value);
+      if (channelId) query = query.eq('channel_id', channelId);
 
       const { data, error } = await query;
 
@@ -130,7 +141,7 @@ export function useConversationFeed({
     };
     // `resyncToken` força o refetch em reconexão/visibilidade; `enabled`
     // é o que faz a aba ainda não visitada não gastar rede nenhuma.
-  }, [tab, userId, enabled, resyncToken]);
+  }, [tab, userId, enabled, resyncToken, channelId]);
 
   return { conversations, setConversations, loading };
 }

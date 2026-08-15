@@ -49,7 +49,15 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  QrCode,
+  BadgeCheck,
 } from 'lucide-react';
+import { useAccountChannels } from '@/lib/channels/use-account-channels';
+import {
+  CONTACTS_PAGE_SIZE,
+  hasActiveContactFilters,
+  planContactQuery,
+} from '@/lib/contacts/contact-filter-query';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
@@ -58,7 +66,7 @@ import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = CONTACTS_PAGE_SIZE;
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
@@ -77,6 +85,13 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  // Channel filter (SPEC 049 §4.5) — contacts shown must have a
+  // conversation in ANY of these channels (OR). A contact belongs to no
+  // channel: what is filtered is the existence of the thread.
+  const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
+  // Only accounts with more than one channel see any of this — repeating
+  // "WhatsApp Official" for an account that only has it is noise.
+  const accountChannels = useAccountChannels();
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -126,24 +141,26 @@ export default function ContactsPage() {
     // act on rows the user can no longer see.
     setSelected(new Set());
 
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-    const term = search.trim();
+    // Tag and channel filters both need a join, and resolving either on
+    // the client silently truncates at the PostgREST ~1000-row cap —
+    // dropping contacts while the result still looks plausible. Both go
+    // through the RPC (migrations 025 and 061); plain search stays on
+    // the direct path, which counts and pages correctly on its own.
+    const plan = planContactQuery({
+      search,
+      tagIds: selectedTagIds,
+      channelIds: selectedChannelIds,
+      page,
+    });
 
     let contactRows: Contact[];
     let count: number;
 
-    if (selectedTagIds.length > 0) {
-      // Tag filter active — resolve it server-side (join + distinct +
-      // windowed total count + pagination) so a tag covering many
-      // contacts can't silently truncate the result or overflow an IN
-      // clause. See migration 025_filter_contacts_by_tags.
-      const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
-        p_tag_ids: selectedTagIds,
-        p_search: term || null,
-        p_limit: PAGE_SIZE,
-        p_offset: from,
-      });
+    if (plan.mode === 'rpc') {
+      const { data, error } = await supabase.rpc(
+        'filter_contacts_by_tags',
+        plan.params
+      );
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
       if (error) {
         toast.error(t('toastFailedLoad'));
@@ -158,10 +175,10 @@ export default function ContactsPage() {
         .from('contacts')
         .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
-        .range(from, to);
+        .range(plan.from, plan.to);
 
-      if (term) {
-        const like = `%${term}%`;
+      if (plan.search) {
+        const like = `%${plan.search}%`;
         query = query.or(
           `name.ilike.${like},phone.ilike.${like},email.ilike.${like}`
         );
@@ -209,7 +226,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, selectedChannelIds, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -325,8 +342,11 @@ export default function ContactsPage() {
   const allTags = Object.values(tagsMap).sort((a, b) =>
     a.name.localeCompare(b.name)
   );
-  const hasActiveFilters =
-    search.trim().length > 0 || selectedTagIds.length > 0;
+  const hasActiveFilters = hasActiveContactFilters({
+    search,
+    tagIds: selectedTagIds,
+    channelIds: selectedChannelIds,
+  });
 
   function toggleTagFilter(tagId: string) {
     setSelectedTagIds((prev) =>
@@ -339,6 +359,28 @@ export default function ContactsPage() {
 
   function clearTagFilters() {
     setSelectedTagIds([]);
+    setPage(0);
+  }
+
+  // Channel filter — same rules as the tag one (OR between selections,
+  // every change resets to page 0). Hidden entirely for single-channel
+  // accounts, which is every account that only uses the official API.
+  const allChannels = [...accountChannels.byId.values()].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+  const showChannelFilter = accountChannels.count > 1;
+
+  function toggleChannelFilter(channelId: string) {
+    setSelectedChannelIds((prev) =>
+      prev.includes(channelId)
+        ? prev.filter((id) => id !== channelId)
+        : [...prev, channelId]
+    );
+    setPage(0);
+  }
+
+  function clearChannelFilters() {
+    setSelectedChannelIds([]);
     setPage(0);
   }
 
@@ -465,7 +507,107 @@ export default function ContactsPage() {
               )}
             </PopoverContent>
           </Popover>
+
+          {/* Channel filter — only for accounts with more than one channel */}
+          {showChannelFilter && (
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    className="border-border text-muted-foreground hover:bg-muted shrink-0"
+                  />
+                }
+              >
+                <Filter className="size-4" />
+                {t('filterByChannel')}
+                {selectedChannelIds.length > 0 && (
+                  <span className="bg-primary text-primary-foreground ml-1 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold">
+                    {selectedChannelIds.length}
+                  </span>
+                )}
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 p-0">
+                <div className="border-border flex items-center justify-between border-b px-3 py-2">
+                  <span className="text-popover-foreground text-sm font-medium">
+                    {t('filterByChannel')}
+                  </span>
+                  {selectedChannelIds.length > 0 && (
+                    <button
+                      onClick={clearChannelFilters}
+                      className="text-muted-foreground hover:text-foreground text-xs"
+                    >
+                      {t('clearAll')}
+                    </button>
+                  )}
+                </div>
+                {/* The semantics are written on screen because they are
+                    not obvious: a contact belongs to no channel. */}
+                <p className="text-muted-foreground border-border border-b px-3 py-2 text-xs">
+                  {t('channelFilterHint')}
+                </p>
+                <div className="max-h-64 overflow-y-auto py-1">
+                  {allChannels.map((channel) => (
+                    <label
+                      key={channel.id}
+                      className="hover:bg-muted/50 flex cursor-pointer items-center gap-2.5 px-3 py-1.5"
+                    >
+                      <Checkbox
+                        checked={selectedChannelIds.includes(channel.id)}
+                        onCheckedChange={() => toggleChannelFilter(channel.id)}
+                        aria-label={`Filter by ${channel.name}`}
+                      />
+                      {channel.type === 'whatsapp_qr' ? (
+                        <QrCode className="text-muted-foreground size-3.5 shrink-0" />
+                      ) : (
+                        <BadgeCheck className="text-muted-foreground size-3.5 shrink-0" />
+                      )}
+                      <span className="text-popover-foreground truncate text-sm">
+                        {channel.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
+
+        {/* Active channel-filter chips */}
+        {selectedChannelIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {selectedChannelIds.map((id) => {
+              const channel = accountChannels.byId.get(id);
+              if (!channel) return null;
+              return (
+                <span
+                  key={id}
+                  className="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                >
+                  {channel.type === 'whatsapp_qr' ? (
+                    <QrCode className="size-3" />
+                  ) : (
+                    <BadgeCheck className="size-3" />
+                  )}
+                  {channel.name}
+                  <button
+                    onClick={() => toggleChannelFilter(id)}
+                    aria-label={`Remove ${channel.name} filter`}
+                    className="hover:opacity-70"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              );
+            })}
+            <button
+              onClick={clearChannelFilters}
+              className="text-muted-foreground hover:text-foreground px-1 text-xs"
+            >
+              {t('clearAll')}
+            </button>
+          </div>
+        )}
 
         {/* Active tag-filter chips */}
         {selectedTagIds.length > 0 && (

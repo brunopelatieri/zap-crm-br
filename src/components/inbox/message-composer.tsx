@@ -34,6 +34,8 @@ import {
 } from '@/components/ui/dialog';
 import { useCan } from '@/hooks/use-can';
 import { cn } from '@/lib/utils';
+import { can } from '@/lib/channels/capabilities';
+import type { ChannelType } from '@/lib/channels/types';
 import { toast } from 'sonner';
 import {
   uploadAccountMedia,
@@ -115,6 +117,14 @@ interface MediaDraft {
 
 interface MessageComposerProps {
   conversationId: string;
+  /**
+   * Canal desta conversa (SPEC 049 §4.3) — decide o que o composer
+   * OFERECE, não só o que ele bloqueia ao enviar. Template e mensagem
+   * interativa SOMEM (não desabilitam) quando o canal não suporta: um
+   * botão ausente, com o selo do canal ao lado, já responde "por quê";
+   * um botão cinza convida a perguntar.
+   */
+  channelType: ChannelType;
   sessionExpired: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
@@ -140,6 +150,7 @@ const OPUS_ENCODER_PATH = '/opus/encoderWorker.min.js';
 
 export function MessageComposer({
   conversationId,
+  channelType,
   sessionExpired,
   onSend,
   onSendMedia,
@@ -149,6 +160,14 @@ export function MessageComposer({
   onClearReply,
 }: MessageComposerProps) {
   const t = useTranslations('Inbox.composer');
+
+  // Matriz de capacidades (SPEC 049 §4.3) — fonte única, lida aqui e
+  // repassada ao picker de respostas rápidas. Nunca `if (channelType ===
+  // 'whatsapp_qr')` espalhado (princípio 2 do PRD 047): um canal novo
+  // declara capacidades e a UI se adapta sozinha.
+  const canTemplates = can(channelType, 'templates');
+  const canInteractive = can(channelType, 'interactiveButtons');
+  const canPtt = can(channelType, 'ptt');
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -647,6 +666,7 @@ export function MessageComposer({
           draft={draft}
           busy={busy}
           readOnly={readOnly}
+          canPtt={canPtt}
           onCaptionChange={setCaption}
           onDiscard={discardDraft}
           onSend={sendDraft}
@@ -744,10 +764,16 @@ export function MessageComposer({
               align="start"
               className="border-border bg-popover"
             >
-              <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
-                <MessageSquareDashed className="mr-2 h-4 w-4" />
-                {t('interactiveMessage')}
-              </DropdownMenuItem>
+              {/* Some inteira num canal sem botões interativos (SPEC 049
+                  §4.3) — não desabilita: montar o payload só para levar
+                  um 400 é o composer "errando ao clicar" que a §1.6 da
+                  SPEC descreve. */}
+              {canInteractive && (
+                <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
+                  <MessageSquareDashed className="mr-2 h-4 w-4" />
+                  {t('interactiveMessage')}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
                 <Zap className="mr-2 h-4 w-4" />
                 {t('quickReplies')}
@@ -755,17 +781,21 @@ export function MessageComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title={readOnly ? undefined : t('sendTemplate')}
-            className="text-muted-foreground hover:text-foreground h-9 w-9 shrink-0 p-0"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
+          {/* Template é conceito da Meta — some inteira fora da Cloud
+              (SPEC 049 §4.3), pelo mesmo motivo do item interativo acima. */}
+          {canTemplates && (
+            <GatedButton
+              variant="ghost"
+              size="sm"
+              canAct={!readOnly}
+              gateReason="send messages"
+              title={readOnly ? undefined : t('sendTemplate')}
+              className="text-muted-foreground hover:text-foreground h-9 w-9 shrink-0 p-0"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="h-4 w-4" />
+            </GatedButton>
+          )}
 
           <GatedButton
             variant="ghost"
@@ -868,6 +898,7 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+        channelType={channelType}
       />
     </div>
   );
@@ -883,6 +914,7 @@ function MediaDraftPreview({
   draft,
   busy,
   readOnly,
+  canPtt,
   onCaptionChange,
   onDiscard,
   onSend,
@@ -891,6 +923,8 @@ function MediaDraftPreview({
   draft: MediaDraft;
   busy: boolean;
   readOnly: boolean;
+  /** `capabilities.ptt` do canal — SPEC 049 §4.3, ⚠️ da SPEC 048. */
+  canPtt: boolean;
   onCaptionChange: (caption: string) => void;
   onDiscard: () => void;
   onSend: () => void;
@@ -900,6 +934,14 @@ function MediaDraftPreview({
     <div className="border-border bg-muted/40 rounded-xl border p-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
+          {/* Degradar com aviso, não em silêncio (princípio 5 do PRD):
+              sem endpoint de PTT dedicado, o canal QR entrega isto como
+              arquivo, não como mensagem de voz. */}
+          {draft.kind === 'audio' && !canPtt && (
+            <p className="text-muted-foreground mb-2 text-[11px]">
+              {t('audioAsAttachmentHint')}
+            </p>
+          )}
           {draft.kind === 'image' && (
             // eslint-disable-next-line @next/next/no-img-element
             <img

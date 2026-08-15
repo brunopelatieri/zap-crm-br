@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, MessageSquare, Zap } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -12,11 +12,22 @@ import {
 } from '@/components/ui/dialog';
 import type { QuickReply } from '@/types';
 import { interactivePayloadPreviewText } from '@/lib/whatsapp/interactive';
+import { can } from '@/lib/channels/capabilities';
+import type { ChannelType } from '@/lib/channels/types';
 
 interface QuickReplyPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (qr: QuickReply) => void;
+  /**
+   * Canal da conversa (SPEC 049 §4.3). Itens interativos são filtrados
+   * da lista quando o canal não renderiza botão — mas, ao contrário do
+   * botão "Mensagem interativa" do composer (que SOME inteiro), aqui o
+   * CONTADOR aparece: o agente sabe que o snippet existe e precisaria
+   * entender por que sumiu, diferença que o item ausente sozinho não
+   * comunicaria.
+   */
+  channelType: ChannelType;
 }
 
 /**
@@ -28,10 +39,18 @@ export function QuickReplyPicker({
   open,
   onOpenChange,
   onPick,
+  channelType,
 }: QuickReplyPickerProps) {
   const t = useTranslations('Inbox.composer');
   const [items, setItems] = useState<QuickReply[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const canInteractive = can(channelType, 'interactiveButtons');
+  const visibleItems = useMemo(
+    () =>
+      canInteractive ? items : items.filter((qr) => qr.kind !== 'interactive'),
+    [items, canInteractive]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -59,18 +78,28 @@ export function QuickReplyPicker({
         <DialogHeader>
           <DialogTitle>{t('quickReplies')}</DialogTitle>
         </DialogHeader>
+        {/* Contador, não o item ausente — ver o comentário da prop
+            `channelType`. Só aparece quando algo foi de fato filtrado. */}
+        {!loading && visibleItems.length !== items.length && (
+          <p className="text-muted-foreground -mt-1 text-xs">
+            {t('quickRepliesAvailable', {
+              shown: visibleItems.length,
+              total: items.length,
+            })}
+          </p>
+        )}
         <div className="max-h-[60vh] overflow-y-auto">
           {loading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
             </div>
-          ) : items.length === 0 ? (
+          ) : visibleItems.length === 0 ? (
             <p className="text-muted-foreground py-8 text-center text-sm">
               {t('quickRepliesEmpty')}
             </p>
           ) : (
             <ul className="flex flex-col gap-1">
-              {items.map((qr) => (
+              {visibleItems.map((qr) => (
                 <li key={qr.id}>
                   <button
                     type="button"

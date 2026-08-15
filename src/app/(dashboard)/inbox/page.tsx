@@ -27,6 +27,7 @@ import { useAccountMembers } from '@/hooks/use-account-members';
 import { useRealtime } from '@/hooks/use-realtime';
 import { useInboxTabs } from '@/hooks/use-inbox-tabs';
 import { useConversationFeed } from '@/hooks/use-conversation-feed';
+import { useAccountChannels } from '@/lib/channels/use-account-channels';
 import {
   ConversationList,
   useInboxTagDefinitions,
@@ -82,6 +83,32 @@ export default function InboxPage() {
    * instead of showing the empty center panel.
    */
   const deepLinkConvId = searchParams.get('c');
+
+  const accountChannels = useAccountChannels();
+
+  /**
+   * `?channel=<uuid>` (ausente/`all` = todos) — SPEC 049 §4.1. Ortogonal
+   * à aba (Chat/Open/Quadro): combinar `?tab=chat` com `?channel=<qr>` é
+   * "minhas conversas do número de vendas". A ESCRITA fica aqui, no
+   * mesmo padrão de `?tab=`/`?viewAs=` — `use-inbox-tabs.ts` só lê a
+   * URL, para não haver duas fontes disputando o mesmo `router.replace`.
+   *
+   * Enquanto `accountChannels` ainda carrega, o valor cru da URL passa
+   * adiante sem validar (a query por canal é inofensiva mesmo que o id
+   * não exista — devolve zero linhas). Depois de carregado, um id que
+   * não é de nenhum canal da conta degrada para `null` (todos), nunca
+   * erro: um link antigo apontando para uma instância excluída não pode
+   * deixar o inbox vazio e mudo.
+   */
+  const channelParam = searchParams.get('channel');
+  const channelId =
+    !channelParam || channelParam === 'all'
+      ? null
+      : accountChannels.loading
+        ? channelParam
+        : accountChannels.byId.has(channelParam)
+          ? channelParam
+          : null;
 
   const {
     activeTab,
@@ -175,12 +202,14 @@ export default function InboxPage() {
     userId: chatTarget,
     enabled: visitedTabs.has('chat'),
     resyncToken,
+    channelId,
   });
   const openFeed = useConversationFeed({
     tab: 'open',
     userId,
     enabled: visitedTabs.has('open'),
     resyncToken,
+    channelId,
   });
 
   const readFeed = useCallback(
@@ -765,6 +794,62 @@ export default function InboxPage() {
     [searchParams, router, userId]
   );
 
+  /**
+   * Degrada `?channel=<id inválido>` para "todos" assim que os canais
+   * terminam de carregar — ver o comentário de `channelId` acima. Não
+   * roda enquanto `accountChannels.loading` é true (o efeito reavalia
+   * quando o carregamento termina, via a dependência em `accountChannels`).
+   */
+  useEffect(() => {
+    if (accountChannels.loading) return;
+    if (!channelParam || channelParam === 'all') return;
+    if (accountChannels.byId.has(channelParam)) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('channel');
+    const qs = params.toString();
+    router.replace(qs ? `/inbox?${qs}` : '/inbox', { scroll: false });
+  }, [accountChannels, channelParam, searchParams, router]);
+
+  /**
+   * Troca o canal do seletor (SPEC 049 §4.1). `null` remove o parâmetro
+   * — mesma convenção de `handleViewAsChange` para "sem valor especial
+   * na URL representa o caso comum".
+   */
+  const handleChannelChange = useCallback(
+    (targetChannelId: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (targetChannelId) {
+        params.set('channel', targetChannelId);
+      } else {
+        params.delete('channel');
+      }
+      router.replace(`/inbox?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router]
+  );
+
+  /**
+   * Abre uma conversa-irmã do mesmo contato, noutro canal (SPEC 049
+   * §4.4, "Também neste contato"). Limpa `?channel` para "todos" — sem
+   * isso, se o seletor estiver filtrando outro canal, o clique levaria
+   * a uma conversa que a lista não mostra, e o inbox pareceria quebrado.
+   */
+  const handleOpenSiblingConversation = useCallback(
+    async (id: string) => {
+      const fresh = await fetchConversationById(id);
+      if (!fresh) {
+        toast.error(t('conversationNotFound'));
+        return;
+      }
+      openConversation(fresh);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('c', id);
+      params.delete('channel');
+      router.replace(`/inbox?${params.toString()}`, { scroll: false });
+    },
+    [fetchConversationById, openConversation, searchParams, router, t]
+  );
+
   const handleSelectConversation = useCallback(
     (conv: Conversation) => {
       // Re-clicking the already-active conversation would clear the
@@ -1157,6 +1242,8 @@ export default function InboxPage() {
                           setSelectedCompany(activeTab, c)
                         }
                         onClearFilters={() => clearContactFilters(activeTab)}
+                        channelId={channelId}
+                        onChannelChange={handleChannelChange}
                         showStatusFilter
                         onClaim={activeTab === 'open' ? handleClaim : undefined}
                         claimingId={claimingId}
@@ -1212,7 +1299,11 @@ export default function InboxPage() {
               toggle — which is itself desktop-only — never affects it. */}
                   {contactPanelOpen && (
                     <div className="hidden h-full lg:block">
-                      <ContactSidebar contact={activeContact} />
+                      <ContactSidebar
+                        contact={activeContact}
+                        conversationId={activeConversation?.id ?? null}
+                        onOpenConversation={handleOpenSiblingConversation}
+                      />
                     </div>
                   )}
                 </div>

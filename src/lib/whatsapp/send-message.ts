@@ -34,6 +34,13 @@ import {
   ChannelNotConfiguredError,
   type OutboundContent,
 } from '@/lib/channels/send';
+import { can } from '@/lib/channels/capabilities';
+import {
+  checkColdSend,
+  recordColdSend,
+  type ColdSendCheck,
+} from '@/lib/channels/cold-send-wiring';
+import { describeDenial } from '@/lib/channels/cold-send-limit';
 import { encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
@@ -62,11 +69,20 @@ export const VALID_MESSAGE_TYPES = [
 export class SendMessageError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(code: string, message: string, status: number) {
+  /** Extra headers the caller should echo — hoje só o `Retry-After` do
+   *  teto de envio frio (SPEC 049 §6.2). Ausente na maioria dos erros. */
+  readonly headers?: Record<string, string>;
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    headers?: Record<string, string>
+  ) {
     super(message);
     this.name = 'SendMessageError';
     this.code = code;
     this.status = status;
+    this.headers = headers;
   }
 }
 
@@ -109,6 +125,14 @@ export interface SendMessageParams {
    * com service role e chave de API, sem `auth.uid()`.
    */
   senderId?: string | null;
+  /**
+   * Quem está mandando, para o teto de envio frio (SPEC 049 §6.2, D-1).
+   * `human` (inbox) NUNCA bloqueia — só registra, para a cota descrever
+   * o número por inteiro, não só o motor. `api` (pública v1) bloqueia
+   * com 429. Omitido = nenhuma verificação nem registro — um chamador
+   * que ainda não migrou não regride, só fica sem o dado.
+   */
+  coldSendOrigin?: 'human' | 'api';
 }
 
 export interface SendMessageResult {
@@ -229,6 +253,7 @@ export async function sendMessageToConversation(
     interactivePayload,
     replyToMessageId,
     senderId,
+    coldSendOrigin,
   } = params;
 
   if (!conversationId) {
@@ -303,6 +328,37 @@ export async function sendMessageToConversation(
 
   const isCloudChannel = channelCtx.channel.type === 'whatsapp_cloud';
   const accessToken = channelCtx.credentials.accessToken;
+
+  // Teto de envio frio (SPEC 049 §6.2, D-1) — só em canal sem janela da
+  // Meta. `human` (este caminho, vindo do inbox) NUNCA bloqueia: travar
+  // um agente no meio do atendimento é pior que o risco marginal de um
+  // envio manual. `api` (a pública v1) bloqueia com 429 — caminho
+  // automatizado por definição, e um integrador que recebesse 200
+  // continuaria mandando.
+  let coldSendCheck: ColdSendCheck | null = null;
+  if (coldSendOrigin && !can(channelCtx.channel.type, 'sessionWindow24h')) {
+    coldSendCheck = await checkColdSend(db, {
+      channelId: channelCtx.channel.id,
+      channelType: channelCtx.channel.type,
+      lastInboundAt: conversation.last_customer_message_at
+        ? new Date(conversation.last_customer_message_at)
+        : null,
+    });
+    if (
+      coldSendOrigin === 'api' &&
+      coldSendCheck.decision &&
+      !coldSendCheck.decision.allowed
+    ) {
+      throw new SendMessageError(
+        'cold_send_limit',
+        describeDenial(coldSendCheck.decision),
+        429,
+        {
+          'Retry-After': String(coldSendCheck.decision.retryAfterSeconds ?? 60),
+        }
+      );
+    }
+  }
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
   // Só no canal oficial: fora dele `config` é a instância Evolution
@@ -626,6 +682,17 @@ export async function sendMessageToConversation(
       '[flows] pause-on-agent-send threw:',
       err instanceof Error ? err.message : err
     );
+  }
+
+  // Gravado DEPOIS da entrega confirmada (§6.1 ponto 4 da SPEC 049) —
+  // contar antes faria uma falha de rede consumir cota que nunca saiu.
+  if (coldSendCheck?.cold) {
+    await recordColdSend(db, {
+      channelId: channelCtx.channel.id,
+      accountId,
+      contactId: contact.id,
+      origin: coldSendOrigin!,
+    });
   }
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };

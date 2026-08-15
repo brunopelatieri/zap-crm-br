@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
@@ -23,6 +23,15 @@ import {
   TemplatePicker,
   type TemplateSendValues,
 } from '@/components/inbox/template-picker';
+import { useAccountChannels } from '@/lib/channels/use-account-channels';
+import { can } from '@/lib/channels/capabilities';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -86,6 +95,25 @@ export function ContactDetailView({
   // find-or-creates the conversation, so no inbound message is required.
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [sendingTemplate, setSendingTemplate] = useState(false);
+
+  // Escolha de canal ao abrir conversa nova (SPEC 049 §4.6). Só entra em
+  // jogo com MAIS DE UM canal conectado apto a enviar template — hoje
+  // isso é, na prática, "0 ou 1", porque só a Cloud tem `templates`
+  // (capabilities.ts) e um segundo número Cloud está fora de escopo
+  // (§10 desta SPEC). Escrito de forma capability-driven mesmo assim:
+  // com um canal só, `templateCapableChannels.length > 1` é falso e o
+  // seletor nem renderiza — comportamento de hoje, inalterado.
+  const accountChannels = useAccountChannels();
+  const templateCapableChannels = useMemo(
+    () =>
+      Array.from(accountChannels.byId.values()).filter(
+        (c) => c.status === 'connected' && can(c.type, 'templates')
+      ),
+    [accountChannels]
+  );
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
+    null
+  );
 
   // Details tab
   const [editName, setEditName] = useState('');
@@ -422,6 +450,13 @@ export function ContactDetailView({
           // No conversation_id — the route find-or-creates one for this
           // contact, mirroring the inbox template-send payload otherwise.
           contact_id: contactId,
+          // Só informado quando o seletor (abaixo) está visível — mais
+          // de um canal apto a template. Ausente = padrão implícito de
+          // sempre (SPEC 049 §4.6).
+          channel_id:
+            templateCapableChannels.length > 1
+              ? (selectedChannelId ?? undefined)
+              : undefined,
           message_type: 'template',
           template_name: template.name,
           template_language: template.language,
@@ -527,7 +562,26 @@ export function ContactDetailView({
                     </div>
                   </div>
                 </div>
-                <div className="mt-3">
+                <div className="mt-3 flex items-center gap-2">
+                  {/* Seletor de canal (SPEC 049 §4.6) — só com mais de
+                      um canal apto a enviar template. */}
+                  {templateCapableChannels.length > 1 && (
+                    <Select
+                      value={selectedChannelId ?? templateCapableChannels[0].id}
+                      onValueChange={setSelectedChannelId}
+                    >
+                      <SelectTrigger size="sm" className="w-40">
+                        <SelectValue placeholder={t('sendChannelLabel')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templateCapableChannels.map((ch) => (
+                          <SelectItem key={ch.id} value={ch.id}>
+                            {ch.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Button
                     size="sm"
                     onClick={() => setTemplatePickerOpen(true)}

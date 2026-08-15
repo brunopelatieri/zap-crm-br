@@ -124,6 +124,10 @@ export async function POST(request: Request) {
           typeof body.reply_to_message_id === 'string'
             ? body.reply_to_message_id
             : null,
+        // SPEC 049 §6.2, D-1: caminho automatizado por definição — o
+        // teto de envio frio verifica E bloqueia (429), diferente do
+        // inbox humano.
+        coldSendOrigin: 'api',
       }
     );
 
@@ -139,7 +143,7 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     if (err instanceof SendMessageError) {
-      return fail(err.code, err.message, err.status);
+      return fail(err.code, err.message, err.status, err.headers);
     }
     return toApiErrorResponse(err);
   }

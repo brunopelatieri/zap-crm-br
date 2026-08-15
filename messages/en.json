@@ -329,7 +329,8 @@
       "manageTagsShort": "Manage tags",
       "claimConversation": "Claim conversation with {name}",
       "claimConversationShort": "Claim conversation",
-      "channelBadgeTitle": "This conversation goes through {channel}"
+      "channelBadgeTitle": "This conversation goes through {channel}",
+      "channelAll": "All channels"
     },
     "messageThread": {
       "assignedElsewhereWarning": "This conversation belongs to {name}. Sending a message will assign it to you.",
@@ -356,7 +357,8 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "channelBadgeTitle": "This conversation goes through {channel}"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -392,7 +394,9 @@
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "audioAsAttachmentHint": "In this channel, audio arrives as an attachment, not a voice message.",
+      "quickRepliesAvailable": "{shown} of {total} available in this channel"
     },
     "bubble": {
       "photo": "Photo",
@@ -463,7 +467,12 @@
       "noDeals": "No deals",
       "addNotePlaceholder": "Add a note...",
       "manageTags": "Manage tags",
-      "newDeal": "New deal"
+      "newDeal": "New deal",
+      "alsoInThisContact": "Also in this contact",
+      "unknownChannel": "Unknown channel",
+      "siblingMessageCount": "{count} messages",
+      "siblingLastMessage": "last {time}",
+      "openThread": "Open"
     },
     "tagPicker": {
       "title": "Tags for {name}",
@@ -516,6 +525,8 @@
       "addContactBtn": "Add Contact",
       "searchPlaceholder": "Search by name, phone, or email...",
       "filterByTags": "Filter by tags",
+      "filterByChannel": "Filter by channel",
+      "channelFilterHint": "Contacts with a conversation in this channel.",
       "clearAll": "Clear all",
       "noTagsYet": "No tags yet.",
       "selectedCount": "{count} selected",
@@ -636,6 +647,7 @@
         "noTagsAvailable": "No tags available. Create tags in Settings."
       },
       "sendTemplateBtn": "Send template",
+      "sendChannelLabel": "Send via",
       "saveChangesBtn": "Save Changes",
       "saveCustomFieldsBtn": "Save Custom Fields",
       "toastPhoneRequired": "Phone number is required",
@@ -2446,6 +2458,8 @@
       "usageLabel": "{used} of {limit} instances used",
       "limitReasonAccount": "Account limit reached",
       "limitReasonDeployment": "Deployment limit reached",
+      "coldSendUsageLabel": "Cold send: {used}/{limit} today",
+      "coldSendWarmingUp": "Warming up",
       "newInstance": "New instance",
       "noInstances": "No WhatsApp QRCode instances yet.",
       "createOneHint": "Click <bold>New instance</bold> to connect a number.",

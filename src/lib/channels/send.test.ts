@@ -21,6 +21,8 @@ import {
   sendContentViaChannel,
   sendWithPhoneVariants,
 } from './send';
+import { ColdSendLimitError } from './cold-send-wiring';
+import { COLD_SEND_DEFAULTS } from './cold-send-limit';
 
 const sendTextMessage = vi.fn();
 const sendMediaMessage = vi.fn();
@@ -80,7 +82,10 @@ interface RecordedOp {
 }
 
 function makeDb(
-  results: Record<string, { data?: unknown; error?: unknown }> = {}
+  results: Record<
+    string,
+    { data?: unknown; error?: unknown; count?: number }
+  > = {}
 ) {
   const ops: RecordedOp[] = [];
   const resultMap = new Map(Object.entries(results));
@@ -118,6 +123,18 @@ function makeDb(
       },
       eq: (...args: unknown[]) => {
         op.filters.push(['eq', ...args]);
+        return chain;
+      },
+      gte: (...args: unknown[]) => {
+        op.filters.push(['gte', ...args]);
+        return chain;
+      },
+      order: (...args: unknown[]) => {
+        op.filters.push(['order', ...args]);
+        return chain;
+      },
+      limit: (...args: unknown[]) => {
+        op.filters.push(['limit', ...args]);
         return chain;
       },
       single: () => Promise.resolve(settle()),
@@ -723,6 +740,159 @@ describe('sendAndPersistOutbound', () => {
         },
       })
     ).rejects.toThrow(/sent to Meta but DB insert failed/);
+  });
+
+  describe('teto de envio frio (SPEC 049 §6.2, D-1) — canal QR', () => {
+    function dbWithQrConversation(
+      over: Record<
+        string,
+        { data?: unknown; error?: unknown; count?: number }
+      > = {}
+    ) {
+      return makeDb({
+        'conversations.select': {
+          data: { channel_id: 'chan-qr-1', last_customer_message_at: null },
+          error: null,
+        },
+        'channels.select': {
+          data: {
+            id: 'chan-qr-1',
+            account_id: 'acct-1',
+            type: 'whatsapp_qr',
+            name: 'Vendas',
+            status: 'connected',
+            created_at: '2020-01-01T00:00:00Z',
+          },
+          error: null,
+        },
+        'contacts.select': {
+          data: { id: 'contact-1', phone: '+55 11 99999-9999' },
+          error: null,
+        },
+        'channel_cold_sends.select': { count: 0, data: null },
+        ...over,
+      });
+    }
+
+    beforeEach(() => {
+      adapterOverrides.set('whatsapp_qr', qrAdapterStub);
+      resolveInstanceByChannelId.mockResolvedValue({
+        instanceId: 'inst-1',
+        channelId: 'chan-qr-1',
+        accountId: 'acct-1',
+        remoteInstanceId: 'remote-1',
+        remoteInstanceName: 'zapcrm_acct1_vendas',
+        token: 'plain-instance-token',
+        channelName: 'Vendas',
+      });
+    });
+
+    it('nega (ColdSendLimitError) sem tocar o adaptador quando o teto diário estourou', async () => {
+      const db = dbWithQrConversation({
+        'channel_cold_sends.select': { count: COLD_SEND_DEFAULTS.perDay },
+      });
+
+      await expect(
+        sendAndPersistOutbound({
+          db: db.client,
+          accountId: 'acct-1',
+          conversationId: 'conv-1',
+          contactId: 'contact-1',
+          content: { kind: 'text', text: 'oi' },
+          persist: {
+            senderType: 'bot',
+            contentType: 'text',
+            contentText: 'oi',
+            previewText: 'oi',
+          },
+        })
+      ).rejects.toBeInstanceOf(ColdSendLimitError);
+
+      expect(qrAdapterStub.sendText).not.toHaveBeenCalled();
+      expect(db.ops.some((o) => o.table === 'messages')).toBe(false);
+    });
+
+    it('envio frio dentro do teto: entrega e grava origin=engine em channel_cold_sends', async () => {
+      const db = dbWithQrConversation();
+
+      await sendAndPersistOutbound({
+        db: db.client,
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        content: { kind: 'text', text: 'oi' },
+        persist: {
+          senderType: 'bot',
+          contentType: 'text',
+          contentText: 'oi',
+          previewText: 'oi',
+        },
+      });
+
+      expect(qrAdapterStub.sendText).toHaveBeenCalledTimes(1);
+      const record = db.ops.find(
+        (o) => o.table === 'channel_cold_sends' && o.verb === 'insert'
+      );
+      expect(record?.payload).toEqual({
+        channel_id: 'chan-qr-1',
+        account_id: 'acct-1',
+        contact_id: 'contact-1',
+        origin: 'engine',
+      });
+    });
+
+    it('conversa viva (não fria): entrega e NÃO grava consumo', async () => {
+      const db = dbWithQrConversation({
+        'conversations.select': {
+          data: {
+            channel_id: 'chan-qr-1',
+            // Dentro das últimas `silenceHours` — não é frio.
+            last_customer_message_at: new Date().toISOString(),
+          },
+          error: null,
+        },
+      });
+
+      await sendAndPersistOutbound({
+        db: db.client,
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        content: { kind: 'text', text: 'oi' },
+        persist: {
+          senderType: 'bot',
+          contentType: 'text',
+          contentText: 'oi',
+          previewText: 'oi',
+        },
+      });
+
+      expect(
+        db.ops.some(
+          (o) => o.table === 'channel_cold_sends' && o.verb === 'insert'
+        )
+      ).toBe(false);
+    });
+
+    it('canal Cloud: não paga a consulta extra nem toca channel_cold_sends', async () => {
+      const db = dbWithConfigAndContact();
+
+      await sendAndPersistOutbound({
+        db: db.client,
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        content: { kind: 'text', text: 'oi' },
+        persist: {
+          senderType: 'bot',
+          contentType: 'text',
+          contentText: 'oi',
+          previewText: 'oi',
+        },
+      });
+
+      expect(db.ops.some((o) => o.table === 'channel_cold_sends')).toBe(false);
+    });
   });
 });
 

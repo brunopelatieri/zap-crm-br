@@ -30,6 +30,8 @@ import {
   PanelRightOpen,
   PanelRightClose,
   AlertTriangle,
+  QrCode,
+  BadgeCheck,
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useTranslations } from 'next-intl';
@@ -288,6 +290,24 @@ export function MessageThread({
     conversation?.channel_id,
     accountChannels,
   ]);
+
+  // Selo de canal no cabeçalho (SPEC 049 §4.2). A lista já mostra o
+  // selo por linha (F4.5); falta o cabeçalho da thread pelo mesmo
+  // motivo do timer acima: um agente que abriu a conversa por link
+  // direto (`?c=`) não passou pela lista e não viu selo nenhum. Mesmo
+  // gate `count > 1` — numa conta de canal único é ruído puro.
+  const threadChannel = conversation?.channel_id
+    ? accountChannels.byId.get(conversation.channel_id)
+    : undefined;
+  const showChannelBadge = accountChannels.count > 1 && !!threadChannel;
+
+  // Tipo do canal desta thread — mesma leitura de `sessionInfo` acima
+  // (channelTypeOf sobre `useAccountChannels`, nunca `conversation.channel`,
+  // que não é hidratado por `CONVERSATION_SELECT`). Alimenta o composer
+  // (SPEC 049 §4.3): a matriz de capacidades decide o que ele oferece.
+  const threadChannelType =
+    conversation?.channel?.type ??
+    channelTypeOf(accountChannels, conversation?.channel_id);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -1109,6 +1129,22 @@ export function MessageThread({
               {displayPhone}
             </p>
           </div>
+          {/* Selo de canal (SPEC 049 §4.2) — só com mais de um canal. */}
+          {showChannelBadge && threadChannel && (
+            <Badge
+              variant="outline"
+              className="border-border text-muted-foreground ml-1 hidden gap-1 text-[10px] sm:ml-2 sm:inline-flex"
+              title={t('channelBadgeTitle', { channel: threadChannel.name })}
+            >
+              {threadChannel.type === 'whatsapp_qr' ? (
+                <QrCode className="h-3 w-3" />
+              ) : (
+                <BadgeCheck className="h-3 w-3" />
+              )}
+              {threadChannel.name}
+            </Badge>
+          )}
+
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room, e oculto por
               completo em canal sem janela de 24h (PRD 047 §7.1.1). */}
@@ -1392,6 +1428,7 @@ export function MessageThread({
       {/* Composer */}
       <MessageComposer
         conversationId={conversation.id}
+        channelType={threadChannelType}
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}
         onSendMedia={handleSendMedia}

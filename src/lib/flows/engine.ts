@@ -40,7 +40,10 @@ import {
   engineSendText,
 } from './meta-send';
 import { decideFallback, resolveFallbackPolicy } from './fallback';
+import { matchDegradedReply, renderDegradedMenu } from './degraded-menu';
 import { isAssignableMember } from '@/lib/inbox/assignment';
+import { can } from '@/lib/channels/capabilities';
+import { resolveChannelTypeForConversation } from '@/lib/channels/conversation-channel';
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -360,39 +363,125 @@ async function findEntryFlow(
 // thread can quote the prompt the customer is replying to.
 // ============================================================
 
+/**
+ * O canal DESTA conversa renderiza o menu nativo deste nó?
+ *
+ * É a única pergunta que a degradação faz, e ela é feita nos DOIS lados
+ * — no envio (degradar ou não) e no resume (casar texto ou não). Uma
+ * leitura só, da mesma matriz de capacidades, para que as duas metades
+ * não possam divergir (SPEC 049 D-2: derivar na hora em vez de gravar
+ * `degraded_options` no run, que um flow editado no meio da execução
+ * faria mentir).
+ *
+ * Nunca lança: `resolveChannelTypeForConversation` degrada para
+ * `whatsapp_cloud` em qualquer falha, que é o comportamento anterior à
+ * camada de canais.
+ */
+async function rendersNativeMenu(
+  db: AdminClient,
+  run: FlowRunRow,
+  nodeType: 'send_buttons' | 'send_list'
+): Promise<boolean> {
+  const channelType = await resolveChannelTypeForConversation(
+    db,
+    run.account_id,
+    run.conversation_id
+  );
+  return can(
+    channelType,
+    nodeType === 'send_list' ? 'interactiveList' : 'interactiveButtons'
+  );
+}
+
+/**
+ * Texto do menu degradado, ou uma falha com motivo.
+ *
+ * `renderDegradedMenu` devolve `null` quando o nó não tem opção alguma —
+ * config que o validador barra ao salvar. Se mesmo assim chegar aqui,
+ * lançar é o certo: cair no envio nativo daria um
+ * `ChannelCapabilityError` ("este canal não suporta botões") que descreve
+ * o canal em vez do defeito, e mandaria o próximo leitor investigar o
+ * lado errado.
+ */
+function requireDegradedMenu(node: FlowNodeRow): string {
+  const text = renderDegradedMenu(node);
+  if (!text) {
+    throw new Error(
+      `flow node ${node.node_key} (${node.node_type}) has no options to render as a numbered menu`
+    );
+  }
+  return text;
+}
+
+/**
+ * Guarda o id INTERNO da mensagem de prompt no run, para a thread do
+ * inbox conseguir citar a pergunta que o cliente está respondendo.
+ *
+ * Escopado por conversa e ordenado (SPEC 049 §1.8): `messages.message_id`
+ * NÃO é único — a própria SPEC 048 §6.6 registrou isso ao corrigir o
+ * recibo de leitura. Com dois canais em jogo, os ids da Evolution passam
+ * a conviver com os `wamid` da Meta na mesma coluna, e o `.maybeSingle()`
+ * que estava aqui devolveria `PGRST116` sobre duas linhas em vez da
+ * primeira — deixando `last_prompt_message_id` nulo e a citação sumindo
+ * da thread, sem erro em lugar nenhum.
+ */
+async function stashPromptMessageId(
+  db: AdminClient,
+  run: FlowRunRow,
+  providerMessageId: string
+): Promise<void> {
+  const { data: rows } = await db
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', run.conversation_id!)
+    .eq('message_id', providerMessageId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const promptId = ((rows as { id: string }[] | null) ?? [])[0]?.id ?? null;
+  await db
+    .from('flow_runs')
+    .update({ last_prompt_message_id: promptId })
+    .eq('id', run.id);
+}
+
 async function sendButtonsAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow
 ): Promise<{ outcome: 'advanced'; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
-  const { whatsapp_message_id } = await engineSendInteractiveButtons({
-    accountId: run.account_id,
-    userId: run.user_id,
-    conversationId: run.conversation_id!,
-    contactId: run.contact_id!,
-    bodyText: cfg.text,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
-    buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
-  });
+  const native = await rendersNativeMenu(db, run, 'send_buttons');
+
+  // Canal sem botão nativo: MESMO nó, mesmo estado de run, transporte
+  // diferente. O run continua suspenso aqui e `matchDegradedReply` (no
+  // resume) é quem entende a resposta em texto. Ver `degraded-menu.ts`.
+  const degradedText = native ? null : requireDegradedMenu(node);
+  const { whatsapp_message_id } = degradedText
+    ? await engineSendText({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        text: degradedText,
+      })
+    : await engineSendInteractiveButtons({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        bodyText: cfg.text,
+        headerText: cfg.header_text,
+        footerText: cfg.footer_text,
+        buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
+      });
   await logEvent(db, run.id, 'message_sent', node.node_key, {
     node_type: 'send_buttons',
     whatsapp_message_id,
+    // Diagnóstico: é o que responde "por que o cliente digitou em vez de
+    // tocar?" sem ninguém ter de reconstituir o canal da conversa.
+    degraded: degradedText !== null,
   });
-  // Look up our internal message id so we can stash it on the run.
-  // Cheap — indexed on `messages.message_id`.
-  const { data: msg } = await db
-    .from('messages')
-    .select('id')
-    .eq('message_id', whatsapp_message_id)
-    .maybeSingle();
-  await db
-    .from('flow_runs')
-    .update({
-      last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-    })
-    .eq('id', run.id);
+  await stashPromptMessageId(db, run, whatsapp_message_id);
   return { outcome: 'advanced', node_key: node.node_key };
 }
 
@@ -402,39 +491,40 @@ async function sendListAndSuspend(
   node: FlowNodeRow
 ): Promise<{ outcome: 'advanced'; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
-  const { whatsapp_message_id } = await engineSendInteractiveList({
-    accountId: run.account_id,
-    userId: run.user_id,
-    conversationId: run.conversation_id!,
-    contactId: run.contact_id!,
-    bodyText: cfg.text,
-    buttonLabel: cfg.button_label,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
-    sections: cfg.sections.map((s) => ({
-      title: s.title,
-      rows: s.rows.map((r) => ({
-        id: r.reply_id,
-        title: r.title,
-        description: r.description,
-      })),
-    })),
-  });
+  const native = await rendersNativeMenu(db, run, 'send_list');
+  const degradedText = native ? null : requireDegradedMenu(node);
+  const { whatsapp_message_id } = degradedText
+    ? await engineSendText({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        text: degradedText,
+      })
+    : await engineSendInteractiveList({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        bodyText: cfg.text,
+        buttonLabel: cfg.button_label,
+        headerText: cfg.header_text,
+        footerText: cfg.footer_text,
+        sections: cfg.sections.map((s) => ({
+          title: s.title,
+          rows: s.rows.map((r) => ({
+            id: r.reply_id,
+            title: r.title,
+            description: r.description,
+          })),
+        })),
+      });
   await logEvent(db, run.id, 'message_sent', node.node_key, {
     node_type: 'send_list',
     whatsapp_message_id,
+    degraded: degradedText !== null,
   });
-  const { data: msg } = await db
-    .from('messages')
-    .select('id')
-    .eq('message_id', whatsapp_message_id)
-    .maybeSingle();
-  await db
-    .from('flow_runs')
-    .update({
-      last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-    })
-    .eq('id', run.id);
+  await stashPromptMessageId(db, run, whatsapp_message_id);
   return { outcome: 'advanced', node_key: node.node_key };
 }
 
@@ -694,17 +784,9 @@ async function advanceFromNodeKey(
           node_type: 'collect_input',
           whatsapp_message_id,
         });
-        const { data: msg } = await db
-          .from('messages')
-          .select('id')
-          .eq('message_id', whatsapp_message_id)
-          .maybeSingle();
-        await db
-          .from('flow_runs')
-          .update({
-            last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-          })
-          .eq('id', run.id);
+        // Mesma correção de escopo dos nós de menu (§1.8): a busca por
+        // `message_id` estava sem conversa e sem ordenação aqui também.
+        await stashPromptMessageId(db, run, whatsapp_message_id);
       } catch (err) {
         await logEvent(db, run.id, 'error', node.node_key, {
           reason: 'collect_input_prompt_failed',
@@ -960,9 +1042,12 @@ async function handleReplyForActiveRun(
     return { consumed: true, flow_run_id: run.id, outcome: 'no_match' };
   }
 
-  // Two ways a reply can advance:
+  // Three ways a reply can advance:
   //   1. Interactive button/list tap on a send_buttons/send_list node.
-  //   2. Text reply on a collect_input node — capture into vars.
+  //   2. Text reply on a send_buttons/send_list node cujo canal NÃO
+  //      renderiza menu nativo — o cliente digitou o número/rótulo do
+  //      menu degradado (SPEC 049 §5.2).
+  //   3. Text reply on a collect_input node — capture into vars.
   //
   // Everything else falls through to the fallback policy below.
   let matched: string | null = null;
@@ -972,6 +1057,20 @@ async function handleReplyForActiveRun(
       currentNode.node_type === 'send_list')
   ) {
     matched = matchReplyId(currentNode, message.reply_id);
+  } else if (
+    message.kind === 'text' &&
+    (currentNode.node_type === 'send_buttons' ||
+      currentNode.node_type === 'send_list')
+  ) {
+    // ⚠️ O ramo do canal OFICIAL não muda: com botão nativo,
+    // `rendersNativeMenu` é `true`, `matched` continua `null` e o texto
+    // cai na mesma política de fallback de sempre. A degradação só
+    // existe onde o cliente NÃO teve botão para tocar — senão um "2"
+    // digitado numa conversa Cloud passaria a avançar o flow, que é
+    // comportamento novo em quem paga template.
+    if (!(await rendersNativeMenu(db, run, currentNode.node_type))) {
+      matched = matchDegradedReply(currentNode, message.text);
+    }
   } else if (
     message.kind === 'text' &&
     currentNode.node_type === 'collect_input'

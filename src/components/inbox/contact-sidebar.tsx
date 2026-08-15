@@ -15,21 +15,40 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  MessageCircle,
+  QrCode,
+  BadgeCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { useTagPicker } from '@/components/inbox/tag-picker/tag-picker-context';
 import { useDealPicker } from '@/components/inbox/deal-picker/deal-picker-context';
 import { canSendMessages } from '@/lib/auth/roles';
 import { formatPhoneForDisplay } from '@/lib/phone/br';
+import { useAccountChannels } from '@/lib/channels/use-account-channels';
+
+interface SiblingThread {
+  id: string;
+  channelId: string;
+  lastMessageAt: string | null;
+  messageCount: number;
+}
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Conversa aberta agora — excluída da lista de "irmãs" abaixo. */
+  conversationId?: string | null;
+  /** Abre outra thread do mesmo contato (SPEC 049 §4.4). */
+  onOpenConversation?: (conversationId: string) => void;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({
+  contact,
+  conversationId = null,
+  onOpenConversation,
+}: ContactSidebarProps) {
   const tSidebar = useTranslations('Inbox.sidebar');
   const tThread = useTranslations('Inbox.messageThread');
   const tDealPicker = useTranslations('Inbox.dealPicker');
@@ -42,6 +61,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [newNote, setNewNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const accountChannels = useAccountChannels();
+  const [siblingThreads, setSiblingThreads] = useState<SiblingThread[]>([]);
 
   // As etiquetas vêm de `contact.tags`, já hidratado pela página via
   // CONVERSATION_SELECT (`contact_tags(tags(*))`). Manter uma cópia
@@ -85,6 +106,56 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  /**
+   * "Também neste contato" (SPEC 049 §4.4) — outras threads do MESMO
+   * contato, noutro canal. Só vale a pena consultar numa conta com mais
+   * de um canal: numa conta de canal único, uma conversa por (contato,
+   * canal) desde a 059 já É a única thread possível.
+   *
+   * Contagem por irmã via `count: 'exact', head: true` — parece caro e
+   * não é: o número de irmãs é limitado pelo número de canais da conta
+   * (teto de `EVOLUTION_MAX_INSTANCES_PER_ACCOUNT`, tipicamente ≤ 4).
+   */
+  const fetchSiblingThreads = useCallback(async () => {
+    if (!contact || accountChannels.count <= 1) {
+      setSiblingThreads([]);
+      return;
+    }
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('id, channel_id, last_message_at')
+      .eq('contact_id', contact.id)
+      .not('channel_id', 'is', null);
+    if (error || !data) {
+      setSiblingThreads([]);
+      return;
+    }
+    const siblings = data.filter(
+      (row) => row.id !== conversationId && !!row.channel_id
+    );
+    const withCounts = await Promise.all(
+      siblings.map(async (row) => {
+        const { count } = await supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('conversation_id', row.id);
+        return {
+          id: row.id as string,
+          channelId: row.channel_id as string,
+          lastMessageAt: row.last_message_at as string | null,
+          messageCount: count ?? 0,
+        };
+      })
+    );
+    setSiblingThreads(withCounts);
+  }, [contact, conversationId, accountChannels.count]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchSiblingThreads();
+  }, [fetchSiblingThreads]);
 
   // Único destino da criação: esta lista é local, não vive no estado
   // da página (deals não está em CONVERSATION_SELECT nem alimenta
@@ -194,6 +265,64 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </div>
             )}
           </div>
+
+          {/* Também neste contato (SPEC 049 §4.4) — outras threads do
+              mesmo contato, noutro canal. Só aparece quando existe pelo
+              menos uma irmã; sem thread noutro canal, a seção nem
+              renderiza (nem vazia) — é ruído numa conta de canal único
+              e, mesmo em conta multicanal, na maioria dos contatos. */}
+          {siblingThreads.length > 0 && (
+            <>
+              <div className="border-border my-4 border-t" />
+              <div>
+                <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase">
+                  <MessageCircle className="h-3 w-3" />
+                  {tSidebar('alsoInThisContact')}
+                </div>
+                <div className="mt-2 space-y-1.5">
+                  {siblingThreads.map((sibling) => {
+                    const ch = accountChannels.byId.get(sibling.channelId);
+                    return (
+                      <div
+                        key={sibling.id}
+                        className="bg-muted flex items-center gap-2 rounded-lg px-3 py-2"
+                      >
+                        {ch?.type === 'whatsapp_qr' ? (
+                          <QrCode className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <BadgeCheck className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-foreground truncate text-xs font-medium">
+                            {ch?.name ?? tSidebar('unknownChannel')}
+                          </p>
+                          <p className="text-muted-foreground truncate text-[11px]">
+                            {tSidebar('siblingMessageCount', {
+                              count: sibling.messageCount,
+                            })}
+                            {sibling.lastMessageAt &&
+                              ` · ${tSidebar('siblingLastMessage', {
+                                time: formatDistanceToNow(
+                                  new Date(sibling.lastMessageAt),
+                                  { addSuffix: true }
+                                ),
+                              })}`}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onOpenConversation?.(sibling.id)}
+                          className="text-primary shrink-0 text-xs font-medium hover:underline"
+                        >
+                          {tSidebar('openThread')}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Divider */}
           <div className="border-border my-4 border-t" />

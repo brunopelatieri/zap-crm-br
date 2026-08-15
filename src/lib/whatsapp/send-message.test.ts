@@ -1,5 +1,43 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
+
+const resolveInstanceByChannelId = vi.fn();
+vi.mock('@/lib/evolution/instances', () => ({
+  resolveInstanceByChannelId: (...a: unknown[]) =>
+    resolveInstanceByChannelId(...a),
+}));
+
+const qrSendText = vi.fn(async () => ({ providerMessageId: 'evo.1' }));
+vi.mock('@/lib/channels/registry', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/channels/registry')>();
+  return {
+    ...actual,
+    getAdapter: (type: string) =>
+      type === 'whatsapp_qr'
+        ? {
+            type: 'whatsapp_qr',
+            capabilities: {},
+            sendText: qrSendText,
+            sendMedia: vi.fn(),
+            normalizeInbound: () => [],
+          }
+        : actual.getAdapter(type as never),
+  };
+});
+
+vi.mock('@/lib/flows/admin-client', () => ({
+  supabaseAdmin: () => ({
+    from: () => {
+      const b: Record<string, unknown> = {};
+      const chain = () => b;
+      for (const m of ['update', 'eq', 'select']) b[m] = vi.fn(chain);
+      b.then = (resolve: (v: unknown) => unknown) =>
+        resolve({ data: null, error: null });
+      return b;
+    },
+  }),
+}));
 
 import {
   sendMessageToConversation,
@@ -155,5 +193,184 @@ describe('SendMessageError', () => {
     expect(e.code).toBe('meta_error');
     expect(e.status).toBe(502);
     expect(e).toBeInstanceOf(Error);
+  });
+
+  it('carrega headers opcionais (Retry-After do teto de envio frio)', () => {
+    const e = new SendMessageError('cold_send_limit', 'boom', 429, {
+      'Retry-After': '60',
+    });
+    expect(e.headers).toEqual({ 'Retry-After': '60' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Teto de envio frio (SPEC 049 §6.2, D-1) — `coldSendOrigin` em canal QR.
+// ---------------------------------------------------------------------------
+
+interface QueuedResult {
+  data?: unknown;
+  count?: number;
+  error?: unknown;
+}
+
+/**
+ * Supabase de mentira, keyed por `${table}.${verb}` (mesmo espírito de
+ * `send.test.ts`). Resultado capturado NA CONSTRUÇÃO do chain (ordem em
+ * que o código chama `db.from()`), não na resolução.
+ */
+function makeDb(results: Record<string, QueuedResult>) {
+  const inserts: Array<{ table: string; payload: unknown }> = [];
+
+  function chain(table: string) {
+    let verb: 'select' | 'insert' | 'update' = 'select';
+    const c: Record<string, unknown> = {
+      select: () => c,
+      eq: () => c,
+      gte: () => c,
+      order: () => c,
+      limit: () => c,
+      insert: (payload: unknown) => {
+        verb = 'insert';
+        inserts.push({ table, payload });
+        return c;
+      },
+      update: () => {
+        verb = 'update';
+        return c;
+      },
+      single: () => Promise.resolve(settle()),
+      maybeSingle: () => Promise.resolve(settle()),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject?: (e: unknown) => unknown
+      ) => Promise.resolve(settle()).then(resolve, reject),
+    };
+    const settle = () => {
+      const r = results[`${table}.${verb}`] ?? {};
+      return { data: r.data ?? null, count: r.count, error: r.error ?? null };
+    };
+    return c;
+  }
+
+  return {
+    client: { from: (t: string) => chain(t) } as unknown as SupabaseClient,
+    inserts,
+  };
+}
+
+const CONTACT_QR = { id: 'contact-1', phone: '+5511999999999' };
+const CONVERSATION_QR = {
+  id: 'conv-1',
+  channel_id: 'chan-qr-1',
+  contact: CONTACT_QR,
+  last_customer_message_at: null,
+};
+const CHANNEL_QR = {
+  id: 'chan-qr-1',
+  account_id: 'acct-1',
+  type: 'whatsapp_qr',
+  name: 'Vendas',
+  status: 'connected',
+  created_at: '2020-01-01T00:00:00Z',
+};
+
+function dbForQr(over: Record<string, QueuedResult> = {}) {
+  return makeDb({
+    'conversations.select': { data: CONVERSATION_QR },
+    'channels.select': { data: CHANNEL_QR },
+    'channel_cold_sends.select': { count: 0, data: null },
+    'messages.insert': { data: { id: 'msg-1' } },
+    ...over,
+  });
+}
+
+beforeEach(() => {
+  resolveInstanceByChannelId.mockReset();
+  resolveInstanceByChannelId.mockResolvedValue({
+    instanceId: 'inst-1',
+    channelId: 'chan-qr-1',
+    accountId: 'acct-1',
+    remoteInstanceId: 'remote-1',
+    remoteInstanceName: 'zapcrm_acct1_vendas',
+    token: 'plain-instance-token',
+    channelName: 'Vendas',
+  });
+  qrSendText.mockClear();
+  qrSendText.mockResolvedValue({ providerMessageId: 'evo.1' });
+});
+
+describe('sendMessageToConversation — coldSendOrigin (canal QR)', () => {
+  const base: SendMessageParams = {
+    conversationId: 'conv-1',
+    messageType: 'text',
+    contentText: 'oi',
+  };
+
+  it('origin "human": nunca bloqueia, mesmo sobre o teto — só registra origin=human', async () => {
+    const db = dbForQr({
+      'channel_cold_sends.select': { count: 999 }, // bem acima de qualquer teto
+    });
+
+    const result = await sendMessageToConversation(db.client, 'acct-1', {
+      ...base,
+      coldSendOrigin: 'human',
+    });
+
+    expect(result.whatsappMessageId).toBe('evo.1');
+    expect(qrSendText).toHaveBeenCalledTimes(1);
+    const record = db.inserts.find((i) => i.table === 'channel_cold_sends');
+    expect(record?.payload).toEqual({
+      channel_id: 'chan-qr-1',
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      origin: 'human',
+    });
+  });
+
+  it('origin "api": bloqueia com 429 + Retry-After quando o teto estourou', async () => {
+    const db = dbForQr({
+      'channel_cold_sends.select': { count: 999 },
+    });
+
+    await expect(
+      sendMessageToConversation(db.client, 'acct-1', {
+        ...base,
+        coldSendOrigin: 'api',
+      })
+    ).rejects.toMatchObject({
+      status: 429,
+      headers: expect.objectContaining({ 'Retry-After': expect.any(String) }),
+    });
+
+    expect(qrSendText).not.toHaveBeenCalled();
+    expect(db.inserts.some((i) => i.table === 'channel_cold_sends')).toBe(
+      false
+    );
+  });
+
+  it('origin "api": entrega e registra origin=api quando dentro do teto', async () => {
+    const db = dbForQr();
+
+    const result = await sendMessageToConversation(db.client, 'acct-1', {
+      ...base,
+      coldSendOrigin: 'api',
+    });
+
+    expect(result.whatsappMessageId).toBe('evo.1');
+    const record = db.inserts.find((i) => i.table === 'channel_cold_sends');
+    expect(record?.payload).toMatchObject({ origin: 'api' });
+  });
+
+  it('coldSendOrigin omitido: comportamento de hoje — sem checagem, sem registro', async () => {
+    const db = dbForQr({
+      'channel_cold_sends.select': { count: 999 },
+    });
+
+    const result = await sendMessageToConversation(db.client, 'acct-1', base);
+
+    expect(result.whatsappMessageId).toBe('evo.1');
+    expect(db.inserts.some((i) => i.table === 'channel_cold_sends')).toBe(
+      false
+    );
   });
 });

@@ -27,6 +27,7 @@ import {
 } from './meta-send';
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
 import { resolveSessionWindow } from '@/lib/channels/session-window';
+import { ColdSendLimitError } from '@/lib/channels/cold-send-wiring';
 import type { ChannelType } from '@/lib/channels/types';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import { ASSIGNABLE_ACCOUNT_ROLES } from '@/lib/auth/roles';
@@ -441,14 +442,22 @@ async function runStep(
           await sendViaFallbackChannel(guard, text, conversationId, args)
         );
       }
-      const { whatsapp_message_id } = await engineSendText({
-        accountId: args.automation.account_id,
-        userId: args.automation.user_id,
-        conversationId,
-        contactId: args.contactId,
-        text,
-      });
-      return success(`sent via Meta (${whatsapp_message_id})`);
+      try {
+        const { whatsapp_message_id } = await engineSendText({
+          accountId: args.automation.account_id,
+          userId: args.automation.user_id,
+          conversationId,
+          contactId: args.contactId,
+          text,
+        });
+        return success(`sent via Meta (${whatsapp_message_id})`);
+      } catch (err) {
+        // Teto de envio frio estourado (SPEC 049 §6.2, D-1): cota é
+        // ADIAMENTO, não defeito (PRD §10.3) — igual à recusa da janela
+        // logo acima, e pelo mesmo motivo.
+        if (err instanceof ColdSendLimitError) return skipped(err.message);
+        throw err;
+      }
     }
 
     case 'send_buttons':

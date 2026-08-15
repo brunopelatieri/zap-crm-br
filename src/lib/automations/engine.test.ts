@@ -159,6 +159,7 @@ import {
   engineSendTemplate,
   engineSendInteractive,
 } from './meta-send';
+import { ColdSendLimitError } from '@/lib/channels/cold-send-wiring';
 import type { Automation } from '@/types';
 
 const ACCOUNT = 'acct-1';
@@ -649,6 +650,47 @@ describe('session window guard on send_message/send_buttons/send_list (SPEC 045 
     expect(engineSendText).not.toHaveBeenCalled();
     // Unlike 'fail', a skip does not break the run.
     expect(contactsUpdates()).toHaveLength(1);
+  });
+
+  it('converts a cold-send-limit denial into a skipped step, not a failure', async () => {
+    // PRD §10.3, literal: cota estourada é adiamento, não defeito. O
+    // mesmo tratamento que "skip" já recebe na guarda de janela logo
+    // acima — só que a decisão desta vez vem de dentro de
+    // `sendAndPersistOutbound` (SPEC 049 §6.2), não do window guard.
+    h.state.conversationRow = { last_customer_message_at: hoursAgoIso(1) };
+    vi.mocked(engineSendText).mockRejectedValueOnce(
+      new ColdSendLimitError({
+        allowed: false,
+        reason: 'daily_limit',
+        retryAfterSeconds: 3600,
+        remainingToday: 0,
+        remainingThisHour: 5,
+        dailyLimit: 60,
+        hourlyLimit: 12,
+        warmingUp: false,
+      })
+    );
+
+    await runWithConversation([
+      sendMessageStep({ on_window_closed: 'skip' }),
+      markerStep(),
+    ]);
+
+    expect(engineSendText).toHaveBeenCalledTimes(1);
+    // Skip, not fail — the run continues to the next step.
+    expect(contactsUpdates()).toHaveLength(1);
+  });
+
+  it('any OTHER send error still fails the run — only the cold-send denial is swallowed as skip', async () => {
+    h.state.conversationRow = { last_customer_message_at: hoursAgoIso(1) };
+    vi.mocked(engineSendText).mockRejectedValueOnce(new Error('meta boom'));
+
+    await runWithConversation([
+      sendMessageStep({ on_window_closed: 'skip' }),
+      markerStep(),
+    ]);
+
+    expect(contactsUpdates()).toHaveLength(0);
   });
 
   it('sends the configured fallback template when on_window_closed is "fallback_template"', async () => {

@@ -49,6 +49,11 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import { can, canSendMedia } from './capabilities';
+import {
+  checkColdSend,
+  recordColdSend,
+  ColdSendLimitError,
+} from './cold-send-wiring';
 import { getAdapter } from './registry';
 import type {
   Channel,
@@ -652,6 +657,31 @@ export async function sendAndPersistOutbound(input: {
     ? await resolveChannelContext(db, accountId, input.channelType)
     : await resolveChannelForConversation(db, accountId, conversationId);
 
+  // Teto de envio frio (SPEC 049 §6.2, D-1): só em canal sem janela da
+  // Meta — ela já regula o resto. `sendAndPersistOutbound` é o único
+  // caminho dos motores (automações, flows, IA), então bloquear aqui
+  // cobre os três de uma vez. Negar é SKIP, não falha (PRD §10.3): quem
+  // chama (o executor de passo/nó) precisa distinguir `ColdSendLimitError`
+  // de qualquer outro erro e tratar como adiamento.
+  let coldSend: Awaited<ReturnType<typeof checkColdSend>> | null = null;
+  if (!can(ctx.channel.type, 'sessionWindow24h')) {
+    const { data: conv } = await db
+      .from('conversations')
+      .select('last_customer_message_at')
+      .eq('id', conversationId)
+      .maybeSingle();
+    coldSend = await checkColdSend(db, {
+      channelId: ctx.channel.id,
+      channelType: ctx.channel.type,
+      lastInboundAt: conv?.last_customer_message_at
+        ? new Date(conv.last_customer_message_at)
+        : null,
+    });
+    if (coldSend.decision && !coldSend.decision.allowed) {
+      throw new ColdSendLimitError(coldSend.decision);
+    }
+  }
+
   const { providerMessageId, workingPhone } = await sendWithPhoneVariants({
     ctx,
     sanitizedPhone: contact.sanitizedPhone,
@@ -688,6 +718,17 @@ export async function sendAndPersistOutbound(input: {
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversationId);
+
+  // Gravado DEPOIS da entrega confirmada (§6.1 ponto 4) — contar antes
+  // faria uma falha de rede consumir cota que nunca saiu.
+  if (coldSend?.cold) {
+    await recordColdSend(db, {
+      channelId: ctx.channel.id,
+      accountId,
+      contactId: contact.id,
+      origin: 'engine',
+    });
+  }
 
   return { whatsapp_message_id: providerMessageId };
 }

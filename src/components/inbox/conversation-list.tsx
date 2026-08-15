@@ -68,6 +68,14 @@ interface ConversationListProps {
   onSelectCompany: (company: string | null) => void;
   onClearFilters: () => void;
   /**
+   * Seletor de canal (SPEC 049 §4.1). `null` = todos os canais. Estado
+   * e escrita da URL (`?channel=`) vivem em `inbox/page.tsx` — mesmo
+   * padrão de `?tab=`/`?viewAs=` (ver `use-inbox-tabs.ts`). Esta lista
+   * só renderiza o dropdown e repassa a escolha.
+   */
+  channelId: string | null;
+  onChannelChange: (channelId: string | null) => void;
+  /**
    * Linha de botões de status/não-lidas. Hoje sempre `true` nas duas
    * abas (Chat e Open) — mantido como prop porque um futuro modo sem
    * esse recorte (ex.: uma aba de busca global) pode querer omiti-la.
@@ -115,6 +123,8 @@ export function ConversationList({
   onToggleTag,
   onSelectCompany,
   onClearFilters,
+  channelId,
+  onChannelChange,
   showStatusFilter,
   onClaim,
   claimingId,
@@ -360,6 +370,66 @@ export function ConversationList({
                     )}
                   >
                     <span className="truncate">{co}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Seletor de canal (SPEC 049 §4.1). Gate em `count > 1`: numa
+              conta de canal único, repetir "WhatsApp Oficial" em cima
+              de cada conversa seria ruído puro — a mesma regra do selo
+              por linha (F4.5) e do badge da thread abaixo. */}
+          {accountChannels.count > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  'hover:bg-muted inline-flex h-7 max-w-40 items-center justify-center gap-1 rounded-md px-2 text-xs',
+                  channelId
+                    ? 'text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <span className="truncate">
+                  {channelId
+                    ? (accountChannels.byId.get(channelId)?.name ??
+                      t('channelAll'))
+                    : t('channelAll')}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="border-border bg-popover max-h-64 w-56"
+              >
+                <DropdownMenuItem
+                  onClick={() => onChannelChange(null)}
+                  className={cn(
+                    'text-sm',
+                    channelId === null
+                      ? 'text-primary'
+                      : 'text-popover-foreground'
+                  )}
+                >
+                  {t('channelAll')}
+                </DropdownMenuItem>
+                {Array.from(accountChannels.byId.values()).map((ch) => (
+                  <DropdownMenuItem
+                    key={ch.id}
+                    onClick={() => onChannelChange(ch.id)}
+                    className={cn(
+                      'text-sm',
+                      channelId === ch.id
+                        ? 'text-primary'
+                        : 'text-popover-foreground'
+                    )}
+                  >
+                    {ch.type === 'whatsapp_qr' ? (
+                      <QrCode className="mr-2 h-3 w-3 shrink-0" />
+                    ) : (
+                      <BadgeCheck className="mr-2 h-3 w-3 shrink-0" />
+                    )}
+                    <span className="truncate">{ch.name}</span>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>

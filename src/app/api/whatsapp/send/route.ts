@@ -67,6 +67,14 @@ export async function POST(request: Request) {
       // yet (Contact detail → Send template) — we find-or-create one below.
       conversation_id: conversationIdInput,
       contact_id,
+      // Canal explícito para o caminho `contact_id` (SPEC 049 §4.6) — o
+      // seletor de canal informa isto quando a conta tem mais de um
+      // canal apto a enviar o que está sendo mandado. Ausente = padrão
+      // implícito de sempre (`resolveDefaultChannelId`), comportamento
+      // idêntico ao de antes desta SPEC. Ignorado no caminho
+      // `conversation_id` — o canal de uma thread existente é imutável
+      // (trigger da 059), não algo que o chamador escolhe aqui.
+      channel_id: explicitChannelId,
       message_type,
       content_text,
       media_url,
@@ -161,13 +169,34 @@ export async function POST(request: Request) {
       }
 
       let channelId: string;
-      try {
-        channelId = await resolveDefaultChannelId(supabase, accountId);
-      } catch {
-        return NextResponse.json(
-          { error: 'WhatsApp not configured for this account.' },
-          { status: 400 }
-        );
+      if (explicitChannelId) {
+        // Precisa pertencer a ESTA conta — senão um `channel_id` de
+        // outra conta abriria conversa lá (mesma checagem que a 025 e
+        // a RLS já fazem para `contact_id` acima, repetida aqui porque
+        // `channels` não tem RLS sob o client anon que impeça o SELECT
+        // por id sozinho).
+        const { data: channelRow, error: channelErr } = await supabase
+          .from('channels')
+          .select('id')
+          .eq('id', explicitChannelId)
+          .eq('account_id', accountId)
+          .maybeSingle();
+        if (channelErr || !channelRow) {
+          return NextResponse.json(
+            { error: 'Channel not found' },
+            { status: 400 }
+          );
+        }
+        channelId = channelRow.id;
+      } else {
+        try {
+          channelId = await resolveDefaultChannelId(supabase, accountId);
+        } catch {
+          return NextResponse.json(
+            { error: 'WhatsApp not configured for this account.' },
+            { status: 400 }
+          );
+        }
       }
 
       const resolved = await findOrCreateConversation(
@@ -235,6 +264,10 @@ export async function POST(request: Request) {
         // Autoria: este é o caminho com usuário logado. A API pública
         // (/api/v1/messages) omite e grava null — lá não há humano.
         senderId: user.id,
+        // SPEC 049 §6.2, D-1: nunca bloqueia — só registra o consumo,
+        // para a cota de envio frio descrever o número inteiro, não só
+        // o motor.
+        coldSendOrigin: 'human',
       });
 
       return NextResponse.json({

@@ -329,7 +329,8 @@
       "manageTagsShort": "Gerenciar etiquetas",
       "claimConversation": "Assumir conversa com {name}",
       "claimConversationShort": "Assumir conversa",
-      "channelBadgeTitle": "Esta conversa passa por {channel}"
+      "channelBadgeTitle": "Esta conversa passa por {channel}",
+      "channelAll": "Todos os canais"
     },
     "messageThread": {
       "assignedElsewhereWarning": "Esta conversa é de {name}. Enviar uma mensagem vai atribuí-la a você.",
@@ -356,7 +357,8 @@
       "selectConversation": "Selecione uma conversa",
       "selectConversationHint": "Escolha uma conversa à esquerda para começar a conversar",
       "today": "Hoje",
-      "yesterday": "Ontem"
+      "yesterday": "Ontem",
+      "channelBadgeTitle": "Esta conversa passa por {channel}"
     },
     "sessionTimer": {
       "expired": "Expirado",
@@ -392,7 +394,9 @@
       "send": "Enviar",
       "quickReplyNamePrompt": "Nomeie esta resposta rápida:",
       "quickReplySaved": "Salva como resposta rápida.",
-      "quickReplySaveError": "Não foi possível salvar a resposta rápida."
+      "quickReplySaveError": "Não foi possível salvar a resposta rápida.",
+      "audioAsAttachmentHint": "Neste canal, o áudio chega como anexo, não como mensagem de voz.",
+      "quickRepliesAvailable": "{shown} de {total} disponíveis neste canal"
     },
     "bubble": {
       "photo": "Foto",
@@ -463,7 +467,12 @@
       "noDeals": "Nenhum negócio",
       "addNotePlaceholder": "Adicionar uma nota...",
       "manageTags": "Gerenciar etiquetas",
-      "newDeal": "Novo negócio"
+      "newDeal": "Novo negócio",
+      "alsoInThisContact": "Também neste contato",
+      "unknownChannel": "Canal desconhecido",
+      "siblingMessageCount": "{count} mensagens",
+      "siblingLastMessage": "última {time}",
+      "openThread": "Abrir"
     },
     "tagPicker": {
       "title": "Etiquetas de {name}",
@@ -516,6 +525,8 @@
       "addContactBtn": "Adicionar contato",
       "searchPlaceholder": "Buscar por nome, telefone ou e-mail...",
       "filterByTags": "Filtrar por etiquetas",
+      "filterByChannel": "Filtrar por canal",
+      "channelFilterHint": "Contatos que têm conversa neste canal.",
       "clearAll": "Limpar tudo",
       "noTagsYet": "Ainda sem etiquetas.",
       "selectedCount": "{count} selecionado(s)",
@@ -636,6 +647,7 @@
         "noTagsAvailable": "Nenhuma etiqueta disponível. Crie etiquetas em Configurações."
       },
       "sendTemplateBtn": "Enviar template",
+      "sendChannelLabel": "Enviar por",
       "saveChangesBtn": "Salvar alterações",
       "saveCustomFieldsBtn": "Salvar campos personalizados",
       "toastPhoneRequired": "O número de telefone é obrigatório",
@@ -2446,6 +2458,8 @@
       "usageLabel": "{used} de {limit} instâncias usadas",
       "limitReasonAccount": "Limite da conta atingido",
       "limitReasonDeployment": "Limite do deployment atingido",
+      "coldSendUsageLabel": "Envio frio: {used}/{limit} hoje",
+      "coldSendWarmingUp": "Aquecendo",
       "newInstance": "Nova instância",
       "noInstances": "Nenhuma instância WhatsApp QRCode ainda.",
       "createOneHint": "Clique em <bold>Nova instância</bold> para conectar um número.",
