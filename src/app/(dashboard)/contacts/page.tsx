@@ -39,6 +39,7 @@ import {
   Search,
   Plus,
   Upload,
+  Download,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -61,6 +62,7 @@ import {
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
+import { ExportModal } from '@/components/contacts/export-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
@@ -100,6 +102,7 @@ export default function ContactsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailContactId, setDetailContactId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [customFieldsOpen, setCustomFieldsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
@@ -136,10 +139,6 @@ export default function ContactsPage() {
   const fetchContacts = useCallback(async () => {
     const seq = ++fetchSeq.current;
     setLoading(true);
-    // The visible rows are about to change — drop any selection that
-    // referred to the old page/search results so the bulk bar can't
-    // act on rows the user can no longer see.
-    setSelected(new Set());
 
     // Tag and channel filters both need a join, and resolving either on
     // the client silently truncates at the PostgREST ~1000-row cap —
@@ -241,6 +240,14 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  // Seleção persiste entre páginas (SPEC 051 §6.2) — só um filtro novo
+  // invalida o que foi marcado, porque o conjunto de resultados mudou;
+  // trocar de página sozinha não deveria apagar o que o usuário marcou.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelected(new Set());
+  }, [search, selectedTagIds, selectedChannelIds]);
 
   function openAddForm() {
     setEditContact(null);
@@ -416,6 +423,16 @@ export default function ContactsPage() {
           >
             <Upload className="size-4" />
             {t('importBtn')}
+          </GatedButton>
+          <GatedButton
+            variant="outline"
+            canAct={canEditSettings}
+            gateReason="export contacts"
+            onClick={() => setExportOpen(true)}
+            className="border-border text-muted-foreground hover:bg-muted"
+          >
+            <Download className="size-4" />
+            {t('exportBtn')}
           </GatedButton>
           <GatedButton
             canAct={canEdit}
@@ -660,6 +677,17 @@ export default function ContactsPage() {
             >
               {t('clearSelection')}
             </Button>
+            <GatedButton
+              variant="outline"
+              size="sm"
+              canAct={canEditSettings}
+              gateReason="export contacts"
+              onClick={() => setExportOpen(true)}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              <Download className="size-4" />
+              {t('exportSelected')}
+            </GatedButton>
             <GatedButton
               variant="destructive"
               size="sm"
@@ -927,6 +955,19 @@ export default function ContactsPage() {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImported={fetchContacts}
+      />
+
+      {/* Export Modal (admin+, SPEC 051) */}
+      <ExportModal
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        scopeFilter={{
+          search,
+          tagIds: selectedTagIds,
+          channelIds: selectedChannelIds,
+        }}
+        filteredCount={totalCount}
+        selectedIds={[...selected]}
       />
 
       {/* Custom Fields Manager (admin+) */}

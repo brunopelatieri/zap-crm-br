@@ -11,6 +11,7 @@
  */
 
 import {
+  CONTACT_COLUMNS,
   csvCell,
   parseTagCell,
   readCsvTable,
@@ -47,22 +48,19 @@ export interface AudienceColumnSpec {
  * "telefone", e obrigar o usuário a renomear a coluna para "phone" é
  * atrito sem propósito.
  *
- * Fonte única: o mapeamento do parser, o modelo oferecido na UI
- * (`buildAudienceTemplateCsv`) e a lista de colunas exibida no passo 2
- * leem daqui. Duas listas seriam duas chances de o modelo sugerir um
- * cabeçalho que o parser não reconhece.
+ * Fonte única: os apelidos vêm de `CONTACT_COLUMNS`
+ * (`parse-contact-csv.ts`) — o mesmo mapeamento que o import de
+ * contatos usa. Duas listas de apelidos seriam duas chances de
+ * divergir (e de o modelo sugerir um cabeçalho que um dos dois
+ * parsers não reconhece).
  */
-export const AUDIENCE_COLUMNS: AudienceColumnSpec[] = [
-  {
-    key: 'phone',
-    required: true,
-    aliases: ['phone', 'telefone', 'celular', 'whatsapp', 'numero'],
-  },
-  { key: 'name', required: false, aliases: ['name', 'nome'] },
-  { key: 'email', required: false, aliases: ['email', 'e-mail'] },
-  { key: 'company', required: false, aliases: ['company', 'empresa'] },
-  { key: 'tags', required: false, aliases: ['tags', 'etiquetas'] },
-];
+export const AUDIENCE_COLUMNS: AudienceColumnSpec[] = CONTACT_COLUMNS.map(
+  (column) => ({
+    key: column.key,
+    required: column.key === 'phone',
+    aliases: column.aliases,
+  })
+);
 
 /** Primeiro índice cujo cabeçalho casa com um dos apelidos. */
 function findColumn(headers: string[], aliases: string[]): number {

@@ -3,6 +3,47 @@
  * tag-column handling stays aligned with phone/name/email/company.
  */
 
+export interface ContactColumnSpec {
+  key: 'phone' | 'name' | 'email' | 'company' | 'tags';
+  /**
+   * Cabeçalhos aceitos, em ordem de preferência. O primeiro é o
+   * canônico (o que a exportação em inglês escreve); os demais cobrem
+   * variações em pt-BR — sem eles, um CSV exportado com cabeçalhos
+   * traduzidos (`telefone`, `nome`...) não reconhece NENHUMA linha ao
+   * ser reimportado (SPEC 051 §4/§9.8: o CSV exportado precisa voltar
+   * a ser importável pelo próprio sistema).
+   *
+   * Fonte única também para `audience/parse-csv.ts` (`AUDIENCE_COLUMNS`
+   * deriva daqui) — duas listas de aliases seriam duas chances de
+   * divergir.
+   */
+  aliases: string[];
+}
+
+export const CONTACT_COLUMNS: ContactColumnSpec[] = [
+  {
+    key: 'phone',
+    aliases: ['phone', 'telefone', 'celular', 'whatsapp', 'numero'],
+  },
+  { key: 'name', aliases: ['name', 'nome'] },
+  { key: 'email', aliases: ['email', 'e-mail'] },
+  { key: 'company', aliases: ['company', 'empresa'] },
+  { key: 'tags', aliases: ['tags', 'etiquetas'] },
+];
+
+/** Primeiro índice cujo cabeçalho casa com um dos apelidos. */
+export function findColumn(headers: string[], aliases: string[]): number {
+  for (const alias of aliases) {
+    const idx = headers.indexOf(alias);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function columnAliases(key: ContactColumnSpec['key']): string[] {
+  return CONTACT_COLUMNS.find((c) => c.key === key)!.aliases;
+}
+
 export interface ParsedContactRow {
   phone: string;
   name?: string;
@@ -100,15 +141,15 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
   }
 
-  const phoneIdx = headers.indexOf('phone');
+  const phoneIdx = findColumn(headers, columnAliases('phone'));
   if (phoneIdx === -1) {
     return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
   }
 
-  const nameIdx = headers.indexOf('name');
-  const emailIdx = headers.indexOf('email');
-  const companyIdx = headers.indexOf('company');
-  const tagsIdx = headers.indexOf('tags');
+  const nameIdx = findColumn(headers, columnAliases('name'));
+  const emailIdx = findColumn(headers, columnAliases('email'));
+  const companyIdx = findColumn(headers, columnAliases('company'));
+  const tagsIdx = findColumn(headers, columnAliases('tags'));
 
   const rows: ParsedContactRow[] = [];
 

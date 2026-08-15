@@ -1,9 +1,11 @@
 # SPEC 051 — Exportação de contatos (CSV / XLSX)
 
-> **Status:** aprovada, não implementada.
+> **Status:** implementada (F1–F7). Falta só a validação manual do §9 e o
+> commit do código.
 > **Depende de:** SPEC 044 (audiência multiformato), SPEC 045 (janela de 24h),
 > SPEC 048/049 (canais), SPEC 050 (telefone BR).
-> **Migração:** `064_contact_exports.sql` (não aplicada).
+> **Migração:** `064_contact_exports.sql` — aplicada em **vn**, **rs** e **jh**
+> (2026-08-15).
 
 ---
 
@@ -426,16 +428,27 @@ Plurais no formato do repositório (`x` / `x_plural`), não ICU.
 
 ## 8. Fases de execução
 
-| Fase   | Entrega                                    | Arquivos                                                                                    |
-| ------ | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| **F1** | Gravar a SPEC                              | este documento + linha no índice do `AGENTS.md`                                             |
-| **F2** | Catálogo + serializer puro **com testes**  | `src/lib/contacts/export-fields.ts`, `export-serialize.ts` (+ `.test.ts`)                   |
-| **F3** | Geradores de arquivo + dependência         | `src/lib/contacts/export-file.ts` (+ `.test.ts`), `package.json` (`write-excel-file`)       |
-| **F4** | Coleta em lotes                            | `src/lib/contacts/export-fetch.ts` (+ `.test.ts`)                                           |
-| **F5** | Migração 064 + rota                        | `supabase/migrations/064_contact_exports.sql`, `src/app/api/contacts/export/route.ts`       |
-| **F6** | Modal + i18n                               | `src/components/contacts/export-modal.tsx`, `messages/en.json`, `messages/pt-BR.json`       |
-| **F7** | Integração na página + seleção persistente | `src/app/(dashboard)/contacts/page.tsx`                                                     |
-| **F8** | Validação completa                         | comandos do §9                                                                              |
+| Fase   | Entrega                                    | Arquivos                                                                                    | Status |
+| ------ | ------------------------------------------ | ------------------------------------------------------------------------------------------- | ------ |
+| **F1** | Gravar a SPEC                              | este documento + linha no índice do `AGENTS.md`                                             | ✅ |
+| **F2** | Catálogo + serializer puro **com testes**  | `src/lib/contacts/export-fields.ts`, `export-serialize.ts` (+ `.test.ts`)                   | ✅ |
+| **F3** | Geradores de arquivo + dependência         | `src/lib/contacts/export-file.ts` (+ `.test.ts`), `package.json` (`write-excel-file`)       | ✅ |
+| **F4** | Coleta em lotes                            | `src/lib/contacts/export-fetch.ts` (+ `.test.ts`)                                           | ✅ |
+| **F5** | Migração 064 + rota                        | `supabase/migrations/064_contact_exports.sql`, `src/app/api/contacts/export/route.ts`       | ✅ migração aplicada em vn/rs/jh |
+| **F6** | Modal + i18n                               | `src/components/contacts/export-modal.tsx`, `messages/en.json`, `messages/pt-BR.json`       | ✅ |
+| **F7** | Integração na página + seleção persistente | `src/app/(dashboard)/contacts/page.tsx`                                                     | ✅ |
+| **F8** | Validação completa                         | comandos do §9                                                                              | ✅ automática · ⚠️ manual pendente (sem credenciais de teste em navegador) |
+
+**Adições fora da lista original de arquivos**, necessárias para fechar o
+critério de round-trip do §4/§9.8 (um CSV exportado com cabeçalhos pt-BR
+precisa voltar a ser importável): `src/lib/contacts/parse-contact-csv.ts`
+ganhou aliases pt-BR (`telefone`, `nome`, `empresa`, `etiquetas`) — antes só
+reconhecia cabeçalhos literais em inglês, e sem eles `parseContactCsv`
+devolvia `rows: []` inteiro para um arquivo com cabeçalho `"telefone"`.
+`src/lib/audience/parse-csv.ts` (`AUDIENCE_COLUMNS`) foi ajustado para
+derivar dos mesmos aliases (`CONTACT_COLUMNS`), eliminando a lista
+duplicada — comportamento do import de audiência inalterado (suíte
+inteira permanece verde).
 
 F2 → F4 são puros e testáveis sem browser — é onde o risco real (teto de linhas,
 colunas dinâmicas) é fixado por teste antes de existir qualquer UI.

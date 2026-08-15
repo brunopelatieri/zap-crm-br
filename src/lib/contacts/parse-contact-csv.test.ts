@@ -74,6 +74,36 @@ describe('parseContactCsv', () => {
     });
   });
 
+  it('reconhece cabeçalhos em pt-BR (round-trip de um CSV exportado, SPEC 051 §4)', () => {
+    const csv = `telefone,nome,email,empresa,etiquetas
+5511900000001,Maria,maria@exemplo.com,Loja da Maria,"vip, lead"`;
+
+    expect(parseContactCsv(csv)).toEqual({
+      hasTagsColumn: true,
+      hasCompanyColumn: true,
+      rows: [
+        {
+          phone: '5511900000001',
+          name: 'Maria',
+          email: 'maria@exemplo.com',
+          company: 'Loja da Maria',
+          tagNames: ['vip', 'lead'],
+          sourceRow: 2,
+        },
+      ],
+    });
+  });
+
+  it('sem cabeçalho de telefone reconhecido (nem inglês nem pt-BR), devolve vazio', () => {
+    const csv = `id,nome
+1,Maria`;
+    expect(parseContactCsv(csv)).toEqual({
+      hasTagsColumn: false,
+      hasCompanyColumn: false,
+      rows: [],
+    });
+  });
+
   it('normalizes a masked BR phone with react-phone-number-input-style input', () => {
     const csv = `phone,name
 +55 (19) 9 9249-6598,Maria`;
