@@ -2464,7 +2464,7 @@
       "loadFailed": "Falha ao carregar as instâncias",
       "networkError": "Não foi possível conectar ao servidor",
       "riskBannerTitle": "Conexão não oficial — leia antes de conectar um número",
-      "riskBannerBody": "Este canal usa a mesma tecnologia do WhatsApp Web e não é homologado pela Meta. Riscos: o número pode ser bloqueado ou banido a qualquer momento, sem aviso e sem recurso; não há SLA nem suporte da Meta; atualizações do WhatsApp podem derrubar a conexão a qualquer momento. Não use no número principal da empresa. Neste canal não existem templates, botões, listas nem disparo em massa. O celular pareado precisa ter bateria e internet — se ele cair, o canal cai junto.",
+      "riskBannerBody": "Este canal usa a mesma tecnologia do WhatsApp Web e não é homologado pela Meta. Riscos:o número pode ser bloqueado ou banido a qualquer momento, sem aviso e sem recurso; não há SLA nem suporte da Meta; atualizações do WhatsApp podem derrubar a conexão a qualquer momento. Não use no número principal da empresa. Neste canal não existem templates, botões, listas nem disparo em massa.",
       "usageLabel": "{used} de {limit} instâncias usadas",
       "limitReasonAccount": "Limite da conta atingido",
       "limitReasonDeployment": "Limite do deployment atingido",

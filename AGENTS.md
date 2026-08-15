@@ -172,6 +172,7 @@ Guia detalhado (quando e por quê de cada um): [docs/comandos-desenvolvimento.md
 | [docs/references/EVOLUTION_GO_REFERENCE.md](./docs/references/EVOLUTION_GO_REFERENCE.md)                 | Referência da API Evolution Go (⚠️ incompleta — ver SPEC 048 §1)              |
 | [docs/spec-050-padronizacao-telefone-br.md](./docs/spec-050-padronizacao-telefone-br.md)                 | **SPEC** — padronização de telefone + validação brasileira (DDD/celular/fixo) |
 | [docs/context/phone-number-format-standard.md](./docs/context/phone-number-format-standard.md)           | Padrão de formato de telefone — mapeamento de todos os pontos de entrada      |
+| [docs/spec-051-exportacao-de-contatos.md](./docs/spec-051-exportacao-de-contatos.md)                     | **SPEC** — exportação de contatos em CSV/XLSX (campos, escopo, auditoria)     |
 | [docs/spec-inbox-tag-management.md](./docs/spec-inbox-tag-management.md)                                 | Gestão de etiquetas dentro do inbox                                           |
 | [docs/spec-inbox-tabs-assignment.md](./docs/spec-inbox-tabs-assignment.md)                               | Abas do inbox e atribuição                                                    |
 | [docs/spec-inbox-kanban-integration.md](./docs/spec-inbox-kanban-integration.md)                         | Integração inbox ↔ funil kanban                                               |
