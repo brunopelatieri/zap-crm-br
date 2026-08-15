@@ -1,11 +1,19 @@
 /**
- * POST /api/broadcasts/audience/google-sheets
+ * POST /api/import/google-sheets
  *
  * Proxy fino e vigiado para o export CSV de uma planilha pública do
- * Google (SPEC 044 §3.2.2). Devolve o CSV **cru** em `text/csv`, não
- * linhas já parseadas: o cliente entrega esse texto ao mesmo Worker
- * que processa um arquivo local, então existe um único caminho de
- * parsing para as três fontes.
+ * Google (SPEC 044 §3.2.2, SPEC 052 D-8). Devolve o CSV **cru** em
+ * `text/csv`, não linhas já parseadas: o cliente entrega esse texto ao
+ * mesmo parser que processa um arquivo local, então existe um único
+ * caminho de parsing para as três fontes.
+ *
+ * Rota NEUTRA de propósito (SPEC 052 D-8): a antiga
+ * `/api/broadcasts/audience/google-sheets` funcionava para o
+ * importador de contatos também (mesmo piso de papel —
+ * `requireRole('agent')` ≡ `useCan('send-messages')`), mas o caminho e
+ * o log mentiam sobre quem chama. Uma implementação, um lugar, para os
+ * dois consumidores (passo 2 do disparo e — quando a F5 chegar — o
+ * importador de contatos).
  *
  * Por que isto precisa ser server-side
  *
@@ -45,13 +53,17 @@ const STATUS_BY_CODE: Record<string, number> = {
 
 export async function POST(request: Request) {
   try {
-    // Importar audiência faz parte de criar disparo — mesmo piso de
-    // papel que enviar mensagem.
+    // Mesmo piso de papel dos dois consumidores hoje: importar
+    // audiência faz parte de criar disparo, importar contato exige o
+    // mesmo `useCan('send-messages')` na tela de contatos.
     const { userId } = await requireRole('agent');
 
+    // Chave por usuário, não por origem: é o Google que está sendo
+    // protegido, e não importa se o pedido veio do passo 2 do disparo
+    // ou do importador de contatos (SPEC 052 D-8).
     const limit = checkRateLimit(
-      `audience-import:${userId}`,
-      RATE_LIMITS.audienceImport
+      `sheet-import:${userId}`,
+      RATE_LIMITS.spreadsheetImport
     );
     if (!limit.success) return rateLimitResponse(limit);
 

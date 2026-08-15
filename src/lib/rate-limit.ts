@@ -172,11 +172,13 @@ export const RATE_LIMITS = {
    *  far less often than this — the budget exists to bound a component
    *  stuck in a refresh loop, not to pace normal use. */
   messagingLimit: { limit: 20, windowMs: 60_000 },
-  /** Google Sheets import, per user. Each call makes the server fetch an
-   *  external URL, so this is the tightest useful budget: enough to fix a
-   *  wrong link and retry a few times, not enough to make the CRM a
-   *  convenient request amplifier. */
-  audienceImport: { limit: 10, windowMs: 60_000 },
+  /** Google Sheets import, per user — shared by the broadcast audience
+   *  wizard and the contacts importer (SPEC 052 D-8: one route, one
+   *  budget). Each call makes the server fetch an external URL, so this
+   *  is the tightest useful budget: enough to fix a wrong link and retry
+   *  a few times, not enough to make the CRM a convenient request
+   *  amplifier. */
+  spreadsheetImport: { limit: 10, windowMs: 60_000 },
   /** Audience staging (SPEC 044 §3.3), per user. One call per "Analisar
    *  audiência" click — a few retries after a mistaken template pick is
    *  normal; a tight budget here would punish that, not abuse. */

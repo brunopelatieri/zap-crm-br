@@ -10,14 +10,15 @@ import { ArrowLeft, ArrowRight, Loader2, Users, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import {
-  AudienceSourcePicker,
   isImportSource,
+  useAudienceSourceOptions,
   type AudienceSourceId,
-} from './audience/audience-source-picker';
+} from './audience/audience-source-options';
 import { AudienceImportSummary } from './audience/audience-import-summary';
-import { AudienceTemplateHint } from './audience/audience-template-hint';
 import { GoogleSheetsSource } from './audience/google-sheets-source';
-import { SpreadsheetDropzone } from './audience/spreadsheet-dropzone';
+import { ImportSourcePicker } from '@/components/import/import-source-picker';
+import { SpreadsheetTemplateHint } from '@/components/import/spreadsheet-template-hint';
+import { SpreadsheetDropzone } from '@/components/import/spreadsheet-dropzone';
 import { QuotaMeter, exceedsQuota } from './quota-meter';
 import { useMessagingLimit } from './messaging-limit-provider';
 import { useSpreadsheetParser } from '@/hooks/use-spreadsheet-parser';
@@ -91,6 +92,7 @@ export function Step2SelectAudience({
   const tAudience = useTranslations('Broadcasts.audience');
   const tParseError = useTranslations('Broadcasts.audience.parseError');
   const tStageError = useTranslations('Broadcasts.audience.stageError');
+  const sourceOptions = useAudienceSourceOptions();
 
   const OPERATOR_OPTIONS = useMemo<
     { value: CustomFieldOperator; label: string }[]
@@ -252,7 +254,7 @@ export function Step2SelectAudience({
     setSheetsErrorCode(null);
     setImported(null);
     try {
-      const res = await fetch('/api/broadcasts/audience/google-sheets', {
+      const res = await fetch('/api/import/google-sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
@@ -399,12 +401,26 @@ export function Step2SelectAudience({
         </p>
       </div>
 
-      <AudienceSourcePicker value={source} onChange={handleSourceChange} />
+      <ImportSourcePicker
+        value={source}
+        onChange={handleSourceChange}
+        options={sourceOptions}
+        recommendedLabel={tAudience('source.recommended')}
+      />
 
       {/* Modelo + colunas aceitas. Vem ANTES do campo de upload de
           propósito: quem chega aqui sem planilha pronta baixa o modelo
           em vez de descobrir o formato pelo erro de parsing. */}
-      {isImportSource(source) && <AudienceTemplateHint />}
+      {isImportSource(source) && (
+        <SpreadsheetTemplateHint
+          namespace="Broadcasts.audience.template"
+          showTagsNote
+          showHeaderNote
+          // Sem showTagCreationNote: a audiência de disparo não cria
+          // etiqueta a partir da planilha (SPEC 052 §5.3) — mostrar a
+          // nota aqui seria informar uma regra que não existe.
+        />
+      )}
 
       {/* ── Google Sheets ─────────────────────────────────────── */}
       {source === 'google_sheets' && (

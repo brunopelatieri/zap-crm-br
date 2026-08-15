@@ -706,16 +706,49 @@
     },
     "importModal": {
       "title": "Import Contacts",
-      "desc": "Upload a CSV with a required <phoneCode>phone</phoneCode> column. Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (comma-separated; quote multi-tag cells).",
-      "uploadDropzone": "Click to choose a CSV file",
-      "uploadHint": ".csv up to your browser limit",
-      "rowsReady": "{count} row ready",
-      "rowsReady_plural": "{count} rows ready",
+      "desc": "Import from a Google Sheets link, a .csv file, or an Excel (.xlsx) file.",
+      "source": {
+        "recommended": "Recommended",
+        "googleSheets": {
+          "label": "Google Sheets",
+          "description": "Paste a link to a spreadsheet you already keep."
+        },
+        "spreadsheet": {
+          "label": "CSV or Excel file",
+          "description": "Upload a .csv or .xlsx from your computer."
+        }
+      },
+      "template": {
+        "title": "Spreadsheet template",
+        "subtitle": "Download the template, replace the sample rows with your contacts and upload it. The first row must be the header.",
+        "download": "Download template (.csv)",
+        "required": "required",
+        "optional": "optional",
+        "alsoAccepted": "also accepted: {aliases}",
+        "columns": {
+          "phone": "Phone with area code — e.g. 11987654321. On a Brazilian deployment the 55 country code is added automatically. Spaces, parentheses, dashes and \"+\" are ignored.",
+          "name": "Contact name.",
+          "email": "Contact email.",
+          "company": "Contact company.",
+          "tags": "Contact tags. One per cell, or several separated by a semicolon: vip;lead."
+        }
+      },
       "preview": "Preview · first {count}",
       "previewTags": "{tags} tag · {contacts} contact",
       "previewTags_plural": "{tags} tags · {contacts} contacts",
       "moreRows": "+ {count} more row not shown",
       "moreRows_plural": "+ {count} more rows not shown",
+      "summary": {
+        "title": "Import summary",
+        "sheet": "Sheet: {name}",
+        "read": "read",
+        "valid": "valid",
+        "duplicates": "duplicates",
+        "invalid": "invalid",
+        "rejectedRows": "{count} rows were not imported",
+        "line": "Line {n}",
+        "showAll": "Show all {count}"
+      },
       "importComplete": "Import complete",
       "resultImported": "{count} imported",
       "resultTags": "{count} tag assigned",
@@ -734,7 +767,6 @@
       "close": "Close",
       "importBtn": "Import {count} contact",
       "importBtn_plural": "Import {count} contacts",
-      "toastNoValidRows": "No valid rows found. Ensure CSV has a \"phone\" column header.",
       "toastTagsWarning": "Contacts imported, but some tag assignments failed.",
       "toastImported": "{count} contact imported",
       "toastImported_plural": "{count} contacts imported",
@@ -745,10 +777,7 @@
       "toastSkipped_plural": "{count} duplicates skipped",
       "toastFailed": "{count} contact failed to import",
       "toastFailed_plural": "{count} contacts failed to import",
-      "toastError": "Import failed",
-      "rejectedRows": "{count} rows were not imported",
-      "rejectedLine": "Line {n}",
-      "showAllRejected": "Show all {count}"
+      "toastError": "Import failed"
     },
     "exportModal": {
       "title": "Export contacts",
@@ -864,6 +893,11 @@
       "duplicate_in_file": "duplicate",
       "missing_phone": "no phone",
       "invalid_phone": "invalid phone"
+    },
+    "template": {
+      "noteTags": "Tags: separate with a semicolon (vip;lead) — works in all three formats. In a .csv, if you prefer commas, wrap the cell in quotes: \"vip, lead\". In Excel or Google Sheets, just type it in the cell.",
+      "noteTagCreation": "A new tag is created during import — if you're the account owner or an admin. Agents will see unknown tags get skipped, with a warning at the end.",
+      "noteHeader": "The first row is always the header. Columns the system doesn't recognize are ignored without error — you can leave your spreadsheet as it is."
     }
   },
   "Pipelines": {
@@ -1270,7 +1304,7 @@
       "upload": {
         "choose": "Choose a file",
         "orDrag": "or drag it here",
-        "accepted": "CSV or Excel (.xlsx), up to {max}",
+        "accepted": "CSV or Excel (.xlsx), up to {max}. Semicolon-separated .csv (the Excel-Brazil default) works too.",
         "parsing": "Reading…",
         "clear": "Remove file",
         "sheet": "Sheet",
@@ -1285,7 +1319,7 @@
         "optional": "optional",
         "alsoAccepted": "also accepted: {aliases}",
         "columns": {
-          "phone": "Phone with country and area code — e.g. 5511987654321. Spaces, parentheses, dashes and \"+\" are ignored.",
+          "phone": "Phone with area code — e.g. 11987654321. On a Brazilian deployment the 55 country code is added automatically. Spaces, parentheses, dashes and \"+\" are ignored.",
           "name": "Contact name, used in the template variables.",
           "email": "Contact email.",
           "company": "Contact company.",

@@ -19,7 +19,8 @@ backup, migração — não tem caminho.
 
 Existe precedente de download no repositório
 (`src/app/(dashboard)/broadcasts/[id]/page.tsx`,
-`src/components/broadcasts/audience/audience-template-hint.tsx`), mas ambos geram
+`src/components/import/spreadsheet-template-hint.tsx` — movido pela SPEC 052 F4,
+era `audience-template-hint.tsx`), mas ambos geram
 o arquivo no navegador a partir de dados já em memória. Exportar contatos é
 diferente por três motivos, e são eles que definem esta SPEC:
 
@@ -71,13 +72,15 @@ contatos do escopo escolhido, sem teto de paginação, com trilha de auditoria.
 
 Regra do repositório mantida: **lógica pura em `src/lib/contacts/`, efeito
 colateral (download) no componente**, espelhando
-`src/lib/audience/template-file.ts` ↔ `audience-template-hint.tsx`.
+`src/lib/spreadsheet/template-file.ts` ↔ `spreadsheet-template-hint.tsx`
+(movidos pela SPEC 052 F1/F4; eram `src/lib/audience/template-file.ts` ↔
+`audience-template-hint.tsx`).
 
 ### 1.1 Por que POST e não GET
 
 A lista de ids selecionados pode passar de mil itens — não cabe em querystring.
 Com POST o browser não dispara download sozinho: o cliente lê `res.blob()` e
-monta o `<a download>` (mesmo padrão de `audience-template-hint.tsx:31-52`, com
+monta o `<a download>` (mesmo padrão de `spreadsheet-template-hint.tsx:50-70`, com
 BOM e `setTimeout(revoke, 0)` — revogar logo após o clique cancela o download).
 
 ### 1.2 Por que o cliente de sessão, e não `supabaseAdmin`

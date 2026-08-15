@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Sheet, Upload } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -9,15 +10,10 @@ import {
   normalizeKey,
 } from '@/lib/contacts/dedupe';
 import {
-  parseContactCsv,
-  type ParsedContactRow,
-} from '@/lib/contacts/parse-contact-csv';
-import {
   assignImportedContactTags,
   resolveImportTagIds,
   type ContactTagAssignment,
 } from '@/lib/contacts/resolve-import-tags';
-import { normalizeContactPhone, type PhoneRejectReason } from '@/lib/phone/br';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -30,8 +26,6 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
-  Upload,
-  FileText,
   Loader2,
   CheckCircle,
   XCircle,
@@ -40,25 +34,22 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
+import {
+  ImportSourcePicker,
+  type ImportSourceOption,
+} from '@/components/import/import-source-picker';
+import { SpreadsheetTemplateHint } from '@/components/import/spreadsheet-template-hint';
+import { SpreadsheetDropzone } from '@/components/import/spreadsheet-dropzone';
+import { ImportRejectSummary } from '@/components/import/import-reject-summary';
+import { GoogleSheetsSource } from '@/components/broadcasts/audience/google-sheets-source';
+import { useSpreadsheetParser } from '@/hooks/use-spreadsheet-parser';
+import type { NormalizedAudienceRow } from '@/lib/audience/types';
+
 const DEFAULT_TAG_COLOR = '#3b82f6';
 const PREVIEW_LIMIT = 5;
-const REJECTED_PREVIEW_LIMIT = 10;
 
-/** Uma linha do CSV cujo telefone não passou pela validação (SPEC 050 F3/D-4). */
-interface RejectedContactRow {
-  sourceRow: number;
-  rawPhone: string;
-  name?: string;
-  reason: PhoneRejectReason;
-}
-
-function truncateFilename(name: string, max = 48): string {
-  if (name.length <= max) return name;
-  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
-  const base = name.slice(0, name.length - ext.length);
-  const keep = max - ext.length - 1;
-  return `${base.slice(0, Math.max(keep, 12))}…${ext}`;
-}
+/** As duas fontes que o importador de contatos oferece (SPEC 052 §5.1). */
+type ContactImportSource = 'google_sheets' | 'spreadsheet';
 
 function PreviewCell({
   value,
@@ -137,17 +128,15 @@ export function ImportModal({
   onImported,
 }: ImportModalProps) {
   const t = useTranslations('Contacts.importModal');
-  const tReason = useTranslations('Import.reason');
+  const tParseError = useTranslations('Broadcasts.audience.parseError');
   const supabase = createClient();
   const { accountId, canEditSettings } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [source, setSource] = useState<ContactImportSource>('google_sheets');
   const [file, setFile] = useState<File | null>(null);
-  const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
-  const [invalidRows, setInvalidRows] = useState<RejectedContactRow[]>([]);
-  const [rejectedExpanded, setRejectedExpanded] = useState(false);
-  const [hasTagsColumn, setHasTagsColumn] = useState(false);
-  const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
+  const [activeSheet, setActiveSheet] = useState<string | undefined>();
+  const [sheetsLoading, setSheetsLoading] = useState(false);
+  const [sheetsErrorCode, setSheetsErrorCode] = useState<string | null>(null);
   const [tagColorByKey, setTagColorByKey] = useState<Map<string, string>>(
     new Map()
   );
@@ -159,16 +148,35 @@ export function ImportModal({
     tagsAssigned: number;
   } | null>(null);
 
+  const parser = useSpreadsheetParser();
+
+  const sourceOptions = useMemo<ImportSourceOption<ContactImportSource>[]>(
+    () => [
+      {
+        id: 'google_sheets',
+        icon: Sheet,
+        label: t('source.googleSheets.label'),
+        description: t('source.googleSheets.description'),
+        recommended: true,
+      },
+      {
+        id: 'spreadsheet',
+        icon: Upload,
+        label: t('source.spreadsheet.label'),
+        description: t('source.spreadsheet.description'),
+      },
+    ],
+    [t]
+  );
+
   function reset() {
+    setSource('google_sheets');
     setFile(null);
-    setParsedRows([]);
-    setInvalidRows([]);
-    setRejectedExpanded(false);
-    setHasTagsColumn(false);
-    setHasCompanyColumn(false);
+    setActiveSheet(undefined);
+    setSheetsErrorCode(null);
     setTagColorByKey(new Map());
     setResult(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    parser.reset();
   }
 
   function handleOpenChange(next: boolean) {
@@ -176,75 +184,101 @@ export function ImportModal({
     onOpenChange(next);
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
-
-    setFile(selected);
+  function handleSourceChange(next: ContactImportSource) {
+    setSource(next);
+    setSheetsErrorCode(null);
+    setFile(null);
+    setActiveSheet(undefined);
     setResult(null);
+    parser.reset();
+  }
 
-    const text = await selected.text();
-    const {
-      rows,
-      hasTagsColumn: csvHasTags,
-      hasCompanyColumn: csvHasCompany,
-    } = parseContactCsv(text);
+  function handleFileSelected(selected: File) {
+    setFile(selected);
+    setActiveSheet(undefined);
+    setResult(null);
+    parser.parseFile(selected);
+  }
 
-    if (rows.length === 0) {
-      toast.error(t('toastNoValidRows'));
-      setParsedRows([]);
-      setInvalidRows([]);
-      setHasTagsColumn(false);
-      setHasCompanyColumn(false);
+  function handleClearFile() {
+    setFile(null);
+    setActiveSheet(undefined);
+    setResult(null);
+    parser.reset();
+  }
+
+  function handleSheetChange(name: string) {
+    if (!file) return;
+    setActiveSheet(name);
+    parser.parseFile(file, { sheetName: name });
+  }
+
+  async function handleSheetsImport(url: string) {
+    setSheetsLoading(true);
+    setSheetsErrorCode(null);
+    setResult(null);
+    try {
+      const res = await fetch('/api/import/google-sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setSheetsErrorCode(body.code ?? 'fetch_failed');
+        return;
+      }
+
+      // O CSV baixado segue o mesmo caminho de um arquivo local — uma
+      // única implementação de parsing para as três fontes.
+      await parser.parseCsvText(await res.text());
+    } catch {
+      setSheetsErrorCode('fetch_failed');
+    } finally {
+      setSheetsLoading(false);
+    }
+  }
+
+  // Referência estável entre renders (não uma `[]` nova a cada vez) —
+  // é dependência de outros `useMemo`/`useEffect` abaixo.
+  const rows: NormalizedAudienceRow[] = useMemo(
+    () => parser.result?.audience.rows ?? [],
+    [parser.result]
+  );
+
+  // Cores das etiquetas já existentes na conta — só busca quando a
+  // planilha lida realmente carrega alguma etiqueta.
+  useEffect(() => {
+    if (!accountId || !rows.some((row) => row.tagNames.length > 0)) {
       setTagColorByKey(new Map());
       return;
     }
 
-    // SPEC 050 F3: normaliza cada linha (dígitos-only, com DDI) e valida
-    // a regra brasileira quando o deployment é BR — ANTES do dedup, para
-    // que "+55 19 …" e "5519…" já cheguem lá como a mesma chave. Linhas
-    // com telefone inválido nunca viram contato; entram na lista de
-    // rejeitadas com o número da linha original e o motivo (D-4).
-    const validRows: ParsedContactRow[] = [];
-    const rejectedRows: RejectedContactRow[] = [];
-    for (const row of rows) {
-      const result = normalizeContactPhone(row.phone);
-      if (result.ok) {
-        validRows.push({ ...row, phone: result.phone });
-      } else {
-        rejectedRows.push({
-          sourceRow: row.sourceRow,
-          rawPhone: row.phone,
-          name: row.name,
-          reason: result.reason,
-        });
-      }
-    }
-
-    setParsedRows(validRows);
-    setInvalidRows(rejectedRows);
-    setHasTagsColumn(csvHasTags);
-    setHasCompanyColumn(csvHasCompany);
-
-    if (csvHasTags && accountId) {
-      const { data: tags } = await supabase
+    let cancelled = false;
+    (async () => {
+      const client = createClient();
+      const { data: tags } = await client
         .from('tags')
         .select('name, color')
         .eq('account_id', accountId);
-
+      if (cancelled) return;
       const colors = new Map<string, string>();
       for (const tag of tags ?? []) {
         const key = tag.name.trim().toLowerCase();
         if (!colors.has(key)) colors.set(key, tag.color);
       }
       setTagColorByKey(colors);
-    } else {
-      setTagColorByKey(new Map());
-    }
-  }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parser.result, accountId]);
 
   async function handleImport() {
-    if (parsedRows.length === 0) return;
+    if (rows.length === 0) return;
     setImporting(true);
 
     try {
@@ -261,7 +295,10 @@ export function ImportModal({
       let failed = 0;
 
       // 1) De-dupe within the file by normalized phone (keep first).
-      const { unique, duplicates: inFileDupes } = dedupeByPhone(parsedRows);
+      //    A esta altura o normalizador compartilhado (SPEC 052 F2) já
+      //    deduplicou dentro do arquivo — isto é uma segunda camada,
+      //    barata e inofensiva, não um passo redundante removido.
+      const { unique, duplicates: inFileDupes } = dedupeByPhone(rows);
       skipped += inFileDupes;
 
       // 2) Skip numbers already in this account. One read of the
@@ -309,7 +346,7 @@ export function ImportModal({
 
       for (let i = 0; i < toInsert.length; i += chunkSize) {
         const chunk = toInsert.slice(i, i + chunkSize);
-        const rows = chunk.map((row) => ({
+        const insertRows = chunk.map((row) => ({
           user_id: user.id,
           account_id: accountId,
           phone: row.phone,
@@ -320,18 +357,18 @@ export function ImportModal({
 
         const { data, error } = await supabase
           .from('contacts')
-          .insert(rows)
+          .insert(insertRows)
           .select('id');
 
         if (error) {
           // Retry individually so one bad/duplicate row doesn't sink
           // the whole chunk.
-          for (let j = 0; j < rows.length; j++) {
-            const row = rows[j];
+          for (let j = 0; j < insertRows.length; j++) {
+            const insertRow = insertRows[j];
             const source = chunk[j];
             const { data: singleData, error: singleErr } = await supabase
               .from('contacts')
-              .insert(row)
+              .insert(insertRow)
               .select('id')
               .single();
 
@@ -407,113 +444,84 @@ export function ImportModal({
     }
   }
 
-  const preview = parsedRows.slice(0, PREVIEW_LIMIT);
-  const rejectedPreview = rejectedExpanded
-    ? invalidRows
-    : invalidRows.slice(0, REJECTED_PREVIEW_LIMIT);
-  // Tags: OR — show when the CSV declares a column or preview rows carry
-  // values, so an all-empty tags column still renders for validation.
-  const previewHasTags =
-    hasTagsColumn || preview.some((row) => row.tagNames.length > 0);
-  // Company: AND — hide unless the CSV declares it and preview has data,
-  // avoiding an all-dash column that wastes horizontal space.
-  const previewHasCompany =
-    hasCompanyColumn && preview.some((row) => row.company?.trim());
+  const preview = rows.slice(0, PREVIEW_LIMIT);
+  const previewHasTags = rows.some((row) => row.tagNames.length > 0);
+  const previewHasCompany = rows.some((row) => row.company?.trim());
 
   const tagStats = useMemo(() => {
     const names = new Set<string>();
     let rowsWithTags = 0;
-    for (const row of parsedRows) {
+    for (const row of rows) {
       if (row.tagNames.length === 0) continue;
       rowsWithTags++;
       for (const name of row.tagNames) names.add(name.trim().toLowerCase());
     }
     return { unique: names.size, rowsWithTags };
-  }, [parsedRows]);
+  }, [rows]);
+
+  const canSubmit =
+    rows.length > 0 && !importing && !parser.parsing && !sheetsLoading;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="border-border/80 bg-popover text-popover-foreground flex max-h-[min(90vh,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="border-border/80 bg-popover text-popover-foreground flex max-h-[min(90vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <div className="border-border/80 shrink-0 space-y-4 border-b px-6 pt-6 pb-5">
           <DialogHeader className="gap-1.5">
             <DialogTitle className="text-popover-foreground text-lg">
               {t('title')}
             </DialogTitle>
-            <DialogDescription
-              className="text-muted-foreground leading-relaxed"
-              dangerouslySetInnerHTML={{
-                __html: t.markup('desc', {
-                  phoneCode: (chunks) =>
-                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  nameCode: (chunks) =>
-                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  emailCode: (chunks) =>
-                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  companyCode: (chunks) =>
-                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  tagsCode: (chunks) =>
-                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                }),
-              }}
-            />
+            <DialogDescription className="text-muted-foreground leading-relaxed">
+              {t('desc')}
+            </DialogDescription>
           </DialogHeader>
 
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => fileInputRef.current?.click()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ')
-                fileInputRef.current?.click();
-            }}
-            className={cn(
-              'group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-5 transition-all',
-              file
-                ? 'border-primary/35 bg-primary/[0.04]'
-                : 'hover:border-primary/40 border-border/80 bg-background/40 hover:bg-background/70'
-            )}
-          >
-            {file ? (
-              <>
-                <div className="bg-primary/15 ring-primary/25 flex size-10 items-center justify-center rounded-lg ring-1">
-                  <FileText className="text-primary size-5" />
-                </div>
-                <p
-                  className="text-popover-foreground max-w-full truncate px-2 text-sm font-medium"
-                  title={file.name}
-                >
-                  {truncateFilename(file.name)}
-                </p>
-                <span className="bg-muted text-muted-foreground rounded-full px-2.5 py-0.5 text-[11px] font-medium">
-                  {t('rowsReady', { count: parsedRows.length })}
-                </span>
-              </>
-            ) : (
-              <>
-                <div className="bg-muted/80 ring-border/80 group-hover:bg-muted flex size-10 items-center justify-center rounded-lg ring-1 transition-colors">
-                  <Upload className="text-muted-foreground group-hover:text-foreground size-5" />
-                </div>
-                <p className="text-muted-foreground text-sm">
-                  {t('uploadDropzone')}
-                </p>
-                <p className="text-muted-foreground text-[11px]">
-                  {t('uploadHint')}
-                </p>
-              </>
-            )}
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleFileChange}
-            className="hidden"
+          <ImportSourcePicker
+            value={source}
+            onChange={handleSourceChange}
+            options={sourceOptions}
+            recommendedLabel={t('source.recommended')}
           />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          {preview.length > 0 && !result && (
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+          {/* Modelo + colunas aceitas. Vem ANTES do campo de upload de
+              propósito: quem chega aqui sem planilha pronta baixa o
+              modelo em vez de descobrir o formato pelo erro de parsing. */}
+          <SpreadsheetTemplateHint
+            namespace="Contacts.importModal.template"
+            showTagsNote
+            showTagCreationNote
+            showHeaderNote
+          />
+
+          {source === 'google_sheets' && (
+            <GoogleSheetsSource
+              onImport={handleSheetsImport}
+              loading={sheetsLoading || parser.parsing}
+              errorCode={sheetsErrorCode}
+            />
+          )}
+
+          {source === 'spreadsheet' && (
+            <SpreadsheetDropzone
+              file={file}
+              parsing={parser.parsing}
+              progress={parser.progress}
+              onFileSelected={handleFileSelected}
+              onClear={handleClearFile}
+              sheetNames={parser.result?.sheetNames}
+              activeSheet={activeSheet}
+              onSheetChange={handleSheetChange}
+            />
+          )}
+
+          {parser.error && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {tParseError(parser.error.code, parser.error.meta ?? {})}
+            </div>
+          )}
+
+          {preview.length > 0 && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">
@@ -606,65 +614,27 @@ export function ImportModal({
                 </div>
               </div>
 
-              {parsedRows.length > PREVIEW_LIMIT && (
+              {rows.length > PREVIEW_LIMIT && (
                 <p className="text-muted-foreground text-center text-[11px]">
-                  {t('moreRows', { count: parsedRows.length - PREVIEW_LIMIT })}
+                  {t('moreRows', { count: rows.length - PREVIEW_LIMIT })}
                 </p>
               )}
             </div>
           )}
 
-          {/* SPEC 050 D-4: linhas com telefone inválido nunca somem em
-              silêncio — cada uma aparece com o número da linha original
-              e o motivo. Fica fora do bloco de preview de propósito: se
-              o arquivo inteiro tiver telefones ruins, `preview` fica
-              vazio mas este resumo continua aparecendo. */}
-          {invalidRows.length > 0 && !result && (
-            <div className="border-border bg-card/50 mt-3 space-y-2 rounded-xl border p-4">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-400" />
-                <p className="text-foreground text-sm font-medium">
-                  {t('rejectedRows', { count: invalidRows.length })}
-                </p>
-              </div>
-
-              <div className="border-border rounded-lg border">
-                <ul className="border-border max-h-48 divide-y overflow-y-auto">
-                  {rejectedPreview.map((row) => (
-                    <li
-                      key={`${row.sourceRow}-${row.rawPhone}`}
-                      className="border-border/50 flex items-center justify-between gap-3 border-b px-3 py-1.5 text-xs last:border-b-0"
-                    >
-                      <span className="text-muted-foreground shrink-0 tabular-nums">
-                        {t('rejectedLine', { n: row.sourceRow })}
-                      </span>
-                      <span className="text-foreground min-w-0 flex-1 truncate font-mono">
-                        {row.rawPhone || '—'}
-                        {row.name && (
-                          <span className="text-muted-foreground ml-2 font-sans">
-                            {row.name}
-                          </span>
-                        )}
-                      </span>
-                      <span className="shrink-0 text-amber-300">
-                        {tReason(row.reason)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-
-                {!rejectedExpanded &&
-                  invalidRows.length > REJECTED_PREVIEW_LIMIT && (
-                    <button
-                      type="button"
-                      onClick={() => setRejectedExpanded(true)}
-                      className="text-primary hover:bg-muted/50 w-full px-3 py-1.5 text-xs font-medium"
-                    >
-                      {t('showAllRejected', { count: invalidRows.length })}
-                    </button>
-                  )}
-              </div>
-            </div>
+          {/* SPEC 052 D-3: continua visível junto do resultado — antes
+              o resumo sumia assim que a importação terminava, que é
+              exatamente quando o usuário quer conferir o que ficou de
+              fora. */}
+          {parser.result && (
+            <ImportRejectSummary
+              namespace="Contacts.importModal.summary"
+              stats={parser.result.audience.stats}
+              invalid={parser.result.audience.invalid}
+              sheetName={
+                source === 'spreadsheet' ? parser.result.sheetName : undefined
+              }
+            />
           )}
 
           {result && (
@@ -714,14 +684,12 @@ export function ImportModal({
           {!result && (
             <Button
               type="button"
-              disabled={parsedRows.length === 0 || importing}
+              disabled={!canSubmit}
               onClick={handleImport}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
-              {parsedRows.length > 0
-                ? t('importBtn', { count: parsedRows.length })
-                : t('importBtn', { count: 0 })}
+              {t('importBtn', { count: rows.length })}
             </Button>
           )}
         </DialogFooter>

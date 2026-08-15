@@ -706,16 +706,49 @@
     },
     "importModal": {
       "title": "Importar contatos",
-      "desc": "Envie um CSV com a coluna obrigatória <phoneCode>phone</phoneCode>. Opcional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (separadas por vírgula; use aspas em células com múltiplas etiquetas).",
-      "uploadDropzone": "Clique para escolher um arquivo CSV",
-      "uploadHint": ".csv até o limite do seu navegador",
-      "rowsReady": "{count} linha pronta",
-      "rowsReady_plural": "{count} linhas prontas",
+      "desc": "Importe por um link do Google Planilhas, um arquivo .csv ou um Excel (.xlsx).",
+      "source": {
+        "recommended": "Recomendado",
+        "googleSheets": {
+          "label": "Google Planilhas",
+          "description": "Cole o link de uma planilha que você já mantém."
+        },
+        "spreadsheet": {
+          "label": "Arquivo CSV ou Excel",
+          "description": "Envie um .csv ou .xlsx do seu computador."
+        }
+      },
+      "template": {
+        "title": "Modelo de planilha",
+        "subtitle": "Baixe o modelo, substitua as linhas de exemplo pelos seus contatos e envie. A primeira linha precisa ser o cabeçalho.",
+        "download": "Baixar modelo (.csv)",
+        "required": "obrigatória",
+        "optional": "opcional",
+        "alsoAccepted": "também aceita: {aliases}",
+        "columns": {
+          "phone": "Telefone com DDD — ex.: 11987654321. Numa instalação brasileira o DDI 55 é acrescentado sozinho. Espaços, parênteses, traços e o \"+\" são ignorados.",
+          "name": "Nome do contato.",
+          "email": "E-mail do contato.",
+          "company": "Empresa do contato.",
+          "tags": "Etiquetas do contato. Uma por célula, ou várias separadas por ponto e vírgula: vip;lead."
+        }
+      },
       "preview": "Pré-visualização · primeiras {count}",
       "previewTags": "{tags} etiqueta · {contacts} contato",
       "previewTags_plural": "{tags} etiquetas · {contacts} contatos",
       "moreRows": "+ {count} linha não mostrada",
       "moreRows_plural": "+ {count} linhas não mostradas",
+      "summary": {
+        "title": "Resumo da importação",
+        "sheet": "Aba: {name}",
+        "read": "lidas",
+        "valid": "válidas",
+        "duplicates": "duplicadas",
+        "invalid": "inválidas",
+        "rejectedRows": "{count} linhas não foram importadas",
+        "line": "Linha {n}",
+        "showAll": "Ver todas as {count}"
+      },
       "importComplete": "Importação concluída",
       "resultImported": "{count} importado(s)",
       "resultTags": "{count} etiqueta atribuída",
@@ -734,7 +767,6 @@
       "close": "Fechar",
       "importBtn": "Importar {count} contato",
       "importBtn_plural": "Importar {count} contatos",
-      "toastNoValidRows": "Nenhuma linha válida encontrada. Verifique se o CSV tem uma coluna \"phone\".",
       "toastTagsWarning": "Contatos importados, mas algumas atribuições de etiqueta falharam.",
       "toastImported": "{count} contato importado",
       "toastImported_plural": "{count} contatos importados",
@@ -745,10 +777,7 @@
       "toastSkipped_plural": "{count} duplicados ignorados",
       "toastFailed": "{count} contato falhou ao importar",
       "toastFailed_plural": "{count} contatos falharam ao importar",
-      "toastError": "Falha na importação",
-      "rejectedRows": "{count} linhas não foram importadas",
-      "rejectedLine": "Linha {n}",
-      "showAllRejected": "Mostrar todas as {count}"
+      "toastError": "Falha na importação"
     },
     "exportModal": {
       "title": "Exportar contatos",
@@ -864,6 +893,11 @@
       "duplicate_in_file": "duplicada",
       "missing_phone": "sem telefone",
       "invalid_phone": "telefone inválido"
+    },
+    "template": {
+      "noteTags": "Etiquetas. Separe por ponto e vírgula (vip;lead) — funciona nos três formatos. Se preferir vírgula num arquivo .csv, coloque a célula entre aspas: \"vip, lead\". No Excel e no Google Planilhas basta escrever na célula.",
+      "noteTagCreation": "Etiqueta nova é criada na importação — se você for dono ou administrador da conta. Agentes veem as etiquetas desconhecidas serem ignoradas, com aviso ao final.",
+      "noteHeader": "A primeira linha é sempre o cabeçalho. Colunas que o sistema não conhece são ignoradas sem erro — pode deixar a planilha do jeito que ela já está."
     }
   },
   "Pipelines": {
@@ -1270,7 +1304,7 @@
       "upload": {
         "choose": "Escolher arquivo",
         "orDrag": "ou arraste aqui",
-        "accepted": "CSV ou Excel (.xlsx), até {max}",
+        "accepted": "CSV ou Excel (.xlsx), até {max}. CSV separado por ponto e vírgula (padrão do Excel em português) também funciona.",
         "parsing": "Lendo…",
         "clear": "Remover arquivo",
         "sheet": "Aba",
@@ -1285,7 +1319,7 @@
         "optional": "opcional",
         "alsoAccepted": "também aceita: {aliases}",
         "columns": {
-          "phone": "Telefone com DDI e DDD — ex.: 5511987654321. Espaços, parênteses, traços e o \"+\" são ignorados.",
+          "phone": "Telefone com DDD — ex.: 11987654321. Numa instalação brasileira o DDI 55 é acrescentado sozinho. Espaços, parênteses, traços e o \"+\" são ignorados.",
           "name": "Nome do contato, usado nas variáveis do template.",
           "email": "E-mail do contato.",
           "company": "Empresa do contato.",

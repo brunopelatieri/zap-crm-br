@@ -1,0 +1,21 @@
+﻿telefone;nome;email;empresa;etiquetas
+11987654321;Maria Silva;maria.silva@exemplo.com.br;Silva Consultoria;vip
+21998765432;João Pereira;joao.pereira@exemplo.com.br;Pereira & Cia;cliente
+31976543210;Ana Carolina Souza;ana.souza@exemplo.com.br;;lead
+41991234567;Carlos Eduardo;carlos.eduardo@exemplo.com.br;Eduardo Transportes;"vip;atacado"
+51987651234;Fernanda Lima;fernanda.lima@exemplo.com.br;;
+61999998888;Maria D'Ávila;maria.davila@exemplo.com.br;D'Ávila Advocacia;vip
+71988887777;José Antônio;jose.antonio@exemplo.com.br;;cliente
+81977776666;Patrícia Gonçalves;patricia.goncalves@exemplo.com.br;Gonçalves Móveis;"lead;novo"
+85991112222;Rafael Santos;rafael.santos@exemplo.com.br;;
+11955554444;Juliana Ribeiro;juliana.ribeiro@exemplo.com.br;Ribeiro Design;vip
+19988776655;Bruno Alves;bruno.alves@exemplo.com.br;;cliente
+27977778888;Camila Ferreira;camila.ferreira@exemplo.com.br;Ferreira & Filhos;
+47999887766;O'Brien Consultoria;contato@obrien.com.br;O'Brien Consultoria;vip
+62991223344;Thiago Rodrigues;thiago.rodrigues@exemplo.com.br;;lead
+81986655443;Larissa Martins;larissa.martins@exemplo.com.br;Martins Contabilidade;"vip;prioritario"
+91987654321;Gabriel Costa;gabriel.costa@exemplo.com.br;;
+11987651111;Conceição Aparecida;conceicao.aparecida@exemplo.com.br;Aparecida Salão;cliente
+21991110000;Vinícius Almeida;vinicius.almeida@exemplo.com.br;;
+31998887777;Beatriz Nogueira;beatriz.nogueira@exemplo.com.br;Nogueira Advocacia;"lead;juridico"
+11987654322;André Barbosa;andre.barbosa@exemplo.com.br;;vip

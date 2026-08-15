@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Modelo de planilha + referência das colunas (SPEC 044 §3.1).
+ * Modelo de planilha + referência das colunas (SPEC 044 §3.1, SPEC 052 F4).
  *
  * Aparece nas duas fontes importadas — planilha local e Google
  * Planilhas — porque em ambas quem monta o arquivo é o usuário.
@@ -13,6 +13,20 @@
  *
  * A lista sai de `SPREADSHEET_COLUMNS`, a mesma fonte que o parser usa —
  * o que está escrito aqui é, por construção, o que o parser aceita.
+ *
+ * Compartilhado entre disparo e contatos (SPEC 052 §5.1): o namespace
+ * i18n vem por prop porque os dois têm texto próprio (`title`,
+ * `subtitle`...); a lista de colunas é sempre a mesma, porque os dois
+ * leem a mesma planilha pelo mesmo parser.
+ *
+ * As notas do §6.2 (separador de etiquetas, criação de etiqueta por
+ * papel, cabeçalho) traduzem por `Import.template.*` — um namespace à
+ * parte do `namespace` recebido por prop, porque o TEXTO delas é
+ * universal (mesmo parser, mesma regra), diferente de `title`/
+ * `subtitle`, que cada consumidor escreve à sua maneira. Cada nota é
+ * opt-in: a nota de criação de etiqueta só faz sentido para quem cria
+ * etiqueta na importação (hoje: contatos — a audiência de disparo não
+ * materializa etiqueta nenhuma a partir da planilha).
  */
 
 import { Download, FileSpreadsheet } from 'lucide-react';
@@ -25,8 +39,27 @@ import {
   buildAudienceTemplateCsv,
 } from '@/lib/spreadsheet/template-file';
 
-export function AudienceTemplateHint() {
-  const t = useTranslations('Broadcasts.audience.template');
+export interface SpreadsheetTemplateHintProps {
+  /** Namespace i18n com `title`, `subtitle`, `download`, `required`,
+   *  `optional`, `alsoAccepted` e `columns.*` — cada consumidor tem o seu. */
+  namespace: string;
+  /** Nota do separador de etiquetas (`;` funciona sem aspas nos 3 formatos). */
+  showTagsNote?: boolean;
+  /** Nota de que etiqueta nova é criada na importação, conforme o papel. */
+  showTagCreationNote?: boolean;
+  /** Nota de que a primeira linha é sempre o cabeçalho. */
+  showHeaderNote?: boolean;
+}
+
+export function SpreadsheetTemplateHint({
+  namespace,
+  showTagsNote,
+  showTagCreationNote,
+  showHeaderNote,
+}: SpreadsheetTemplateHintProps) {
+  const t = useTranslations(namespace);
+  const tNote = useTranslations('Import.template');
+  const hasNotes = showTagsNote || showTagCreationNote || showHeaderNote;
 
   function handleDownload() {
     // U+FEFF (BOM) é o que faz o Excel abrir "João" em vez de "JoÃ£o".
@@ -102,6 +135,26 @@ export function AudienceTemplateHint() {
           </li>
         ))}
       </ul>
+
+      {hasNotes && (
+        <ul className="border-border/70 mt-3 space-y-1 border-t pt-3">
+          {showTagsNote && (
+            <li className="text-muted-foreground text-[11px]">
+              {tNote('noteTags')}
+            </li>
+          )}
+          {showTagCreationNote && (
+            <li className="text-muted-foreground text-[11px]">
+              {tNote('noteTagCreation')}
+            </li>
+          )}
+          {showHeaderNote && (
+            <li className="text-muted-foreground text-[11px]">
+              {tNote('noteHeader')}
+            </li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }
