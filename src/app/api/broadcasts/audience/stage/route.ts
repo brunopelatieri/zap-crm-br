@@ -24,8 +24,9 @@ import {
 } from '@/lib/rate-limit';
 import { BroadcastError } from '@/lib/whatsapp/broadcast-core';
 import { stageAudience, type StageAudienceInput } from '@/lib/audience/stage';
-import { MAX_AUDIENCE_ROWS } from '@/lib/audience/types';
+import { MAX_AUDIENCE_ROWS } from '@/lib/spreadsheet/types';
 import type { CustomFieldOperator } from '@/lib/audience/estimate';
+import type { InvalidReason } from '@/lib/audience/types';
 
 const CUSTOM_FIELD_OPERATORS: CustomFieldOperator[] = [
   'is',
@@ -33,10 +34,28 @@ const CUSTOM_FIELD_OPERATORS: CustomFieldOperator[] = [
   'contains',
 ];
 
-const INVALID_REASONS = new Set([
+// SPEC 052 D-2: mesmo vocabulário de `InvalidReason` (SPEC 050
+// `PhoneRejectReason` + `duplicate_in_file`) — um `Set<string>` porque
+// a validação de fronteira do request checa um valor ainda não
+// confiável, antes de ele virar `InvalidReason` de verdade.
+//
+// `missing_phone`/`invalid_phone` (achado de revisão pós-F2): um
+// navegador com o bundle de ANTES deste deploy ainda pode mandar o
+// vocabulário antigo até recarregar a aba. Rejeitar em silêncio aqui
+// contrariaria o "nada é descartado em silêncio" que este módulo
+// promete — por isso os dois ficam aceitos, com tradução própria em
+// `Import.reason.*` (sinônimos, mesmo texto de `empty`/`invalid_phone`
+// de antes), até a limpeza do vocabulário antigo.
+const INVALID_REASONS = new Set<string>([
+  'empty',
+  'invalid_length',
+  'invalid_ddd',
+  'mobile_invalid_ninth_digit',
+  'invalid_local_prefix',
+  'missing_country_code',
+  'duplicate_in_file',
   'missing_phone',
   'invalid_phone',
-  'duplicate_in_file',
 ]);
 
 const STATUS_BY_CODE: Record<string, number> = {
@@ -133,7 +152,7 @@ function parseAudience(raw: unknown): StageAudienceInput | null {
       sourceRow: number;
       rawPhone: string;
       name?: string;
-      reason: 'missing_phone' | 'invalid_phone' | 'duplicate_in_file';
+      reason: InvalidReason;
     }[] = [];
     for (const row of raw.invalidRows) {
       if (
@@ -149,8 +168,7 @@ function parseAudience(raw: unknown): StageAudienceInput | null {
         sourceRow: row.sourceRow,
         rawPhone: row.rawPhone,
         name: typeof row.name === 'string' ? row.name : undefined,
-        reason: row.reason as
-          'missing_phone' | 'invalid_phone' | 'duplicate_in_file',
+        reason: row.reason as InvalidReason,
       });
     }
 

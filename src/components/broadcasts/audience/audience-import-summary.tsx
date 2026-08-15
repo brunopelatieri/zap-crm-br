@@ -54,7 +54,7 @@ export function AudienceImportSummary({
   sheetName?: string;
 }) {
   const t = useTranslations('Broadcasts.audience.summary');
-  const tReason = useTranslations('Broadcasts.audience.invalidReason');
+  const tReason = useTranslations('Import.reason');
   const [expanded, setExpanded] = useState(false);
 
   const { stats, invalid } = audience;

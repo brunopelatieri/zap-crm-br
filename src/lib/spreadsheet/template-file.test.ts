@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAudience } from './normalize';
-import { AUDIENCE_COLUMNS, parseAudienceCsv } from './parse-csv';
+import { normalizeAudience } from '@/lib/audience/normalize';
+import { SPREADSHEET_COLUMNS, parseAudienceCsv } from './parse-csv';
 import { buildAudienceTemplateCsv } from './template-file';
 
 describe('buildAudienceTemplateCsv', () => {
@@ -8,7 +8,7 @@ describe('buildAudienceTemplateCsv', () => {
     const [header] = buildAudienceTemplateCsv().split('\r\n');
 
     expect(header.split(',')).toEqual(
-      AUDIENCE_COLUMNS.map((column) => column.aliases[0])
+      SPREADSHEET_COLUMNS.map((column) => column.aliases[0])
     );
   });
 

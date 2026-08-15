@@ -21,9 +21,9 @@
  */
 
 import { rowsFromTable, mapAudienceColumns } from './parse-csv';
-import { AudienceParseError, MAX_AUDIENCE_ROWS } from './types';
 import type { AudienceColumnMap } from './parse-csv';
-import type { RawAudienceRow } from './types';
+import type { RawAudienceRow } from '@/lib/audience/types';
+import { SpreadsheetParseError, MAX_AUDIENCE_ROWS } from './types';
 
 /** Uma célula como `read-excel-file` a entrega. */
 export type XlsxCell = string | number | boolean | Date | null | undefined;
@@ -82,7 +82,10 @@ export function sheetToAudienceRows(
   const [headerCells, ...dataCells] = sheet.data;
 
   if (!headerCells || headerCells.length === 0) {
-    throw new AudienceParseError('empty_file', 'A aba selecionada está vazia.');
+    throw new SpreadsheetParseError(
+      'empty_file',
+      'A aba selecionada está vazia.'
+    );
   }
 
   const headers = headerCells.map((c) => cellToString(c).toLowerCase());
@@ -95,14 +98,14 @@ export function sheetToAudienceRows(
     .filter((r) => !isBlankRow(r.values));
 
   if (rows.length === 0) {
-    throw new AudienceParseError(
+    throw new SpreadsheetParseError(
       'empty_file',
       'A aba selecionada não tem linhas de dados.'
     );
   }
 
   if (rows.length > MAX_AUDIENCE_ROWS) {
-    throw new AudienceParseError(
+    throw new SpreadsheetParseError(
       'too_many_rows',
       `A planilha tem mais de ${MAX_AUDIENCE_ROWS} linhas.`,
       { max: MAX_AUDIENCE_ROWS, found: rows.length }
@@ -152,7 +155,7 @@ export function parseXlsxSheets(
   options: { sheetName?: string; columns?: AudienceColumnMap } = {}
 ): XlsxParseResult {
   if (sheets.length === 0) {
-    throw new AudienceParseError('empty_file', 'A planilha não tem abas.');
+    throw new SpreadsheetParseError('empty_file', 'A planilha não tem abas.');
   }
 
   const sheetNames = sheets.map((s) => s.sheet);
@@ -162,7 +165,7 @@ export function parseXlsxSheets(
   const target = requested ?? pickBestSheet(sheets);
 
   if (!target) {
-    throw new AudienceParseError('empty_file', 'A planilha não tem abas.');
+    throw new SpreadsheetParseError('empty_file', 'A planilha não tem abas.');
   }
 
   return {

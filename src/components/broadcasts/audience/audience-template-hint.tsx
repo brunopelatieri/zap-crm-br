@@ -11,7 +11,7 @@
  * já foi montada; mostrar as colunas antes, com um arquivo pronto para
  * preencher, corta a viagem de ida e volta.
  *
- * A lista sai de `AUDIENCE_COLUMNS`, a mesma fonte que o parser usa —
+ * A lista sai de `SPREADSHEET_COLUMNS`, a mesma fonte que o parser usa —
  * o que está escrito aqui é, por construção, o que o parser aceita.
  */
 
@@ -19,11 +19,11 @@ import { Download, FileSpreadsheet } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { AUDIENCE_COLUMNS } from '@/lib/audience/parse-csv';
+import { SPREADSHEET_COLUMNS } from '@/lib/spreadsheet/parse-csv';
 import {
   AUDIENCE_TEMPLATE_FILENAME,
   buildAudienceTemplateCsv,
-} from '@/lib/audience/template-file';
+} from '@/lib/spreadsheet/template-file';
 
 export function AudienceTemplateHint() {
   const t = useTranslations('Broadcasts.audience.template');
@@ -76,7 +76,7 @@ export function AudienceTemplateHint() {
       </div>
 
       <ul className="mt-3 space-y-1.5">
-        {AUDIENCE_COLUMNS.map(({ key, required, aliases }) => (
+        {SPREADSHEET_COLUMNS.map(({ key, required, aliases }) => (
           <li
             key={key}
             className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs"

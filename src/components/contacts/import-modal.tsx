@@ -137,6 +137,7 @@ export function ImportModal({
   onImported,
 }: ImportModalProps) {
   const t = useTranslations('Contacts.importModal');
+  const tReason = useTranslations('Import.reason');
   const supabase = createClient();
   const { accountId, canEditSettings } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -646,7 +647,7 @@ export function ImportModal({
                         )}
                       </span>
                       <span className="shrink-0 text-amber-300">
-                        {t(`reason.${row.reason}`)}
+                        {tReason(row.reason)}
                       </span>
                     </li>
                   ))}

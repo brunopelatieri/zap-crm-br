@@ -1,29 +1,33 @@
 /**
- * Pipeline de normalização da audiência (SPEC 044 §3.5).
+ * Pipeline de normalização da audiência (SPEC 044 §3.5, SPEC 052 D-2).
  *
  * Ordem fixa, e a ordem importa:
  *
- *   1. sanitizar  — `sanitizePhoneForMeta` (dígitos apenas)
- *   2. validar    — `isValidE164`
- *   3. deduplicar — por chave canônica `normalizeKey`
+ *   1. validar    — `normalizeContactPhone` (sanitiza E valida numa
+ *      chamada só — a SPEC 050 já faz as duas coisas)
+ *   2. deduplicar — por chave canônica `normalizeKey`
  *
- * Sanitizar antes de validar é o que faz "+55 (11) 98888-7777" e
- * "5511988887777" serem a mesma coisa. Deduplicar por último é o que
- * faz um número inválido repetido ser reportado como inválido (o
- * problema real) e não como duplicata (um sintoma).
+ * Deduplicar por último é o que faz um número inválido repetido ser
+ * reportado como inválido (o problema real) e não como duplicata (um
+ * sintoma).
  *
  * Nada é descartado em silêncio: toda linha rejeitada sai em `invalid`
  * com o número da linha original e o motivo. Um import que diz "31
  * linhas ignoradas" sem dizer quais é um import que o usuário não tem
  * como corrigir.
  *
- * As mesmas funções de telefone usadas no envio (`phone-utils`) são
- * usadas aqui de propósito — assim não existe "válido na tela,
- * rejeitado pela Meta".
+ * O validador é parametrizável (`validate`), mas o padrão para os dois
+ * consumidores — contatos e audiência — é `normalizeContactPhone`
+ * (SPEC 050): antes da SPEC 052, a audiência validava só com
+ * `isValidE164`, então o mesmo `19992496598` virava um telefone válido
+ * de DDI 19 aqui e um `5519992496598` correto do lado de contatos —
+ * duas normalizações diferentes para a mesma planilha (SPEC 052 §2.2
+ * achado J). Ver SPEC 052 D-2 para a tabela de comportamento antes/depois.
  */
 
 import { normalizeKey } from '@/lib/contacts/dedupe';
-import { isValidE164, sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
+import { normalizeContactPhone } from '@/lib/phone/br';
+import type { PhoneNormalizeResult } from '@/lib/phone/br';
 import type {
   InvalidRow,
   NormalizedAudience,
@@ -31,12 +35,22 @@ import type {
   RawAudienceRow,
 } from './types';
 
-/** Acumulador incremental — ver `createAudienceNormalizer`. */
+/** Acumulador incremental — ver `createRowNormalizer`. */
 export interface AudienceNormalizer {
   /** Processa uma linha crua. */
   push: (raw: RawAudienceRow) => void;
   /** Fecha o acumulador e devolve o resultado. */
   finish: () => NormalizedAudience;
+}
+
+export interface RowNormalizerOptions {
+  /**
+   * Validador de telefone. Padrão `normalizeContactPhone` (SPEC 050,
+   * D-2) — os dois consumidores (contatos e audiência) usam a mesma
+   * regra por padrão. Parametrizável para não travar quem por algum
+   * motivo precise da validação genérica antiga (`isValidE164`).
+   */
+  validate?: (raw: string) => PhoneNormalizeResult;
 }
 
 /**
@@ -56,7 +70,10 @@ export interface AudienceNormalizer {
  * de duplicatas; a triagem precisa saber **quais** linhas caíram e por
  * quê. A semântica de "mesmo número" é idêntica.
  */
-export function createAudienceNormalizer(): AudienceNormalizer {
+export function createRowNormalizer(
+  options: RowNormalizerOptions = {}
+): AudienceNormalizer {
+  const validate = options.validate ?? normalizeContactPhone;
   const rows: NormalizedAudienceRow[] = [];
   const invalid: InvalidRow[] = [];
   const seen = new Set<string>();
@@ -67,30 +84,19 @@ export function createAudienceNormalizer(): AudienceNormalizer {
     push(raw: RawAudienceRow) {
       read++;
       const rawPhone = (raw.phone ?? '').trim();
+      const result = validate(rawPhone);
 
-      if (!rawPhone) {
+      if (!result.ok) {
         invalid.push({
           sourceRow: raw.sourceRow,
           rawPhone,
           name: raw.name,
-          reason: 'missing_phone',
+          reason: result.reason,
         });
         return;
       }
 
-      const phone = sanitizePhoneForMeta(rawPhone);
-
-      if (!isValidE164(phone)) {
-        invalid.push({
-          sourceRow: raw.sourceRow,
-          rawPhone,
-          name: raw.name,
-          reason: 'invalid_phone',
-        });
-        return;
-      }
-
-      const key = normalizeKey(phone);
+      const key = normalizeKey(result.phone);
       if (seen.has(key)) {
         duplicates++;
         invalid.push({
@@ -104,7 +110,7 @@ export function createAudienceNormalizer(): AudienceNormalizer {
       seen.add(key);
 
       rows.push({
-        phone,
+        phone: result.phone,
         name: raw.name,
         email: raw.email,
         company: raw.company,
@@ -133,9 +139,10 @@ export function createAudienceNormalizer(): AudienceNormalizer {
 
 /** Normaliza, valida e deduplica linhas cruas de qualquer fonte. */
 export function normalizeAudience(
-  rawRows: RawAudienceRow[]
+  rawRows: RawAudienceRow[],
+  options?: RowNormalizerOptions
 ): NormalizedAudience {
-  const normalizer = createAudienceNormalizer();
+  const normalizer = createRowNormalizer(options);
   for (const raw of rawRows) normalizer.push(raw);
   return normalizer.finish();
 }

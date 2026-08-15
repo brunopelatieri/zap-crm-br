@@ -17,7 +17,7 @@ import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { extractSheetRef } from '@/lib/audience/google-sheets';
+import { extractSheetRef } from '@/lib/spreadsheet/google-sheets';
 
 interface GoogleSheetsSourceProps {
   /** Busca o CSV pela rota e devolve o texto, ou lança com `code`. */

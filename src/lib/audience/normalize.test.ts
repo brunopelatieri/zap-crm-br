@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAudience, toCsvContacts } from './normalize';
+import {
+  createRowNormalizer,
+  normalizeAudience,
+  toCsvContacts,
+} from './normalize';
 import type { RawAudienceRow } from './types';
+import type { PhoneNormalizeResult } from '@/lib/phone/br';
 
 function row(
   sourceRow: number,
@@ -46,17 +51,20 @@ describe('normalizeAudience', () => {
         sourceRow: 3,
         rawPhone: '123',
         name: undefined,
-        reason: 'invalid_phone',
+        reason: 'invalid_length',
       },
     ]);
   });
 
   it('distingue telefone ausente de telefone malformado', () => {
-    const result = normalizeAudience([row(2, '   '), row(3, 'abc')]);
+    // 'abc' sanitiza para string vazia — mesmo motivo que um campo em
+    // branco (`empty`); '123' tem dígitos, mas comprimento errado
+    // (`invalid_length`) — são motivos diferentes.
+    const result = normalizeAudience([row(2, '   '), row(3, '123')]);
 
     expect(result.invalid.map((i) => i.reason)).toEqual([
-      'missing_phone',
-      'invalid_phone',
+      'empty',
+      'invalid_length',
     ]);
   });
 
@@ -67,7 +75,7 @@ describe('normalizeAudience', () => {
 
     expect(result.stats.duplicates).toBe(0);
     expect(result.stats.invalid).toBe(2);
-    expect(result.invalid.every((i) => i.reason === 'invalid_phone')).toBe(
+    expect(result.invalid.every((i) => i.reason === 'invalid_length')).toBe(
       true
     );
   });
@@ -121,6 +129,56 @@ describe('normalizeAudience', () => {
       valid: 0,
       duplicates: 0,
       invalid: 0,
+    });
+  });
+
+  // SPEC 052 D-2: o padrão dos dois consumidores (contatos e
+  // audiência) passa a ser `normalizeContactPhone` (SPEC 050) — não
+  // mais o `isValidE164` genérico. Casos verificados diretamente
+  // contra `normalizeContactPhone` (não apenas copiados da SPEC).
+  describe('validação SPEC 050 por padrão (D-2)', () => {
+    it('acrescenta o DDI 55 a um número doméstico sem DDI, em vez de o confundir com DDI 19', () => {
+      // Achado J (SPEC 052 §2.2): antes do D-2 este número virava
+      // "19992496598" — um telefone com DDI 19, que não existe.
+      const result = normalizeAudience([row(2, '19992496598')]);
+
+      expect(result.rows[0].phone).toBe('5519992496598');
+    });
+
+    it('rejeita DDD que não existe na lista da Anatel', () => {
+      const result = normalizeAudience([row(2, '5510987654321')]);
+
+      expect(result.rows).toHaveLength(0);
+      expect(result.invalid[0]).toMatchObject({ reason: 'invalid_ddd' });
+    });
+
+    it('preserva número estrangeiro (SPEC 050 D-2)', () => {
+      const result = normalizeAudience([row(2, '+351912345678')]);
+
+      expect(result.rows[0].phone).toBe('351912345678');
+    });
+
+    it('preserva celular legado de 8 dígitos (SPEC 050 D-6)', () => {
+      const result = normalizeAudience([row(2, '551198765432')]);
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].phone).toBe('551198765432');
+    });
+  });
+
+  describe('createRowNormalizer com validador customizado', () => {
+    it('usa o validador passado em vez do padrão', () => {
+      const alwaysInvalid = (): PhoneNormalizeResult => ({
+        ok: false,
+        reason: 'invalid_length',
+      });
+
+      const normalizer = createRowNormalizer({ validate: alwaysInvalid });
+      normalizer.push(row(2, '5511988887777')); // válido pelo padrão, não pelo customizado
+      const result = normalizer.finish();
+
+      expect(result.rows).toHaveLength(0);
+      expect(result.invalid[0]).toMatchObject({ reason: 'invalid_length' });
     });
   });
 });

@@ -47,7 +47,7 @@ describe('stageAudience — csv', () => {
           { phone: '+5511999990002', name: 'Bob', sourceRow: 3 },
         ],
         invalidRows: [
-          { sourceRow: 4, rawPhone: 'abc', reason: 'invalid_phone' },
+          { sourceRow: 4, rawPhone: 'abc', reason: 'invalid_length' },
         ],
       },
     });
@@ -81,7 +81,7 @@ describe('stageAudience — csv', () => {
     });
     expect(rows[2]).toMatchObject({
       phone: 'abc',
-      invalid_reason: 'invalid_phone',
+      invalid_reason: 'invalid_length',
       source_row: 4,
     });
   });

@@ -14,9 +14,9 @@
  *   2. Mesmo que conseguisse, a requisição sairia com os cookies do
  *      Google do próprio usuário, o que mudaria o que é "público".
  *
- * A proteção contra SSRF mora em `@/lib/audience/google-sheets`: a URL
- * colada nunca é usada; extraímos o id e reconstruímos a URL a partir
- * de uma constante.
+ * A proteção contra SSRF mora em `@/lib/spreadsheet/google-sheets`: a
+ * URL colada nunca é usada; extraímos o id e reconstruímos a URL a
+ * partir de uma constante.
  */
 
 import { NextResponse } from 'next/server';
@@ -26,7 +26,7 @@ import {
   MAX_SHEET_BYTES,
   SheetFetchError,
   fetchGoogleSheetCsv,
-} from '@/lib/audience/google-sheets';
+} from '@/lib/spreadsheet/google-sheets';
 import {
   RATE_LIMITS,
   checkRateLimit,

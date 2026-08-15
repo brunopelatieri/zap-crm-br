@@ -48,7 +48,7 @@ interface AudienceTriageTableProps {
 }
 
 function StatusBadge({ row }: { row: TriageRow }) {
-  const tReason = useTranslations('Broadcasts.audience.invalidReason');
+  const tReason = useTranslations('Import.reason');
   const t = useTranslations('Broadcasts.audience.triage.badge');
 
   if (row.invalid_reason) {

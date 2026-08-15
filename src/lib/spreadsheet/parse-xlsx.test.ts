@@ -73,6 +73,20 @@ describe('sheetToAudienceRows', () => {
     expect(rows[0]).toMatchObject({ name: 'Maria', phone: '5511988887777' });
   });
 
+  // SPEC 052 §2.2 achado H: a célula do Excel não passa pelo
+  // tokenizador de CSV, então uma vírgula sem aspas já separa duas
+  // etiquetas — a planilha não tem o problema do CSV (achados A/D).
+  it('H: célula "vip, lead" sem aspas vira duas etiquetas', () => {
+    const rows = sheetToAudienceRows(
+      sheet('S', [
+        ['phone', 'tags'],
+        ['5511988887777', 'vip, lead'],
+      ])
+    );
+
+    expect(rows[0].tagNames).toEqual(['vip', 'lead']);
+  });
+
   it('rejeita aba sem coluna de telefone', () => {
     expect(() =>
       sheetToAudienceRows(sheet('S', [['nome'], ['Maria']]))
@@ -95,6 +109,18 @@ describe('pickBestSheet', () => {
       sheet('Contatos', [
         ['phone', 'name'],
         ['5511988887777', 'Maria'],
+      ]),
+    ]);
+
+    expect(picked?.sheet).toBe('Contatos');
+  });
+
+  it('escolhe uma aba secundária com cabeçalho em pt-BR', () => {
+    const picked = pickBestSheet([
+      sheet('Capa', [['Leia antes de usar']]),
+      sheet('Contatos', [
+        ['Nome', 'Telefone'],
+        ['Maria', '5511988887777'],
       ]),
     ]);
 

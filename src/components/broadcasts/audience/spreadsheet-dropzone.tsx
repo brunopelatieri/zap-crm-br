@@ -17,7 +17,7 @@ import { useRef, useState } from 'react';
 import { FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-import { MAX_SPREADSHEET_BYTES } from '@/lib/audience/types';
+import { MAX_SPREADSHEET_BYTES } from '@/lib/spreadsheet/types';
 
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);

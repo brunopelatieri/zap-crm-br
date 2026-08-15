@@ -748,15 +748,7 @@
       "toastError": "Falha na importação",
       "rejectedRows": "{count} linhas não foram importadas",
       "rejectedLine": "Linha {n}",
-      "showAllRejected": "Mostrar todas as {count}",
-      "reason": {
-        "empty": "sem telefone",
-        "invalid_length": "comprimento inválido",
-        "invalid_ddd": "DDD inválido",
-        "mobile_invalid_ninth_digit": "falta o 9º dígito",
-        "invalid_local_prefix": "número inválido",
-        "missing_country_code": "sem código do país"
-      }
+      "showAllRejected": "Mostrar todas as {count}"
     },
     "exportModal": {
       "title": "Exportar contatos",
@@ -859,6 +851,19 @@
       "toastRenameFailed": "Não foi possível renomear o campo.",
       "toastDeleteFailed": "Não foi possível excluir o campo.",
       "toastDeleted": "\"{name}\" excluído."
+    }
+  },
+  "Import": {
+    "reason": {
+      "empty": "sem telefone",
+      "invalid_length": "comprimento inválido",
+      "invalid_ddd": "DDD inválido",
+      "mobile_invalid_ninth_digit": "falta o 9º dígito",
+      "invalid_local_prefix": "número inválido",
+      "missing_country_code": "sem código do país",
+      "duplicate_in_file": "duplicada",
+      "missing_phone": "sem telefone",
+      "invalid_phone": "telefone inválido"
     }
   },
   "Pipelines": {

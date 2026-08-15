@@ -748,15 +748,7 @@
       "toastError": "Import failed",
       "rejectedRows": "{count} rows were not imported",
       "rejectedLine": "Line {n}",
-      "showAllRejected": "Show all {count}",
-      "reason": {
-        "empty": "no phone",
-        "invalid_length": "invalid length",
-        "invalid_ddd": "invalid area code",
-        "mobile_invalid_ninth_digit": "missing 9th digit",
-        "invalid_local_prefix": "invalid number",
-        "missing_country_code": "missing country code"
-      }
+      "showAllRejected": "Show all {count}"
     },
     "exportModal": {
       "title": "Export contacts",
@@ -859,6 +851,19 @@
       "toastRenameFailed": "Could not rename field.",
       "toastDeleteFailed": "Could not delete field.",
       "toastDeleted": "Deleted \"{name}\"."
+    }
+  },
+  "Import": {
+    "reason": {
+      "empty": "no phone",
+      "invalid_length": "invalid length",
+      "invalid_ddd": "invalid area code",
+      "mobile_invalid_ninth_digit": "missing 9th digit",
+      "invalid_local_prefix": "invalid number",
+      "missing_country_code": "missing country code",
+      "duplicate_in_file": "duplicate",
+      "missing_phone": "no phone",
+      "invalid_phone": "invalid phone"
     }
   },
   "Pipelines": {

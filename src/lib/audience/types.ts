@@ -1,5 +1,10 @@
 /**
- * Tipos compartilhados da ingestão de audiência (SPEC 044 §3.2).
+ * Tipos de DOMÍNIO da audiência de disparo (SPEC 044 §3.2, SPEC 052 D-1).
+ *
+ * Os tipos de FORMATO (leitura de planilha, sem domínio) moraram aqui
+ * e foram para `@/lib/spreadsheet/types` — este arquivo ficou só com o
+ * que é regra de disparo: uma linha crua, por que ela foi rejeitada, e
+ * o resultado normalizado.
  *
  * O ponto de projeto que mantém as três fontes (CSV, XLSX, Google
  * Sheets) simples: todas convergem para `RawAudienceRow[]` ANTES de
@@ -13,6 +18,7 @@
  */
 
 import type { ParsedContactRow } from '@/lib/contacts/parse-contact-csv';
+import type { PhoneRejectReason } from '@/lib/phone/br';
 
 /** Uma linha lida de qualquer fonte, ainda sem validação de telefone. */
 export interface RawAudienceRow extends ParsedContactRow {
@@ -24,9 +30,13 @@ export interface RawAudienceRow extends ParsedContactRow {
   sourceRow: number;
 }
 
-/** Por que uma linha foi rejeitada. Vira chave i18n `Broadcasts.audience.invalid.*`. */
-export type InvalidReason =
-  'missing_phone' | 'invalid_phone' | 'duplicate_in_file';
+/**
+ * Por que uma linha foi rejeitada. Vira chave i18n `Import.reason.*`
+ * (SPEC 052 D-2/F2) — o mesmo vocabulário do import de contatos
+ * (`PhoneRejectReason`, SPEC 050) mais `duplicate_in_file`, que só faz
+ * sentido para uma planilha inteira, não para um único telefone.
+ */
+export type InvalidReason = PhoneRejectReason | 'duplicate_in_file';
 
 /** Linha descartada, preservada para exibição — nunca sumimos em silêncio. */
 export interface InvalidRow {
@@ -69,50 +79,3 @@ export interface NormalizedAudience {
 /** Fontes de audiência suportadas pelo passo 2. */
 export type AudienceSourceKind =
   'all' | 'tags' | 'custom_field' | 'csv' | 'xlsx' | 'google_sheets';
-
-/** Formatos de arquivo aceitos pelo dropzone. */
-export const ACCEPTED_SPREADSHEET_EXTENSIONS = ['.csv', '.xlsx'] as const;
-
-/**
- * Teto de tamanho de arquivo (SPEC 044 §3.4). Validado ANTES de ler o
- * conteúdo — um `.xlsx` de 10 MB já passa de 100 k linhas, e ler para
- * só então rejeitar desperdiça a memória que estamos tentando proteger.
- */
-export const MAX_SPREADSHEET_BYTES = 10 * 1024 * 1024;
-
-/** Teto de linhas processadas (SPEC 044 §3.4) — limite de memória do Worker. */
-export const MAX_AUDIENCE_ROWS = 50_000;
-
-/**
- * Abaixo deste número de linhas o parsing roda na main thread: o custo
- * de subir um Worker (spawn + transferência) supera o ganho, e a UI
- * não chega a piscar.
- */
-export const WORKER_THRESHOLD_ROWS = 2_000;
-
-/** Códigos de erro de parsing. Mapeiam para `Broadcasts.audience.parseError.*`. */
-export type ParseErrorCode =
-  | 'file_too_large'
-  | 'too_many_rows'
-  | 'missing_phone_column'
-  | 'empty_file'
-  | 'unreadable'
-  | 'unsupported_format';
-
-/** Erro de parsing com código estável — a UI traduz, não exibe `message`. */
-export class AudienceParseError extends Error {
-  readonly code: ParseErrorCode;
-  /** Contexto opcional para interpolação na mensagem traduzida. */
-  readonly meta?: Record<string, string | number>;
-
-  constructor(
-    code: ParseErrorCode,
-    message: string,
-    meta?: Record<string, string | number>
-  ) {
-    super(message);
-    this.name = 'AudienceParseError';
-    this.code = code;
-    this.meta = meta;
-  }
-}

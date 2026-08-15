@@ -4,10 +4,10 @@
  * Reusa `readCsvTable` — o mesmo tokenizador do import de contatos —
  * e diverge dele num único ponto deliberado: uma linha **sem telefone
  * não é descartada aqui**. Ela sai com `phone: ''` para que
- * `normalizeAudience` a reporte como `missing_phone` com o número da
- * linha. O import de contatos pode se dar ao luxo de ignorar em
- * silêncio; um disparo, não — o usuário precisa saber que a linha 47
- * da planilha dele não vai receber nada.
+ * `normalizeAudience` a reporte como `empty` (SPEC 052 D-2) com o
+ * número da linha. O import de contatos pode se dar ao luxo de ignorar
+ * em silêncio; um disparo, não — o usuário precisa saber que a linha
+ * 47 da planilha dele não vai receber nada.
  */
 
 import {
@@ -16,8 +16,8 @@ import {
   parseTagCell,
   readCsvTable,
 } from '@/lib/contacts/parse-contact-csv';
-import { AudienceParseError, MAX_AUDIENCE_ROWS } from './types';
-import type { RawAudienceRow } from './types';
+import type { RawAudienceRow } from '@/lib/audience/types';
+import { SpreadsheetParseError, MAX_AUDIENCE_ROWS } from './types';
 
 export interface AudienceColumnMap {
   phone: number;
@@ -54,7 +54,7 @@ export interface AudienceColumnSpec {
  * divergir (e de o modelo sugerir um cabeçalho que um dos dois
  * parsers não reconhece).
  */
-export const AUDIENCE_COLUMNS: AudienceColumnSpec[] = CONTACT_COLUMNS.map(
+export const SPREADSHEET_COLUMNS: AudienceColumnSpec[] = CONTACT_COLUMNS.map(
   (column) => ({
     key: column.key,
     required: column.key === 'phone',
@@ -80,7 +80,7 @@ export function mapAudienceColumns(headers: string[]): AudienceColumnMap {
     company: -1,
     tags: -1,
   };
-  for (const column of AUDIENCE_COLUMNS) {
+  for (const column of SPREADSHEET_COLUMNS) {
     map[column.key] = findColumn(headers, column.aliases);
   }
   return map;
@@ -101,14 +101,14 @@ export function rowsFromTable(
   const cols = columns ?? mapAudienceColumns(headers);
 
   if (cols.phone === -1) {
-    throw new AudienceParseError(
+    throw new SpreadsheetParseError(
       'missing_phone_column',
       'A planilha precisa de uma coluna de telefone.'
     );
   }
 
   if (rows.length > MAX_AUDIENCE_ROWS) {
-    throw new AudienceParseError(
+    throw new SpreadsheetParseError(
       'too_many_rows',
       `A planilha tem mais de ${MAX_AUDIENCE_ROWS} linhas.`,
       { max: MAX_AUDIENCE_ROWS, found: rows.length }
@@ -135,7 +135,7 @@ export function parseAudienceCsv(
   const { headers, rows } = readCsvTable(text);
 
   if (headers.length === 0) {
-    throw new AudienceParseError(
+    throw new SpreadsheetParseError(
       'empty_file',
       'O arquivo está vazio ou só tem cabeçalho.'
     );

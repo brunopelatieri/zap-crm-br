@@ -46,7 +46,8 @@ import {
   type CustomFieldFilter,
 } from './estimate';
 import { contactsByIds, fetchAllContacts } from './resolve';
-import { MAX_AUDIENCE_ROWS } from './types';
+import type { InvalidReason } from './types';
+import { MAX_AUDIENCE_ROWS } from '@/lib/spreadsheet/types';
 
 /** Linhas por INSERT em `broadcast_audience_staging`. */
 const INSERT_CHUNK = 200;
@@ -67,7 +68,7 @@ export interface StageInvalidRow {
   sourceRow: number;
   rawPhone: string;
   name?: string;
-  reason: 'missing_phone' | 'invalid_phone' | 'duplicate_in_file';
+  reason: InvalidReason;
 }
 
 export type StageAudienceInput =

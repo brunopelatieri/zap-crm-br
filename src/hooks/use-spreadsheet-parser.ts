@@ -41,18 +41,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   MAX_AUDIENCE_ROWS,
   MAX_SPREADSHEET_BYTES,
-  AudienceParseError,
-} from '@/lib/audience/types';
-import { createAudienceNormalizer } from '@/lib/audience/normalize';
-import { parseAudienceCsv } from '@/lib/audience/parse-csv';
-import { parseXlsxSheets } from '@/lib/audience/parse-xlsx';
-import type { AudienceColumnMap } from '@/lib/audience/parse-csv';
-import type { XlsxSheet } from '@/lib/audience/parse-xlsx';
-import type {
-  NormalizedAudience,
-  ParseErrorCode,
-  RawAudienceRow,
-} from '@/lib/audience/types';
+  SpreadsheetParseError,
+} from '@/lib/spreadsheet/types';
+import type { ParseErrorCode } from '@/lib/spreadsheet/types';
+import { createRowNormalizer } from '@/lib/audience/normalize';
+import { parseAudienceCsv } from '@/lib/spreadsheet/parse-csv';
+import { parseXlsxSheets } from '@/lib/spreadsheet/parse-xlsx';
+import type { AudienceColumnMap } from '@/lib/spreadsheet/parse-csv';
+import type { XlsxSheet } from '@/lib/spreadsheet/parse-xlsx';
+import type { NormalizedAudience, RawAudienceRow } from '@/lib/audience/types';
 
 /**
  * Linhas normalizadas por lote antes de devolver o controle ao
@@ -184,7 +181,7 @@ export function useSpreadsheetParser(): UseSpreadsheetParser {
       requestId: number,
       rows: RawAudienceRow[]
     ): Promise<NormalizedAudience | null> => {
-      const normalizer = createAudienceNormalizer();
+      const normalizer = createRowNormalizer();
 
       if (rows.length <= INLINE_ROW_LIMIT) {
         for (const row of rows) normalizer.push(row);
@@ -208,7 +205,7 @@ export function useSpreadsheetParser(): UseSpreadsheetParser {
 
   /** Converte qualquer coisa lançada no formato de erro tipado. */
   const toFailure = useCallback((err: unknown): ParseFailure => {
-    if (err instanceof AudienceParseError) {
+    if (err instanceof SpreadsheetParseError) {
       return { code: err.code, meta: err.meta };
     }
     return { code: 'unreadable' };
