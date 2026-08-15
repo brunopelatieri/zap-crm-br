@@ -488,6 +488,51 @@ describe('ingestInbound — gatilhos', () => {
   });
 });
 
+describe('ingestInbound — channel_id/channel_type nos webhooks de saída (SPEC 049 §5.5)', () => {
+  it('message.received carrega channel_id/channel_type, e os campos antigos permanecem', async () => {
+    const db = existingThread();
+
+    await ingestInbound(ctxFor(db, 'whatsapp_qr'), textMessage());
+
+    expect(dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'message.received',
+      expect.objectContaining({
+        conversation_id: 'conv-1',
+        contact_id: 'contact-1',
+        whatsapp_message_id: 'wamid.1',
+        content_type: 'text',
+        text: 'oi',
+        channel_id: 'chan-1',
+        channel_type: 'whatsapp_qr',
+      })
+    );
+  });
+
+  it('conversation.created carrega channel_id/channel_type', async () => {
+    findExistingContact.mockResolvedValue(CONTACT);
+    const db = makeDb({
+      'conversations.select': { data: [], error: null },
+      'conversations.insert': { data: CONVERSATION, error: null },
+    });
+
+    await ingestInbound(ctxFor(db, 'whatsapp_cloud'), textMessage());
+
+    expect(dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'conversation.created',
+      expect.objectContaining({
+        conversation_id: 'conv-1',
+        contact_id: 'contact-1',
+        channel_id: 'chan-1',
+        channel_type: 'whatsapp_cloud',
+      })
+    );
+  });
+});
+
 describe('ingestInbound — opt-out', () => {
   it('registra o descadastro e cala a IA, sem suprimir automações', async () => {
     const db = existingThread();

@@ -11,6 +11,7 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate';
+import { loadAccountChannelTypes } from '@/lib/channels/account-channel-types';
 
 async function requireUser() {
   const supabase = await createClient();
@@ -75,7 +76,7 @@ export async function PATCH(
   // to compute the post-patch "effective" state for validation.
   const { data: existing } = await admin
     .from('automations')
-    .select('id, user_id, is_active, trigger_type, trigger_config')
+    .select('id, user_id, account_id, is_active, trigger_type, trigger_config')
     .eq('id', id)
     .maybeSingle();
   if (!existing || existing.user_id !== user.id) {
@@ -112,11 +113,21 @@ export async function PATCH(
           step_config: Record<string, unknown>;
         }[])
       : await loadStepsTree(id);
+    const accountChannelTypes = await loadAccountChannelTypes(
+      admin,
+      existing.account_id as string
+    );
     const issues = [
-      ...validateTriggerForActivation(mergedTriggerType, mergedTriggerConfig),
-      ...validateStepsForActivation(mergedSteps),
+      ...validateTriggerForActivation(
+        mergedTriggerType,
+        mergedTriggerConfig,
+        accountChannelTypes
+      ),
+      ...validateStepsForActivation(mergedSteps, accountChannelTypes),
     ];
-    if (issues.length > 0) {
+    // Same warning/blocker split as the create path — see route.ts.
+    const blockers = issues.filter((i) => i.severity !== 'warning');
+    if (blockers.length > 0) {
       return NextResponse.json(
         {
           error: 'Cannot keep automation active with invalid configuration',

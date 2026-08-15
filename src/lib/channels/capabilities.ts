@@ -121,3 +121,26 @@ export function canSendMedia(
 ): boolean {
   return CHANNEL_CAPABILITIES[type].media[kind];
 }
+
+/**
+ * Quantos dos tipos de canal de uma conta suportam uma capacidade.
+ *
+ * `'none'`: nenhum canal possível suporta — o recurso NUNCA funcionaria
+ * (armadilha "ativa e falha em silêncio" do AGENTS.md). `'some'`: parte
+ * suporta, parte não — vale aviso, não bloqueio, porque bloquear
+ * impediria um uso legítimo no canal que suporta. `'all'`: sem ressalva.
+ *
+ * Usado tanto pela validação de automações (SPEC 049 §5.1.2/§5.1.3)
+ * quanto pela guarda de disparo em massa (§5.3) — a mesma pergunta
+ * ("este recurso é alcançável pelos canais desta conta?") em dois
+ * lugares diferentes.
+ */
+export function accountCapabilityCoverage(
+  accountChannelTypes: ChannelType[],
+  capability: ChannelCapabilityKey
+): 'none' | 'some' | 'all' {
+  const supported = accountChannelTypes.filter((t) => can(t, capability));
+  if (supported.length === 0) return 'none';
+  if (supported.length === accountChannelTypes.length) return 'all';
+  return 'some';
+}

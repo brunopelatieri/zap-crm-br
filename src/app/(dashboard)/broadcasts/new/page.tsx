@@ -17,8 +17,12 @@ import {
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
 import { AB_DEFAULT_SPLIT_PERCENT } from '@/lib/broadcasts/ab-test';
 import type { AudienceConfig } from '@/lib/audience/estimate';
-import { Check } from 'lucide-react';
+import { Check, ShieldAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { useAccountChannels } from '@/lib/channels/use-account-channels';
+import { accountCapabilityCoverage } from '@/lib/channels/capabilities';
+import type { ChannelType } from '@/lib/channels/types';
 
 const steps = [
   { label: 'template', key: 'template' },
@@ -36,6 +40,20 @@ export default function NewBroadcastPage() {
   const { accountId } = useAuth();
   const { createAndSendBroadcast, isProcessing, progress } =
     useBroadcastSending();
+
+  // SPEC 049 §5.3 — step 1 of the wizard, not a server error at step 4:
+  // an account whose only channel is QR gets told WHY before it invests
+  // time picking a template and an audience. `loading` avoids a false
+  // "blocked" flash for the (common) case where the account simply
+  // hasn't finished fetching channels yet.
+  const accountChannels = useAccountChannels();
+  const channelTypes: ChannelType[] =
+    accountChannels.byId.size > 0
+      ? Array.from(accountChannels.byId.values()).map((c) => c.type)
+      : ['whatsapp_cloud'];
+  const broadcastBlocked =
+    !accountChannels.loading &&
+    accountCapabilityCoverage(channelTypes, 'broadcast') === 'none';
 
   // Retoma de um rascunho já triado (SPEC 044 §3.3): a triagem não
   // guarda `template`/`variables` — só navega de volta para cá com
@@ -246,6 +264,28 @@ export default function NewBroadcastPage() {
     }
     toast.success(t('toastDraftSaved'));
     router.push('/broadcasts');
+  }
+
+  if (broadcastBlocked) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <div className="border-border bg-card flex flex-col items-center gap-4 rounded-lg border p-10 text-center">
+          <ShieldAlert className="text-amber-400" size={32} />
+          <h1 className="text-foreground text-lg font-semibold">
+            {t('channelBlocked.title')}
+          </h1>
+          <p className="text-muted-foreground max-w-md text-sm">
+            {t('channelBlocked.body')}
+          </p>
+          <Link
+            href="/broadcasts"
+            className="text-primary text-sm font-medium hover:underline"
+          >
+            {t('channelBlocked.back')}
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -134,9 +134,15 @@ export async function ingestInbound(
   // a reaction still fires the event, and a subscriber always sees the
   // thread open before its first message.received.
   if (convResult.created) {
+    // SPEC 049 §5.5 — purely additive: existing subscribers ignore a
+    // field they don't know about. `ctx` already resolved both (the
+    // caller picked the channel before ingest started), so no extra
+    // query.
     await dispatchWebhookEvent(db, accountId, 'conversation.created', {
       conversation_id: conversation.id,
       contact_id: contactRecord.id,
+      channel_id: ctx.channelId,
+      channel_type: ctx.channelType,
     });
   }
 
@@ -557,6 +563,9 @@ export async function ingestInbound(
     whatsapp_message_id: event.providerMessageId,
     content_type: event.contentType,
     text: event.text ?? null,
+    // SPEC 049 §5.5 — same reasoning as conversation.created above.
+    channel_id: ctx.channelId,
+    channel_type: ctx.channelType,
   });
 }
 

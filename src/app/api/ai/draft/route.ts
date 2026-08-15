@@ -14,6 +14,7 @@ import { latestUserMessage } from '@/lib/ai/query';
 import { logAiUsage } from '@/lib/ai/usage';
 import { supabaseAdmin } from '@/lib/ai/admin-client';
 import { AiError } from '@/lib/ai/types';
+import { resolveChannelTypeForConversation } from '@/lib/channels/conversation-channel';
 
 /**
  * POST /api/ai/draft  (agent+)
@@ -111,10 +112,16 @@ export async function POST(request: Request) {
       latestUserMessage(messages)
     );
 
+    const channelType = await resolveChannelTypeForConversation(
+      supabase,
+      accountId,
+      conversationId
+    );
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'draft',
       knowledge,
+      channelType,
     });
 
     const { text, usage } = await generateReply({

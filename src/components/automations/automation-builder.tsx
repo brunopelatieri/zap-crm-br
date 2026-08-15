@@ -74,7 +74,32 @@ import {
 } from '@/hooks/use-fallback-channels';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
+import {
+  accountCapabilityCoverage,
+  type ChannelCapabilityKey,
+} from '@/lib/channels/capabilities';
+import type { ChannelType } from '@/lib/channels/types';
 import { VisualCronBuilder } from './visual-cron-builder';
+
+/**
+ * SPEC 049 §5.1.2/§5.1.3 — same "none / some / all" coverage
+ * `lib/automations/validate.ts` computes server-side (and shares via
+ * `accountCapabilityCoverage`), read here from `useFallbackChannels()`
+ * (already fetched for the fallback-channel picker) so the editor warns
+ * BEFORE the save round-trip that would otherwise report it.
+ */
+function accountChannelCoverage(
+  channels: { freeformOutsideWindow: boolean }[],
+  capability: ChannelCapabilityKey
+): 'none' | 'some' | 'all' {
+  const types: ChannelType[] =
+    channels.length > 0
+      ? channels.map((c) =>
+          c.freeformOutsideWindow ? 'whatsapp_qr' : 'whatsapp_cloud'
+        )
+      : ['whatsapp_cloud'];
+  return accountCapabilityCoverage(types, capability);
+}
 
 // ------------------------------------------------------------
 // Types (builder-local — mirror the flattened rows we POST)
@@ -1175,6 +1200,11 @@ function SessionWindowMarginConfig({
 }) {
   const minutes = resolveMarginMinutes(config);
   const hours = minutes / 60;
+  // SPEC 049 §5.1.3 — this trigger never fires on an account whose
+  // channels have no 24h session window to expire (QR only).
+  const accountChannels = useFallbackChannels();
+  const noWindowChannel =
+    accountChannelCoverage(accountChannels, 'sessionWindow24h') === 'none';
 
   return (
     <div>
@@ -1206,7 +1236,40 @@ function SessionWindowMarginConfig({
       {minutes > MARGIN_WARN_ABOVE_MINUTES && (
         <p className="mt-1 text-[11px] text-amber-400">{t('marginWarn')}</p>
       )}
+      {noWindowChannel && (
+        <p className="mt-1 text-[11px] text-amber-400">
+          {t('sessionWindowCoverageWarn')}
+        </p>
+      )}
     </div>
+  );
+}
+
+/**
+ * SPEC 049 §5.1.2 — inline mirror of `lib/automations/validate.ts`'s
+ * channel-capability check, shown while editing instead of only after a
+ * failed save. `'none'` reuses the amber warning styling the margin
+ * field above already established; the wording still distinguishes
+ * "will never work" from "works on some channels" because only the
+ * former blocks activation server-side.
+ */
+function ChannelCapabilityNotice({
+  channels,
+  capability,
+  t,
+}: {
+  channels: { freeformOutsideWindow: boolean }[];
+  capability: ChannelCapabilityKey;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const coverage = accountChannelCoverage(channels, capability);
+  if (coverage === 'all') return null;
+  return (
+    <p className="mt-1 text-[11px] text-amber-400">
+      {coverage === 'none'
+        ? t('channelCapabilityNoneWarn')
+        : t('channelCapabilitySomeWarn')}
+    </p>
   );
 }
 
@@ -1641,6 +1704,10 @@ function StepEditor({
   const cfg = step.step_config;
   const set = (patch: Record<string, unknown>) =>
     onChange({ ...step, step_config: { ...cfg, ...patch } });
+  // Only fetched here for the coverage notice below — send_buttons /
+  // send_list / send_template are the sole readers, but the hook has to
+  // sit above the switch (unconditional call).
+  const accountChannels = useFallbackChannels();
 
   switch (step.step_type) {
     case 'send_message':
@@ -1681,16 +1748,32 @@ function StepEditor({
             }
           />
           <WindowGuardFields cfg={cfg} onChange={set} t={t} />
+          <ChannelCapabilityNotice
+            channels={accountChannels}
+            capability={
+              step.step_type === 'send_buttons'
+                ? 'interactiveButtons'
+                : 'interactiveList'
+            }
+            t={t}
+          />
         </>
       );
     case 'send_template':
       return (
-        <SendTemplateFields
-          templateName={(cfg.template_name as string) ?? ''}
-          language={(cfg.language as string) ?? ''}
-          onChange={(patch) => set(patch)}
-          t={t}
-        />
+        <>
+          <SendTemplateFields
+            templateName={(cfg.template_name as string) ?? ''}
+            language={(cfg.language as string) ?? ''}
+            onChange={(patch) => set(patch)}
+            t={t}
+          />
+          <ChannelCapabilityNotice
+            channels={accountChannels}
+            capability="templates"
+            t={t}
+          />
+        </>
       );
     case 'add_tag':
     case 'remove_tag':

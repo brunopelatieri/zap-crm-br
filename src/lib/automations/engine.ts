@@ -794,7 +794,7 @@ async function checkWindowGuard(
   // `channelForConversation` devolve 'whatsapp_cloud' enquanto a 057 não
   // popular `conversations.channel_id` — comportamento idêntico ao de
   // hoje até lá.
-  const { isOpen } = resolveSessionWindow(
+  const { isOpen, applicable } = resolveSessionWindow(
     await channelForConversation(conversationId, args.automation.account_id),
     conv?.last_customer_message_at
       ? new Date(conv.last_customer_message_at)
@@ -817,11 +817,7 @@ async function checkWindowGuard(
 
   const route = resolveWindowRoute({
     action: cfg.on_window_closed,
-    // PRD 047 §7.1.1: enquanto só existe canal Cloud, toda conversa tem
-    // janela. Na F1 isto passa a vir de
-    // `capabilities(channel.type).sessionWindow24h` — é o único ponto
-    // desta função que muda.
-    windowApplicable: true,
+    windowApplicable: applicable,
     windowOpen: isOpen,
     fallbackTemplate: cfg.fallback_template,
     fallbackChannelId: cfg.fallback_channel_id,

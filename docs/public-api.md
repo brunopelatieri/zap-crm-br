@@ -186,8 +186,18 @@ curl -X POST https://your-crm.example.com/api/v1/messages \
     "params": ["A123"], // positional body vars, or a structured object
   },
   "reply_to_message_id": "<uuid>", // optional; must be in the same conversation
+  "channel_id": "<uuid>", // optional; picks which of the account's channels to send from
 }
 ```
+
+`channel_id` (SPEC 049 §5.4) is optional — omit it and the message goes out
+on the account's default channel, same as before this field existed. Pass
+it to target a specific channel (e.g. a QR code instance instead of
+WhatsApp Oficial). `400 bad_request` if the id doesn't belong to this
+account (never `404`, which would confirm the id exists) or if the channel
+isn't `connected`; the message includes the channel's status. If the
+message type isn't supported on the resolved channel (e.g. a template on a
+QR instance), the request fails with `400 unsupported_by_channel`.
 
 Response (201):
 
@@ -205,7 +215,8 @@ Response (201):
 
 Domain error codes beyond the table above: `whatsapp_not_configured`
 (400), `meta_error` (502 — the request reached Meta and it rejected the
-send), `template_malformed` (500).
+send), `template_malformed` (500), `unsupported_by_channel` (400 — the
+message type isn't supported on the resolved channel).
 
 ### `GET /api/v1/contacts`
 
@@ -251,8 +262,10 @@ contact in another account returns `404`.
 ### `GET /api/v1/conversations`
 
 List conversations, newest first. Scope: `conversations:read`.
-Paginated. Optional filters: `?status=` (`open` / `pending` / `closed`)
-and `?contact_id=`. Each conversation embeds its contact + tags.
+Paginated. Optional filters: `?status=` (`open` / `pending` / `closed`),
+`?contact_id=`, and `?channel_id=` (SPEC 049 §5.4 — which of the
+account's channels the conversation belongs to). Each conversation
+embeds its contact + tags and includes `channel_id` in the response.
 
 ### `GET /api/v1/conversations/{id}`
 
@@ -380,12 +393,19 @@ delivery uuid you can dedupe on, and `data` varies by `event`:
 
 ```jsonc
 // message.received
-{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋" }
+{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋", "channel_id": "…", "channel_type": "whatsapp_cloud" }
 // conversation.created
-{ "conversation_id": "…", "contact_id": "…" }
+{ "conversation_id": "…", "contact_id": "…", "channel_id": "…", "channel_type": "whatsapp_cloud" }
 // message.status_updated
-{ "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered" }
+{ "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered", "channel_id": "…", "channel_type": "whatsapp_cloud" }
 ```
+
+`channel_id`/`channel_type` (`"whatsapp_cloud"` or `"whatsapp_qr"`) identify
+which of the account's channels the event belongs to — added for accounts
+with more than one channel connected (SPEC 049 §5.5). Purely additive:
+existing subscribers that don't read these fields are unaffected.
+`channel_type` on `message.status_updated` can be `null` if the channel was
+since deleted.
 
 Headers: `X-Wacrm-Event`, `X-Wacrm-Webhook-Id`, and `X-Wacrm-Signature`.
 

@@ -1004,7 +1004,12 @@
       "toastNotSignedIn": "Not signed in.",
       "toastNotLinked": "Your profile is not linked to an account.",
       "toastFailedDraft": "Failed to save draft: {error}",
-      "toastDraftSaved": "Draft saved"
+      "toastDraftSaved": "Draft saved",
+      "channelBlocked": {
+        "title": "Bulk broadcast is not available",
+        "body": "Bulk broadcast is only available on WhatsApp Oficial. QR code instances cannot send campaigns — it's the rule that most protects the number from being banned.",
+        "back": "Back to broadcasts"
+      }
     },
     "wizard": {
       "next": "Next",
@@ -1257,6 +1262,7 @@
       "excludeNotAppliedToImport": "Tag exclusion does not apply to an imported list — imported contacts carry no tags yet.",
       "sendError": {
         "whatsapp_not_configured": "WhatsApp is not connected. Set up the integration in Settings and try again.",
+        "channel_not_capable": "Bulk broadcast is only available on WhatsApp Oficial. QR code instances cannot send campaigns — it's the rule that most protects the number from being banned.",
         "empty_audience": "No contacts with a valid phone number matched this audience.",
         "quota_exceeded": "This audience is larger than your Meta messaging tier allows in a single broadcast. Remove contacts or split the campaign.",
         "too_many_recipients": "This audience is too large for a single broadcast. Split it into smaller sends.",
@@ -1667,6 +1673,9 @@
       "marginLabel": "Hours before the window closes",
       "marginHint": "Fires once per conversation, {minutes} minutes before its 24-hour window expires. Only conversations already waiting on the customer are re-engaged, and never outside business hours.",
       "marginWarn": "Above 12 hours this re-engages people who have only just messaged you.",
+      "sessionWindowCoverageWarn": "This trigger never fires — no channel in this account has a 24h session window to expire.",
+      "channelCapabilityNoneWarn": "No channel in this account supports this — the step will fail on every run.",
+      "channelCapabilitySomeWarn": "Only works on channels that support it — the step will fail with the reason logged if this automation runs on a conversation from a channel without it.",
       "active": "Active",
       "activeAria": "Active",
       "save": "Save",

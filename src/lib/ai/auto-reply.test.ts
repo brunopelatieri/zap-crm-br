@@ -21,6 +21,14 @@ const h = vi.hoisted(() => ({
      * em vez de escondê-la (SPEC 041, F-41-A).
      */
     eligibleProfile: null as { user_id: string } | null,
+    /**
+     * `resolveChannelTypeForConversation` (SPEC 049 §5.6) reads
+     * `conversations.channel_id` then `channels.type`. `null` on either
+     * degrades to `whatsapp_cloud` — the default in every test that
+     * doesn't set these explicitly.
+     */
+    conversationChannelId: null as string | null,
+    channelType: null as string | null,
   },
 }));
 
@@ -55,14 +63,42 @@ vi.mock('./admin-client', () => ({
         };
         return chain;
       }
-      // conversations
-      return {
-        select: () => ({
-          eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({ data: h.state.conv, error: null }),
+      if (table === 'channels') {
+        // resolveChannelTypeForConversation: .select('type').eq('id',…)
+        // .eq('account_id',…).maybeSingle()
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () =>
+            Promise.resolve({
+              data: h.state.channelType ? { type: h.state.channelType } : null,
+              error: null,
+            }),
+        };
+        return chain;
+      }
+      // conversations — two different call shapes hit this table:
+      //   1) the eligibility read (`.select('assigned_agent_id, …')
+      //      .eq('id',…).maybeSingle()`) — ONE `.eq()`.
+      //   2) resolveChannelTypeForConversation's channel lookup
+      //      (`.select('channel_id').eq('id',…).eq('account_id',…)
+      //      .maybeSingle()`) — TWO chained `.eq()` calls.
+      // Both resolve to the SAME terminal `.maybeSingle()`, so a single
+      // chain object that supports repeated `.eq()` answers both; which
+      // fields the caller asked for doesn't matter to this fake.
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        maybeSingle: () =>
+          Promise.resolve({
+            data: h.state.conv
+              ? { ...h.state.conv, channel_id: h.state.conversationChannelId }
+              : null,
+            error: null,
           }),
-        }),
+      };
+      return {
+        ...chain,
         update: (payload: Record<string, unknown>) => {
           h.state.updatePayload = payload;
           return { eq: () => Promise.resolve({ error: null }) };
@@ -113,6 +149,8 @@ beforeEach(() => {
   // Por padrão o agente de handoff configurado É elegível — os testes
   // que exercitam o caminho inverso sobrescrevem isto.
   h.state.eligibleProfile = { user_id: 'agent-7' };
+  h.state.conversationChannelId = null;
+  h.state.channelType = null;
   h.loadAiConfig.mockResolvedValue(aiConfig());
   h.buildConversationContext.mockResolvedValue([
     { role: 'user', content: 'hi' },
@@ -143,6 +181,33 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     const systemPrompt = h.generateReply.mock.calls[0][0]
       .systemPrompt as string;
     expect(systemPrompt).toContain('Returns accepted within 30 days.');
+  });
+
+  // SPEC 049 §5.6 — the prompt must not promise a UI the channel can't
+  // render.
+  describe('channel-aware prompt (SPEC 049 §5.6)', () => {
+    it('QR conversation: system prompt tells the model to use numbered plain text', async () => {
+      h.state.conversationChannelId = 'chan-qr-1';
+      h.state.channelType = 'whatsapp_qr';
+
+      await dispatchInboundToAiReply(ARGS);
+
+      const systemPrompt = h.generateReply.mock.calls[0][0]
+        .systemPrompt as string;
+      expect(systemPrompt).toContain('cannot render buttons');
+      expect(systemPrompt).toContain('numbered plain-text list');
+    });
+
+    it('Cloud conversation (or no channel resolved): prompt says nothing about the restriction', async () => {
+      h.state.conversationChannelId = 'chan-cloud-1';
+      h.state.channelType = 'whatsapp_cloud';
+
+      await dispatchInboundToAiReply(ARGS);
+
+      const systemPrompt = h.generateReply.mock.calls[0][0]
+        .systemPrompt as string;
+      expect(systemPrompt).not.toContain('cannot render buttons');
+    });
   });
 
   it('stands down when an active message-level automation exists', async () => {

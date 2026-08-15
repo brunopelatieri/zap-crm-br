@@ -100,6 +100,9 @@ interface UseBroadcastSendingReturn {
 /** Códigos de erro tipados da rota → chaves de i18n. */
 const ERROR_CODES = new Set([
   'whatsapp_not_configured',
+  // SPEC 049 §5.3 — distinct from the code above: the account HAS a
+  // channel, just not one that can broadcast (QR-only).
+  'channel_not_capable',
   'empty_audience',
   'quota_exceeded',
   'too_many_recipients',

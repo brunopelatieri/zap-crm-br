@@ -47,11 +47,61 @@ vi.mock('@/lib/channels/ingest', () => ({
   ingestInbound: (...args: unknown[]) => ingestInbound(...args),
 }));
 
+const dispatchWebhookEvent = vi.fn();
+vi.mock('@/lib/webhooks/deliver', () => ({
+  dispatchWebhookEvent: (...args: unknown[]) => dispatchWebhookEvent(...args),
+}));
+
+/**
+ * Linha de `messages` que `handleStatusUpdate` (SPEC 049 §5.5) lê para
+ * resolver conta + canal do evento `message.status_updated`. `null`
+ * por padrão — a maioria dos testes deste arquivo não passa por ali.
+ */
+let statusMessageRow: {
+  conversation_id: string;
+  conversations: {
+    account_id: string;
+    channel_id: string | null;
+    channels: { type: string } | null;
+  };
+} | null = null;
+
 // Só a consulta de `whatsapp_config` por `phone_number_id` é exercida
-// aqui — o resto do trabalho está mockado no ingest.
+// diretamente aqui — o resto do trabalho de INGESTÃO está mockado no
+// ingest. `messages`/`broadcast_recipients` ramificam por tabela porque
+// `handleStatusUpdate` (não mockado) os lê de verdade.
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
-    from: () => {
+    from: (table: string) => {
+      if (table === 'messages') {
+        // Two different call shapes hit `messages` inside
+        // handleStatusUpdate: an `.update(...).eq(...)` mirror (awaited
+        // directly, no `.select()`) and a `.select().eq().limit()
+        // .maybeSingle()` read that resolves the owning conversation —
+        // this fake answers both via `.then()` for the first and
+        // `.maybeSingle()` for the second.
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          limit: () => chain,
+          update: () => chain,
+          maybeSingle: () =>
+            Promise.resolve({ data: statusMessageRow, error: null }),
+          then: (
+            onF: (v: { error: null }) => unknown,
+            onR?: (e: unknown) => unknown
+          ) => Promise.resolve({ error: null }).then(onF, onR),
+        };
+        return chain;
+      }
+      if (table === 'broadcast_recipients') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+        };
+        return chain;
+      }
       const chain = {
         select: () => chain,
         eq: () =>
@@ -117,8 +167,38 @@ beforeEach(() => {
   vi.clearAllMocks();
   afterCallbacks.length = 0;
   ingestInbound.mockResolvedValue(undefined);
+  dispatchWebhookEvent.mockResolvedValue(undefined);
+  statusMessageRow = null;
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
+
+function statusRequest(status: {
+  id: string;
+  status: string;
+  timestamp: string;
+  recipient_id: string;
+}): Request {
+  return request({
+    entry: [
+      {
+        id: 'entry-1',
+        changes: [
+          {
+            field: 'messages',
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: '+551130000000',
+                phone_number_id: 'pnid-1',
+              },
+              statuses: [status],
+            },
+          },
+        ],
+      },
+    ],
+  });
+}
 
 describe('POST /api/whatsapp/webhook — ack e processamento', () => {
   it('responde 200 ANTES de processar, e processa dentro de after()', async () => {
@@ -182,5 +262,57 @@ describe('POST /api/whatsapp/webhook — ack e processamento', () => {
 
     expect(res.status).toBe(401);
     expect(afterCallbacks).toHaveLength(0);
+  });
+});
+
+describe('message.status_updated carrega channel_id/channel_type (SPEC 049 §5.5)', () => {
+  it('inclui channel_id e channel_type resolvidos da conversa, ao lado dos campos de sempre', async () => {
+    statusMessageRow = {
+      conversation_id: 'conv-1',
+      conversations: {
+        account_id: 'acct-1',
+        channel_id: 'chan-qr-1',
+        channels: { type: 'whatsapp_qr' },
+      },
+    };
+
+    await POST(
+      statusRequest({
+        id: 'wamid.1',
+        status: 'delivered',
+        timestamp: '1786000000',
+        recipient_id: '5511999999999',
+      })
+    );
+    await afterCallbacks[0]!();
+
+    expect(dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'message.status_updated',
+      expect.objectContaining({
+        whatsapp_message_id: 'wamid.1',
+        conversation_id: 'conv-1',
+        status: 'delivered',
+        channel_id: 'chan-qr-1',
+        channel_type: 'whatsapp_qr',
+      })
+    );
+  });
+
+  it('sem linha de mensagem correspondente, não dispara webhook nenhum', async () => {
+    statusMessageRow = null;
+
+    await POST(
+      statusRequest({
+        id: 'wamid.missing',
+        status: 'delivered',
+        timestamp: '1786000000',
+        recipient_id: '5511999999999',
+      })
+    );
+    await afterCallbacks[0]!();
+
+    expect(dispatchWebhookEvent).not.toHaveBeenCalled();
   });
 });

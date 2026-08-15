@@ -194,6 +194,85 @@ describe('validateStepsForActivation', () => {
     ]);
   });
 
+  // SPEC 049 §5.1.2 — send_template / send_buttons / send_list on an
+  // account whose channels don't all support the capability.
+  describe('channel-capability awareness (SPEC 049 §5.1.2)', () => {
+    function templateStep() {
+      return {
+        step_type: 'send_template' as const,
+        step_config: { template_name: 'promo' },
+      };
+    }
+    function buttonsStep() {
+      return {
+        step_type: 'send_buttons' as const,
+        step_config: {
+          kind: 'buttons',
+          body: 'Pick one',
+          buttons: [{ id: 'yes', title: 'Yes' }],
+        },
+      };
+    }
+    function listStep() {
+      return {
+        step_type: 'send_list' as const,
+        step_config: {
+          kind: 'list',
+          body: 'Pick one',
+          button_label: 'Open',
+          sections: [{ rows: [{ id: 'a', title: 'A' }] }],
+        },
+      };
+    }
+
+    it("omitting accountChannelTypes preserves today's behaviour (Cloud-only account, no issue)", () => {
+      expect(validateStepsForActivation([templateStep()])).toEqual([]);
+      expect(validateStepsForActivation([buttonsStep()])).toEqual([]);
+      expect(validateStepsForActivation([listStep()])).toEqual([]);
+    });
+
+    it('account with only whatsapp_cloud: no capability issue for any of the three steps', () => {
+      const types: ('whatsapp_cloud' | 'whatsapp_qr')[] = ['whatsapp_cloud'];
+      expect(validateStepsForActivation([templateStep()], types)).toEqual([]);
+      expect(validateStepsForActivation([buttonsStep()], types)).toEqual([]);
+      expect(validateStepsForActivation([listStep()], types)).toEqual([]);
+    });
+
+    it('account with only whatsapp_qr: BLOCKING error — the step can never work', () => {
+      const types: ('whatsapp_cloud' | 'whatsapp_qr')[] = ['whatsapp_qr'];
+
+      const templateIssues = validateStepsForActivation(
+        [templateStep()],
+        types
+      );
+      expect(templateIssues).toHaveLength(1);
+      expect(templateIssues[0].severity).toBeUndefined();
+      expect(templateIssues[0].message).toContain(
+        'no channel in this account does'
+      );
+
+      const buttonsIssues = validateStepsForActivation([buttonsStep()], types);
+      expect(buttonsIssues).toHaveLength(1);
+      expect(buttonsIssues[0].severity).toBeUndefined();
+
+      const listIssues = validateStepsForActivation([listStep()], types);
+      expect(listIssues).toHaveLength(1);
+      expect(listIssues[0].severity).toBeUndefined();
+    });
+
+    it('account with BOTH channel types: WARNING, not a blocker — the step is legitimate on Cloud', () => {
+      const types: ('whatsapp_cloud' | 'whatsapp_qr')[] = [
+        'whatsapp_cloud',
+        'whatsapp_qr',
+      ];
+
+      const issues = validateStepsForActivation([templateStep()], types);
+      expect(issues).toHaveLength(1);
+      expect(issues[0].severity).toBe('warning');
+      expect(issues[0].message).toContain('if this automation runs');
+    });
+  });
+
   it('flags condition subject/operand independently', () => {
     const issues = validateStepsForActivation([
       { step_type: 'condition', step_config: {} },
@@ -375,6 +454,55 @@ describe('validateTriggerForActivation', () => {
       expect(check({ margin_minutes: 0 })[0].path).toBe(
         'trigger.margin_minutes'
       );
+    });
+  });
+
+  // SPEC 049 §5.1.3 — session_window_expiring never fires on an account
+  // whose channels have no 24h session window at all.
+  describe('session_window_expiring — channel coverage (SPEC 049 §5.1.3)', () => {
+    it("omitting accountChannelTypes preserves today's behaviour (assumed Cloud, no warning)", () => {
+      expect(
+        validateTriggerForActivation('session_window_expiring', {})
+      ).toEqual([]);
+    });
+
+    it('account with only whatsapp_qr: warns — no channel has a window to expire', () => {
+      const issues = validateTriggerForActivation(
+        'session_window_expiring',
+        {},
+        ['whatsapp_qr']
+      );
+      expect(issues).toHaveLength(1);
+      expect(issues[0].severity).toBe('warning');
+      expect(issues[0].message).toContain('never fires');
+    });
+
+    it('account with only whatsapp_cloud: no warning', () => {
+      expect(
+        validateTriggerForActivation('session_window_expiring', {}, [
+          'whatsapp_cloud',
+        ])
+      ).toEqual([]);
+    });
+
+    it('account with both channel types: no warning — a Cloud conversation can still expire', () => {
+      expect(
+        validateTriggerForActivation('session_window_expiring', {}, [
+          'whatsapp_cloud',
+          'whatsapp_qr',
+        ])
+      ).toEqual([]);
+    });
+
+    it('QR-only account with an invalid margin: gets BOTH the margin error and the coverage warning', () => {
+      const issues = validateTriggerForActivation(
+        'session_window_expiring',
+        { margin_minutes: 1 },
+        ['whatsapp_qr']
+      );
+      expect(issues).toHaveLength(2);
+      expect(issues.filter((i) => i.severity === 'warning')).toHaveLength(1);
+      expect(issues.filter((i) => i.severity === undefined)).toHaveLength(1);
     });
   });
 });

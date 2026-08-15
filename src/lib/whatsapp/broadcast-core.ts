@@ -22,6 +22,8 @@ import {
   cloudChannelContext,
   sendContentViaChannel,
 } from '@/lib/channels/send';
+import { loadAccountChannelTypes } from '@/lib/channels/account-channel-types';
+import { accountCapabilityCoverage } from '@/lib/channels/capabilities';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import {
   sanitizePhoneForMeta,
@@ -99,6 +101,35 @@ export interface BroadcastPlan {
 const MAX_RECIPIENTS = 1000;
 
 /**
+ * SPEC 049 §5.3 — a broadcast is Cloud-by-construction (§1.9): only
+ * `whatsapp_cloud` declares `capabilities.broadcast`, on purpose — a
+ * QR code instance blasting hundreds of messages is the fastest path to
+ * a ban. Every entry point that can start a send (the public API, the
+ * dashboard wizard, its scheduler) calls this FIRST, so an account whose
+ * only channel is QR gets the real reason instead of "WhatsApp not
+ * configured" (which reads as "nothing is set up", not "what you set up
+ * doesn't support this").
+ *
+ * `'some'` and `'all'` both pass silently: a mixed account still resolves
+ * to the Cloud channel via `whatsapp_config` below, unchanged from
+ * today. Only `'none'` — no channel in the account can ever broadcast —
+ * throws here, before the generic config lookup gets a chance to.
+ */
+export async function assertAccountCanBroadcast(
+  db: SupabaseClient,
+  accountId: string
+): Promise<void> {
+  const types = await loadAccountChannelTypes(db, accountId);
+  if (accountCapabilityCoverage(types, 'broadcast') === 'none') {
+    throw new BroadcastError(
+      'channel_not_capable',
+      'Bulk broadcast is only available on WhatsApp Oficial — QR code instances cannot send campaigns. This is the rule that most protects the number from being banned.',
+      400
+    );
+  }
+}
+
+/**
  * Validate + persist a broadcast, resolving each recipient to a
  * contact. Returns a plan for {@link deliverBroadcast}. Throws
  * {@link BroadcastError} on bad input / missing config / a malformed
@@ -130,6 +161,8 @@ export async function createBroadcast(
       400
     );
   }
+
+  await assertAccountCanBroadcast(db, accountId);
 
   // Config (fail fast + provides the audit trail owner already resolved
   // by the caller). Meta send needs phone_number_id + decrypted token.

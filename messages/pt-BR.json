@@ -1004,7 +1004,12 @@
       "toastNotSignedIn": "Não conectado.",
       "toastNotLinked": "Seu perfil não está vinculado a uma conta.",
       "toastFailedDraft": "Falha ao salvar rascunho: {error}",
-      "toastDraftSaved": "Rascunho salvo"
+      "toastDraftSaved": "Rascunho salvo",
+      "channelBlocked": {
+        "title": "Disparo em massa não disponível",
+        "body": "Disparo em massa só está disponível no WhatsApp Oficial. Instâncias conectadas por QRCode não podem enviar campanhas — é a regra que mais protege o número de banimento.",
+        "back": "Voltar para disparos"
+      }
     },
     "wizard": {
       "next": "Avançar",
@@ -1257,6 +1262,7 @@
       "excludeNotAppliedToImport": "A exclusão por etiqueta não se aplica a uma lista importada — contatos importados ainda não têm etiquetas.",
       "sendError": {
         "whatsapp_not_configured": "O WhatsApp não está conectado. Configure a integração em Ajustes e tente de novo.",
+        "channel_not_capable": "Disparo em massa só está disponível no WhatsApp Oficial. Instâncias conectadas por QRCode não podem enviar campanhas — é a regra que mais protege o número de banimento.",
         "empty_audience": "Nenhum contato com telefone válido corresponde a esta audiência.",
         "quota_exceeded": "Esta audiência é maior do que o seu tier de mensageria na Meta permite em um único disparo. Remova contatos ou divida a campanha.",
         "too_many_recipients": "Esta audiência é grande demais para um único disparo. Divida em envios menores.",
@@ -1667,6 +1673,9 @@
       "marginLabel": "Horas antes de a janela fechar",
       "marginHint": "Dispara uma vez por conversa, {minutes} minutos antes de a janela de 24 horas expirar. Só reengaja conversas que já estão esperando o cliente, e nunca fora do horário comercial.",
       "marginWarn": "Acima de 12 horas isso reengaja quem acabou de falar com você.",
+      "sessionWindowCoverageWarn": "Este gatilho nunca dispara — nenhum canal desta conta tem janela de 24h para expirar.",
+      "channelCapabilityNoneWarn": "Nenhum canal desta conta tem suporte a isto — o passo vai falhar em toda execução.",
+      "channelCapabilitySomeWarn": "Só funciona em canais com suporte a isto — o passo vai falhar, com o motivo registrado, se a automação rodar numa conversa de um canal sem suporte.",
       "active": "Ativo",
       "activeAria": "Ativo",
       "save": "Salvar",

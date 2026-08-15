@@ -27,6 +27,10 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const status = url.searchParams.get('status');
     const contactId = url.searchParams.get('contact_id');
+    // SPEC 049 §5.4 — additive filter, same argument as the `channel_id`
+    // field on the response: an account with more than one channel wants
+    // to list "just this number's conversations".
+    const channelId = url.searchParams.get('channel_id');
 
     let query = ctx.supabase
       .from('conversations')
@@ -35,6 +39,7 @@ export async function GET(request: Request) {
 
     if (status) query = query.eq('status', status);
     if (contactId) query = query.eq('contact_id', contactId);
+    if (channelId) query = query.eq('channel_id', channelId);
 
     query = query
       .order('created_at', { ascending: false })

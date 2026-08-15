@@ -7,6 +7,11 @@ import {
 } from './window-trigger';
 import { firesAtLeastOnce, validateSchedule } from './schedule';
 import { resolveTimeZone } from '@/lib/broadcasts/send-window';
+import {
+  accountCapabilityCoverage,
+  type ChannelCapabilityKey,
+} from '@/lib/channels/capabilities';
+import type { ChannelType } from '@/lib/channels/types';
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -26,6 +31,18 @@ export interface ValidationIssue {
   /** Dot-path for the UI to highlight; stable enough to build a table. */
   path: string;
   message: string;
+  /**
+   * Absent = blocking (the historical behaviour: every issue in this
+   * file used to stop activation). `'warning'` is the only value that
+   * changes that — SPEC 049 §5.1.2/§5.1.3, where a step is legitimate on
+   * SOME of the account's channels and only fails on others at runtime,
+   * with the reason already logged. Filter with `severity !== 'warning'`
+   * to get the blocking subset, the same convention `lib/flows/validate.ts`
+   * already uses (there `severity` is required; here it stays optional
+   * so every issue pushed before this field existed keeps compiling and
+   * keeps blocking, byte for byte).
+   */
+  severity?: 'warning';
 }
 
 interface StepLike {
@@ -34,8 +51,18 @@ interface StepLike {
   branches?: { yes?: StepLike[]; no?: StepLike[] };
 }
 
+/**
+ * SPEC 049 §5.1.2: the historical default of `['whatsapp_cloud']` is not
+ * a guess — it's the account shape that existed before the channel layer
+ * (PRD 047 F1), and it makes every capability check below a no-op for a
+ * caller that doesn't pass real channel types, which is what keeps every
+ * pre-existing call site (and its tests) byte-for-byte unchanged.
+ */
+const CLOUD_ONLY: ChannelType[] = ['whatsapp_cloud'];
+
 export function validateStepsForActivation(
-  steps: StepLike[]
+  steps: StepLike[],
+  accountChannelTypes: ChannelType[] = CLOUD_ONLY
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   if (!Array.isArray(steps) || steps.length === 0) {
@@ -45,29 +72,61 @@ export function validateStepsForActivation(
     });
     return issues;
   }
-  walk(steps, '', issues);
+  walk(steps, '', issues, accountChannelTypes);
   return issues;
 }
 
 function walk(
   steps: StepLike[],
   prefix: string,
-  issues: ValidationIssue[]
+  issues: ValidationIssue[],
+  accountChannelTypes: ChannelType[]
 ): void {
   steps.forEach((s, i) => {
     const path = `${prefix}steps[${i}]`;
-    validateOne(s, path, issues);
+    validateOne(s, path, issues, accountChannelTypes);
     if (s.step_type === 'condition' && s.branches) {
-      if (s.branches.yes) walk(s.branches.yes, `${path}.yes.`, issues);
-      if (s.branches.no) walk(s.branches.no, `${path}.no.`, issues);
+      if (s.branches.yes)
+        walk(s.branches.yes, `${path}.yes.`, issues, accountChannelTypes);
+      if (s.branches.no)
+        walk(s.branches.no, `${path}.no.`, issues, accountChannelTypes);
     }
   });
+}
+
+/**
+ * SPEC 049 §5.1.2 — `send_template` / `send_buttons` / `send_list` on an
+ * account whose channels don't all support the underlying capability.
+ * Mirrors the runtime: a step that hits a channel without the capability
+ * fails with `ChannelCapabilityError`, and the message here matches what
+ * ends up in `automation_logs` so the warning and the eventual failure
+ * point at the same fact.
+ */
+function validateChannelCapability(
+  path: string,
+  issues: ValidationIssue[],
+  accountChannelTypes: ChannelType[],
+  capability: ChannelCapabilityKey,
+  stepLabel: string
+): void {
+  const coverage = accountCapabilityCoverage(accountChannelTypes, capability);
+  if (coverage === 'all') return;
+  const message =
+    coverage === 'none'
+      ? `${stepLabel} needs a channel that supports it, and no channel in this account does — this step will fail on every run`
+      : `${stepLabel} only works on channels that support it — if this automation runs on a conversation from a channel without it, this step will fail with the reason logged`;
+  issues.push(
+    coverage === 'none'
+      ? { path: `${path}.channel_capability`, message }
+      : { path: `${path}.channel_capability`, message, severity: 'warning' }
+  );
 }
 
 function validateOne(
   step: StepLike,
   path: string,
-  issues: ValidationIssue[]
+  issues: ValidationIssue[],
+  accountChannelTypes: ChannelType[]
 ): void {
   const c = step.step_config ?? {};
   switch (step.step_type) {
@@ -89,6 +148,15 @@ function validateOne(
         issues.push({ path: `${path}.interactive`, message: result.error });
       }
       validateWindowGuard(c, path, issues, step.step_type);
+      validateChannelCapability(
+        path,
+        issues,
+        accountChannelTypes,
+        step.step_type === 'send_buttons'
+          ? 'interactiveButtons'
+          : 'interactiveList',
+        step.step_type
+      );
       break;
     }
     case 'send_template':
@@ -98,6 +166,13 @@ function validateOne(
           message: 'template name is required',
         });
       }
+      validateChannelCapability(
+        path,
+        issues,
+        accountChannelTypes,
+        'templates',
+        'send_template'
+      );
       break;
     case 'add_tag':
     case 'remove_tag':
@@ -206,7 +281,8 @@ function validateOne(
 
 export function validateTriggerForActivation(
   triggerType: AutomationTriggerType | string,
-  triggerConfig: unknown
+  triggerConfig: unknown,
+  accountChannelTypes: ChannelType[] = CLOUD_ONLY
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const cfg = (triggerConfig ?? {}) as Record<string, unknown>;
@@ -294,6 +370,24 @@ export function validateTriggerForActivation(
       issues.push({
         path: 'trigger.margin_minutes',
         message: `margin must be a whole number of minutes between ${MIN_MARGIN_MINUTES} and ${MAX_MARGIN_MINUTES}`,
+      });
+    }
+    // SPEC 049 §5.1.3: this trigger exists to catch a session window
+    // BEFORE it closes. An account with no channel that has a session
+    // window (only QR channels) can never produce that condition — the
+    // trigger is configured, saved, activated, and simply never fires,
+    // which is exactly the silent-no-op the AGENTS.md armadilhas table
+    // warns about. A warning, not a block: the automation may still be
+    // useful once a Cloud channel is added later.
+    if (
+      accountCapabilityCoverage(accountChannelTypes, 'sessionWindow24h') ===
+      'none'
+    ) {
+      issues.push({
+        path: 'trigger.margin_minutes',
+        message:
+          'this trigger never fires — no channel in this account has a 24h session window to expire',
+        severity: 'warning',
       });
     }
   } else if (triggerType === 'interactive_reply') {

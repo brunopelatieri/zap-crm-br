@@ -73,6 +73,7 @@ import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import { isValidE164, sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import {
   BroadcastError,
+  assertAccountCanBroadcast,
   type BroadcastPlan,
 } from '@/lib/whatsapp/broadcast-core';
 import {
@@ -195,6 +196,10 @@ async function loadWhatsappConfig(
   db: SupabaseClient,
   accountId: string
 ): Promise<{ phoneNumberId: string; accessToken: string }> {
+  // SPEC 049 §5.3 — before the generic "not configured", tell a QR-only
+  // account the real reason: broadcast just isn't available to them.
+  await assertAccountCanBroadcast(db, accountId);
+
   const { data: config, error } = await db
     .from('whatsapp_config')
     .select('phone_number_id, access_token')
@@ -1004,6 +1009,11 @@ export async function scheduleDashboardBroadcast(
   }: ScheduleDashboardBroadcastParams
 ): Promise<ScheduledBroadcast> {
   const templateLanguage = input.templateLanguage || 'en_US';
+
+  // SPEC 049 §5.3 — same guard as the immediate-send path (loadWhatsappConfig
+  // above); a scheduled broadcast on a QR-only account must fail with the
+  // same real reason, not "not configured".
+  await assertAccountCanBroadcast(db, accountId);
 
   const { data: config } = await db
     .from('whatsapp_config')

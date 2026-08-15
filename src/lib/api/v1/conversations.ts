@@ -15,6 +15,12 @@ export interface ApiConversation {
   contact_id: string;
   status: string;
   assigned_agent_id: string | null;
+  /**
+   * SPEC 049 §5.4 — which of the account's channels this conversation
+   * belongs to. `null` only for a row read before migration 057 backfilled
+   * the column; every conversation created since is stamped.
+   */
+  channel_id: string | null;
   last_message_text: string | null;
   last_message_at: string | null;
   unread_count: number;
@@ -57,6 +63,7 @@ export function serializeConversation(conv: Conversation): ApiConversation {
     contact_id: conv.contact_id,
     status: conv.status,
     assigned_agent_id: conv.assigned_agent_id ?? null,
+    channel_id: conv.channel_id ?? null,
     last_message_text: conv.last_message_text ?? null,
     last_message_at: conv.last_message_at ?? null,
     unread_count: conv.unread_count ?? 0,

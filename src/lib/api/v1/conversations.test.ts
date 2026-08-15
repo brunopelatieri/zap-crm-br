@@ -31,6 +31,27 @@ describe('serializeConversation', () => {
     ]);
     expect(out.unread_count).toBe(2);
   });
+
+  // SPEC 049 §5.4 — GET /api/v1/conversations exposes channel_id.
+  it('includes channel_id, and null when the row has none', () => {
+    const withChannel = {
+      id: 'conv1',
+      contact_id: 'c1',
+      status: 'open',
+      unread_count: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      channel_id: 'chan-qr-1',
+      contact: null,
+    } as unknown as Conversation;
+    expect(serializeConversation(withChannel).channel_id).toBe('chan-qr-1');
+
+    const withoutChannel = {
+      ...withChannel,
+      channel_id: undefined,
+    } as unknown as Conversation;
+    expect(serializeConversation(withoutChannel).channel_id).toBeNull();
+  });
 });
 
 describe('serializeMessage', () => {

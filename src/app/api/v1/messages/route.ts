@@ -23,7 +23,8 @@
 //       "params": ["A123"] | { "body": [...] }   // array = positional body; object = structured
 //     },
 //     "reply_to_message_id": "<uuid>",       // optional, must be in the same conversation
-//     "name": "Jane Doe"                     // optional, names a newly-created contact
+//     "name": "Jane Doe",                    // optional, names a newly-created contact
+//     "channel_id": "<uuid>"                 // optional, picks which of the account's channels to send from (default channel if omitted)
 //   }
 //
 // Response (201):
@@ -102,7 +103,10 @@ export async function POST(request: Request) {
       ctx.supabase,
       ctx.accountId,
       to,
-      typeof body.name === 'string' ? body.name : null
+      typeof body.name === 'string' ? body.name : null,
+      // SPEC 049 §5.4 — optional: which channel to send from. Omitted
+      // keeps today's default-channel behaviour.
+      typeof body.channel_id === 'string' ? body.channel_id : null
     );
 
     const result = await sendMessageToConversation(

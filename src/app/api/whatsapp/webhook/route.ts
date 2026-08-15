@@ -480,15 +480,28 @@ async function handleStatusUpdate(status: {
   //    the owning account for delivery.
   const { data: msgRow } = await supabaseAdmin()
     .from('messages')
-    .select('conversation_id, conversations(account_id)')
+    .select(
+      'conversation_id, conversations(account_id, channel_id, channels(type))'
+    )
     .eq('message_id', status.id)
     .limit(1)
     .maybeSingle();
 
   if (msgRow) {
-    const conv = msgRow.conversations as { account_id: string } | null;
+    const conv = msgRow.conversations as {
+      account_id: string;
+      channel_id: string | null;
+      channels: { type: string } | { type: string }[] | null;
+    } | null;
     const accountId = conv?.account_id;
     if (accountId) {
+      // SPEC 049 §5.5 — purely additive, same fields as message.received
+      // / conversation.created: existing subscribers ignore what they
+      // don't know about.
+      const channelRel = conv?.channels;
+      const channelType = Array.isArray(channelRel)
+        ? channelRel[0]?.type
+        : channelRel?.type;
       await dispatchWebhookEvent(
         supabaseAdmin(),
         accountId,
@@ -497,6 +510,8 @@ async function handleStatusUpdate(status: {
           whatsapp_message_id: status.id,
           conversation_id: msgRow.conversation_id,
           status: status.status,
+          channel_id: conv?.channel_id ?? null,
+          channel_type: channelType ?? null,
         }
       );
     }

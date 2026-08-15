@@ -13,6 +13,10 @@ type ContactRow = { id: string; phone: string; name?: string | null };
 
 interface Script {
   config?: { user_id: string; channel_id?: string } | null; // whatsapp_config.maybeSingle
+  /** `channels` row for an explicit `channel_id` lookup. `null` = not found
+   *  (wrong account or nonexistent id) — the row `.eq('account_id', …)`
+   *  already scopes to, so the fake doesn't need to re-check tenancy. */
+  channel?: { id: string; status: string } | null;
   contactCandidates?: ContactRow[]; // contacts .like (same every call)
   /** Per-call `.like` results — overrides contactCandidates. Lets a
    *  test simulate "miss, then hit" for the unique-race path. */
@@ -68,6 +72,8 @@ function makeDb(script: Script): SupabaseClient {
     maybeSingle: () => {
       if (table === 'whatsapp_config')
         return Promise.resolve({ data: script.config ?? null, error: null });
+      if (table === 'channels')
+        return Promise.resolve({ data: script.channel ?? null, error: null });
       return Promise.resolve({ data: null, error: null });
     },
     single: () => {
@@ -203,6 +209,76 @@ describe('resolveConversationByPhone', () => {
     const res = await resolveConversationByPhone(db, 'acct', '+14155550123');
     expect(res).toEqual({
       conversationId: 'cv-raced',
+      contactId: 'c1',
+      contactCreated: false,
+    });
+  });
+});
+
+// SPEC 049 §5.4 — POST /api/v1/messages accepts an optional explicit
+// `channel_id`, letting an integrator pick a channel other than the
+// account's default (e.g. a QR instance).
+describe('resolveConversationByPhone — explicit channel_id (SPEC 049 §5.4)', () => {
+  it('uses the explicit channel when it belongs to the account and is connected — never touches whatsapp_config for the channel', async () => {
+    const db = makeDb({
+      config: { user_id: 'owner-1' }, // still needed for resolveAuditUserId
+      channel: { id: 'chan-qr-1', status: 'connected' },
+      contactCandidates: [{ id: 'c1', phone: '14155550123' }],
+      existingConversation: { id: 'cv1' },
+    });
+    const res = await resolveConversationByPhone(
+      db,
+      'acct',
+      '+14155550123',
+      null,
+      'chan-qr-1'
+    );
+    expect(res).toEqual({
+      conversationId: 'cv1',
+      contactId: 'c1',
+      contactCreated: false,
+    });
+  });
+
+  it('rejects with bad_request (never a 404) when channel_id does not belong to this account', async () => {
+    const db = makeDb({
+      config: { user_id: 'owner-1' },
+      channel: null, // .eq('account_id', accountId) found nothing
+    });
+    await expect(
+      resolveConversationByPhone(
+        db,
+        'acct',
+        '+14155550123',
+        null,
+        'chan-other-acct'
+      )
+    ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
+  });
+
+  it('rejects with bad_request and the status in the message when the channel is disconnected', async () => {
+    const db = makeDb({
+      config: { user_id: 'owner-1' },
+      channel: { id: 'chan-qr-1', status: 'disconnected' },
+    });
+    await expect(
+      resolveConversationByPhone(db, 'acct', '+14155550123', null, 'chan-qr-1')
+    ).rejects.toMatchObject({
+      code: 'bad_request',
+      status: 400,
+      message: expect.stringContaining('disconnected'),
+    });
+  });
+
+  it('omitting channel_id keeps the default-channel behaviour unchanged', async () => {
+    const db = makeDb({
+      config: { user_id: 'owner-1', channel_id: 'chan-default' },
+      contactCandidates: [{ id: 'c1', phone: '14155550123' }],
+      existingConversation: { id: 'cv1' },
+    });
+    const res = await resolveConversationByPhone(db, 'acct', '+14155550123');
+    expect(res).toEqual({
+      conversationId: 'cv1',
       contactId: 'c1',
       contactCreated: false,
     });

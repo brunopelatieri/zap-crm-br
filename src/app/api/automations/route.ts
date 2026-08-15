@@ -11,6 +11,7 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate';
+import { loadAccountChannelTypes } from '@/lib/channels/account-channel-types';
 
 export async function GET() {
   const supabase = await createClient();
@@ -105,19 +106,30 @@ export async function POST(request: Request) {
   // (is_active=false) are allowed to be incomplete so users can save
   // progress mid-build.
   if (is_active) {
+    const accountChannelTypes = await loadAccountChannelTypes(
+      supabase,
+      accountId
+    );
     const issues = [
       ...validateTriggerForActivation(
         effectiveTriggerType,
-        effectiveTriggerConfig ?? {}
+        effectiveTriggerConfig ?? {},
+        accountChannelTypes
       ),
       ...validateStepsForActivation(
         (effectiveSteps ?? []) as unknown as {
           step_type: string;
           step_config: Record<string, unknown>;
-        }[]
+        }[],
+        accountChannelTypes
       ),
     ];
-    if (issues.length > 0) {
+    // Warnings (e.g. a template step on an account that also has a QR
+    // channel) don't block — the step is legitimate on the other
+    // channel. Only issues with no `severity` (the historical default:
+    // blocking) stop activation.
+    const blockers = issues.filter((i) => i.severity !== 'warning');
+    if (blockers.length > 0) {
       return NextResponse.json(
         {
           error: 'Cannot activate automation with invalid configuration',

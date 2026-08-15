@@ -10,6 +10,7 @@ import { latestUserMessage } from './query';
 import { engineSendText } from '@/lib/flows/meta-send';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 import { isAssignableMember } from '@/lib/inbox/assignment';
+import { resolveChannelTypeForConversation } from '@/lib/channels/conversation-channel';
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -107,10 +108,16 @@ export async function dispatchInboundToAiReply(
       latestUserMessage(messages)
     );
 
+    const channelType = await resolveChannelTypeForConversation(
+      db,
+      accountId,
+      conversationId
+    );
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      channelType,
     });
 
     const { text, handoff, usage } = await generateReply({

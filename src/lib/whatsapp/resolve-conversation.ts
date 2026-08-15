@@ -38,12 +38,20 @@ export interface ResolvedConversation {
  * `accountId`. Throws `SendMessageError` (shared with the send core,
  * so the route maps one error family) on a bad phone, a missing
  * WhatsApp config, or a DB failure.
+ *
+ * `explicitChannelId` — SPEC 049 §5.4: `POST /api/v1/messages` accepts an
+ * OPTIONAL `channel_id`, letting an integrator pick which of the
+ * account's channels a message goes out on (e.g. a QR instance) instead
+ * of always landing on the default. Omitted keeps today's behaviour
+ * byte-for-byte — same `config.channel_id` / `resolveDefaultChannelId`
+ * fallback as before this parameter existed.
  */
 export async function resolveConversationByPhone(
   db: SupabaseClient,
   accountId: string,
   phone: string,
-  name?: string | null
+  name?: string | null,
+  explicitChannelId?: string | null
 ): Promise<ResolvedConversation> {
   const sanitized = sanitizePhoneForMeta(phone);
   if (!isValidE164(sanitized)) {
@@ -54,25 +62,53 @@ export async function resolveConversationByPhone(
     );
   }
 
-  // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('id, channel_id')
-    .eq('account_id', accountId)
-    .maybeSingle();
-  if (!config) {
-    throw new SendMessageError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
-  }
+  let channelId: string;
+  if (explicitChannelId) {
+    // Scoped to `accountId` so a channel id from ANOTHER account 400s
+    // instead of leaking whether it exists — never 404, which would
+    // confirm the id (SPEC 049 §5.4).
+    const { data: channel } = await db
+      .from('channels')
+      .select('id, status')
+      .eq('id', explicitChannelId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (!channel) {
+      throw new SendMessageError(
+        'bad_request',
+        `channel_id "${explicitChannelId}" does not belong to this account`,
+        400
+      );
+    }
+    if (channel.status !== 'connected') {
+      throw new SendMessageError(
+        'bad_request',
+        `channel_id "${explicitChannelId}" is ${channel.status} — cannot send`,
+        400
+      );
+    }
+    channelId = channel.id;
+  } else {
+    // Fail fast (and create nothing) when the account has no WhatsApp
+    // connected — the same error the send would raise anyway.
+    const { data: config } = await db
+      .from('whatsapp_config')
+      .select('id, channel_id')
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (!config) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
 
-  // `channel_id` já vive em `whatsapp_config` desde a 055; o fallback só
-  // cobre uma conta que nunca passou pelo backfill (migração 059).
-  const channelId =
-    config.channel_id ?? (await resolveDefaultChannelId(db, accountId));
+    // `channel_id` já vive em `whatsapp_config` desde a 055; o fallback só
+    // cobre uma conta que nunca passou pelo backfill (migração 059).
+    channelId =
+      config.channel_id ?? (await resolveDefaultChannelId(db, accountId));
+  }
 
   // Audit user for created rows = the single account-wide default used
   // by every public-API write (see resolveAuditUserId), so a contact
