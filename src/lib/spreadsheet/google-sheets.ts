@@ -122,25 +122,24 @@ export class SheetFetchError extends Error {
 }
 
 /**
- * Baixa o CSV de uma planilha pública. Roda **apenas no servidor** —
- * o navegador não consegue por causa do CORS do Google, e mesmo que
- * conseguisse não queremos a origem do usuário no meio.
+ * Host de CDN que o Google usa para SERVIR o export de uma planilha
+ * pública — não é o host original, mas ainda é infraestrutura do
+ * Google, e ainda é o host que a reconstrução da URL controla (chega
+ * aqui só a partir de um `Location` que o próprio `docs.google.com`
+ * devolveu, nunca a partir de entrada do usuário).
  */
-export async function fetchGoogleSheetCsv(input: string): Promise<string> {
-  const ref = extractSheetRef(input);
-  if (!ref) {
-    throw new SheetFetchError(
-      'invalid_url',
-      'Não parece um link de planilha do Google Sheets.'
-    );
-  }
+function isGoogleUserContentHost(hostname: string): boolean {
+  return (
+    hostname === 'googleusercontent.com' ||
+    hostname.endsWith('.googleusercontent.com')
+  );
+}
 
-  let response: Response;
+async function fetchOnce(url: string): Promise<Response> {
   try {
-    response = await fetch(buildSheetCsvUrl(ref), {
-      // `manual` para não seguir um redirecionamento para fora do
-      // Google: seguir cegamente reabriria o SSRF que a reconstrução
-      // da URL acabou de fechar.
+    return await fetch(url, {
+      // `manual` para decidir nós mesmos quais redirecionamentos
+      // seguir — ver o porquê logo abaixo, em `fetchGoogleSheetCsv`.
       redirect: 'manual',
       headers: { Accept: 'text/csv,text/plain' },
       signal: AbortSignal.timeout(SHEET_FETCH_TIMEOUT_MS),
@@ -154,8 +153,54 @@ export async function fetchGoogleSheetCsv(input: string): Promise<string> {
       'Não foi possível ler a planilha.'
     );
   }
+}
 
-  // 307/302 para accounts.google.com é o sintoma de planilha privada.
+/**
+ * Baixa o CSV de uma planilha pública. Roda **apenas no servidor** —
+ * o navegador não consegue por causa do CORS do Google, e mesmo que
+ * conseguisse não queremos a origem do usuário no meio.
+ */
+export async function fetchGoogleSheetCsv(input: string): Promise<string> {
+  const ref = extractSheetRef(input);
+  if (!ref) {
+    throw new SheetFetchError(
+      'invalid_url',
+      'Não parece um link de planilha do Google Sheets.'
+    );
+  }
+
+  let response = await fetchOnce(buildSheetCsvUrl(ref));
+
+  // O endpoint /export de uma planilha PÚBLICA sempre responde 307
+  // para um host `*.googleusercontent.com` — é assim que o Google
+  // entrega o conteúdo, não um sintoma de "não está pública" (achado
+  // verificado batendo direto no endpoint, 2026-08-15: o redirect
+  // acontece com ou sem User-Agent de navegador, para qualquer
+  // planilha compartilhada corretamente). Só ESSE host é seguido, e só
+  // um salto — um redirecionamento para qualquer outro lugar (o caso
+  // real de planilha privada é para `accounts.google.com`) ou uma
+  // segunda cadeia de redirect cai no `not_public` abaixo, sem seguir
+  // cegamente para fora do Google.
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location');
+    let target: URL | null = null;
+    try {
+      target = location ? new URL(location) : null;
+    } catch {
+      target = null;
+    }
+
+    if (
+      target &&
+      target.protocol === 'https:' &&
+      isGoogleUserContentHost(target.hostname)
+    ) {
+      response = await fetchOnce(target.toString());
+    }
+  }
+
+  // Se ainda for um redirecionamento depois da tentativa acima, é o
+  // sintoma real de planilha privada (redirect para o login do Google).
   if (response.status >= 300 && response.status < 400) {
     throw new SheetFetchError(
       'not_public',

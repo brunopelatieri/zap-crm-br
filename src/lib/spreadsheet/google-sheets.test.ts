@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildSheetCsvUrl,
   extractSheetRef,
+  fetchGoogleSheetCsv,
   looksLikeGoogleLoginPage,
 } from './google-sheets';
 
@@ -139,5 +140,92 @@ describe('looksLikeGoogleLoginPage', () => {
     expect(
       looksLikeGoogleLoginPage('phone,name\n5511988887777,html sign in')
     ).toBe(false);
+  });
+});
+
+// Achado de produção (2026-08-15): o endpoint /export de uma planilha
+// PÚBLICA sempre responde 307 para um host `*.googleusercontent.com` —
+// verificado batendo direto no endpoint com um link real. O código
+// tratava isso como "não está pública", quebrando a importação por
+// Google Sheets em todo caso legítimo.
+function redirectResponse(location: string): Response {
+  return new Response(null, { status: 307, headers: { location } });
+}
+
+function csvResponse(body: string): Response {
+  return new Response(body, {
+    status: 200,
+    headers: { 'content-type': 'text/csv' },
+  });
+}
+
+describe('fetchGoogleSheetCsv', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const url = `https://docs.google.com/spreadsheets/d/${ID}/edit`;
+
+  it('segue o redirect 307 para *.googleusercontent.com e devolve o CSV', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        redirectResponse(
+          'https://doc-0c-18-sheets.googleusercontent.com/export/abc/def?format=csv'
+        )
+      )
+      .mockResolvedValueOnce(csvResponse('phone,name\n5511988887777,Maria'));
+
+    const csv = await fetchGoogleSheetCsv(url);
+
+    expect(csv).toBe('phone,name\n5511988887777,Maria');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://doc-0c-18-sheets.googleusercontent.com/export/abc/def?format=csv'
+    );
+  });
+
+  it('não segue redirect para um host que não é googleusercontent.com', async () => {
+    fetchMock.mockResolvedValueOnce(
+      redirectResponse('https://accounts.google.com/ServiceLogin?service=wise')
+    );
+
+    await expect(fetchGoogleSheetCsv(url)).rejects.toMatchObject({
+      code: 'not_public',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('não persegue uma segunda cadeia de redirect', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        redirectResponse(
+          'https://doc-0c-18-sheets.googleusercontent.com/export/abc/def?format=csv'
+        )
+      )
+      .mockResolvedValueOnce(
+        redirectResponse('https://accounts.google.com/ServiceLogin')
+      );
+
+    await expect(fetchGoogleSheetCsv(url)).rejects.toMatchObject({
+      code: 'not_public',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('planilha genuinamente privada (redirect direto para o login) continua not_public', async () => {
+    fetchMock.mockResolvedValueOnce(
+      redirectResponse('https://accounts.google.com/ServiceLogin')
+    );
+
+    await expect(fetchGoogleSheetCsv(url)).rejects.toMatchObject({
+      code: 'not_public',
+    });
   });
 });
