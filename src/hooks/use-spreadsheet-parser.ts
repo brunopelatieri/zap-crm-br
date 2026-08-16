@@ -65,6 +65,9 @@ const INLINE_ROW_LIMIT = 2_000;
 export interface ParseFailure {
   code: ParseErrorCode;
   meta?: Record<string, string | number>;
+  /** Só XLSX: abas já conhecidas quando o erro ocorreu — preserva o
+   *  seletor de aba na UI mesmo com a aba ativa rejeitada. */
+  sheetNames?: string[];
 }
 
 export interface ParseOutcome {
@@ -82,6 +85,9 @@ export interface ParseProgress {
 export interface ParseOptions {
   sheetName?: string;
   columns?: AudienceColumnMap;
+  /** Teto de linhas — padrão `MAX_AUDIENCE_ROWS` (SPEC 052 D-7/F6);
+   *  contatos passa `MAX_CONTACTS_ROWS`, bem menor. */
+  maxRows?: number;
 }
 
 export interface UseSpreadsheetParser {
@@ -206,7 +212,7 @@ export function useSpreadsheetParser(): UseSpreadsheetParser {
   /** Converte qualquer coisa lançada no formato de erro tipado. */
   const toFailure = useCallback((err: unknown): ParseFailure => {
     if (err instanceof SpreadsheetParseError) {
-      return { code: err.code, meta: err.meta };
+      return { code: err.code, meta: err.meta, sheetNames: err.sheetNames };
     }
     return { code: 'unreadable' };
   }, []);
@@ -214,7 +220,7 @@ export function useSpreadsheetParser(): UseSpreadsheetParser {
   const runCsv = useCallback(
     async (requestId: number, text: string, options?: ParseOptions) => {
       try {
-        const rows = parseAudienceCsv(text, options?.columns);
+        const rows = parseAudienceCsv(text, options?.columns, options?.maxRows);
         const audience = await normalizeCooperatively(requestId, rows);
         if (audience) succeed(requestId, { audience });
       } catch (err) {
@@ -274,6 +280,7 @@ export function useSpreadsheetParser(): UseSpreadsheetParser {
           const { rows, sheetName, sheetNames } = parseXlsxSheets(sheets, {
             sheetName: options?.sheetName,
             columns: options?.columns,
+            maxRows: options?.maxRows,
           });
 
           const audience = await normalizeCooperatively(requestId, rows);

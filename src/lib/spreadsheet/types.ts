@@ -21,6 +21,16 @@ export const MAX_SPREADSHEET_BYTES = 10 * 1024 * 1024;
 export const MAX_AUDIENCE_ROWS = 50_000;
 
 /**
+ * Teto de linhas para a importação de CONTATOS (SPEC 052 D-7/F6) — bem
+ * mais baixo que `MAX_AUDIENCE_ROWS`. A audiência só LÊ a planilha; o
+ * import de contatos ESCREVE — insere pelo navegador, sujeito a RLS, em
+ * lotes de 50. 50 000 linhas seriam 1 000 requisições sequenciais; 10 000
+ * ficam em 200, ainda incômodo mas tolerável — acima disso a mensagem
+ * pede para dividir o arquivo em vez de deixar a aba travada por minutos.
+ */
+export const MAX_CONTACTS_ROWS = 10_000;
+
+/**
  * Abaixo deste número de linhas o parsing roda na main thread: o custo
  * de subir um Worker (spawn + transferência) supera o ganho, e a UI
  * não chega a piscar.
@@ -28,10 +38,9 @@ export const MAX_AUDIENCE_ROWS = 50_000;
 export const WORKER_THRESHOLD_ROWS = 2_000;
 
 /**
- * Códigos de erro de parsing. Hoje mapeiam para
- * `Broadcasts.audience.parseError.*` (consumido em
- * `step2-select-audience.tsx`) — migram para `Import.parseError.*`
- * quando a F4 mover os componentes de UI compartilhados (SPEC 052).
+ * Códigos de erro de parsing. Mapeiam para `Import.parseError.*`
+ * (SPEC 052 F7) — consumido tanto pelo passo 2 do disparo quanto pelo
+ * importador de contatos.
  */
 export type ParseErrorCode =
   | 'file_too_large'
@@ -46,15 +55,25 @@ export class SpreadsheetParseError extends Error {
   readonly code: ParseErrorCode;
   /** Contexto opcional para interpolação na mensagem traduzida. */
   readonly meta?: Record<string, string | number>;
+  /**
+   * Abas já conhecidas quando o erro ocorreu (só XLSX). Sem isto, uma
+   * pasta com uma aba de 15 mil linhas e outra de 800 rejeita a
+   * primeira por `too_many_rows` e o seletor de aba some junto — o
+   * usuário fica sem como trocar para a aba que serviria (SPEC 052 F6,
+   * achado de revisão).
+   */
+  readonly sheetNames?: string[];
 
   constructor(
     code: ParseErrorCode,
     message: string,
-    meta?: Record<string, string | number>
+    meta?: Record<string, string | number>,
+    sheetNames?: string[]
   ) {
     super(message);
     this.name = 'SpreadsheetParseError';
     this.code = code;
     this.meta = meta;
+    this.sheetNames = sheetNames;
   }
 }

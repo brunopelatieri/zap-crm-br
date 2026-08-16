@@ -67,6 +67,12 @@ function chunkArray<T>(items: T[], size: number): T[][] {
  * única `.select()`: um contato com centenas de notas, ou uma conta com
  * poucos contatos mas muitas etiquetas cada, estoura em silêncio do
  * mesmo jeito que a listagem principal estourava antes da 025/049.
+ *
+ * `makeQuery` PRECISA de um `.order()` determinístico (ex.: `.order('id')`)
+ * antes do `.range()`. OFFSET sem ORDER BY estável não garante a mesma
+ * fatia entre chamadas — um INSERT/UPDATE concorrente na tabela pode
+ * empurrar uma linha de uma página para outra, e ela some do `Set`
+ * final sem erro nenhum (achado de revisão SPEC 052 F6).
  */
 export async function fetchAllRows<T>(
   makeQuery: (
@@ -220,6 +226,7 @@ async function fetchTagsByContact(
           .from('contact_tags')
           .select('contact_id, tag_id')
           .in('contact_id', chunk)
+          .order('id', { ascending: true })
           .range(from, to)
     );
     for (const row of rows) {
@@ -268,6 +275,7 @@ async function fetchConversationSignalsByContact(
           'contact_id, channel_id, last_message_at, last_customer_message_at'
         )
         .in('contact_id', chunk)
+        .order('id', { ascending: true })
         .range(from, to)
     );
     for (const row of rows) {
@@ -314,6 +322,7 @@ async function fetchCustomValuesByContact(
         .from('contact_custom_values')
         .select('contact_id, custom_field_id, value')
         .in('contact_id', chunk)
+        .order('id', { ascending: true })
         .range(from, to)
     );
     for (const row of rows) {
@@ -353,6 +362,7 @@ async function fetchNotesByContact(
         .select('contact_id, note_text, created_at')
         .in('contact_id', chunk)
         .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
         .range(from, to)
     );
     for (const row of rows) {

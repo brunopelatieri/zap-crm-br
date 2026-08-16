@@ -211,7 +211,15 @@ export function readCsvTable(text: string): CsvTable {
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    rows.push({ values: parseCsvLine(line, delimiter), lineNumber: i + 1 });
+    const values = parseCsvLine(line, delimiter);
+    // Uma linha só de delimitadores (`,,,`) não é texto vazio — o
+    // `.trim()` acima não pega — mas vira células todas vazias, o
+    // mesmo que o XLSX descarta via `isBlankRow` antes de contar contra
+    // o teto de linhas. Sem este filtro, a mesma planilha do Google
+    // (range estendido além dos dados) é aceita como .xlsx e rejeitada
+    // como .csv — a fonte recomendada (SPEC 052 F6, achado de revisão).
+    if (values.every((v) => v.trim() === '')) continue;
+    rows.push({ values, lineNumber: i + 1 });
   }
 
   return { headers, rows };

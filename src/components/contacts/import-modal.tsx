@@ -41,8 +41,9 @@ import {
 import { SpreadsheetTemplateHint } from '@/components/import/spreadsheet-template-hint';
 import { SpreadsheetDropzone } from '@/components/import/spreadsheet-dropzone';
 import { ImportRejectSummary } from '@/components/import/import-reject-summary';
-import { GoogleSheetsSource } from '@/components/broadcasts/audience/google-sheets-source';
+import { GoogleSheetsSource } from '@/components/import/google-sheets-source';
 import { useSpreadsheetParser } from '@/hooks/use-spreadsheet-parser';
+import { MAX_CONTACTS_ROWS } from '@/lib/spreadsheet/types';
 import type { NormalizedAudienceRow } from '@/lib/audience/types';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
@@ -128,7 +129,7 @@ export function ImportModal({
   onImported,
 }: ImportModalProps) {
   const t = useTranslations('Contacts.importModal');
-  const tParseError = useTranslations('Broadcasts.audience.parseError');
+  const tParseError = useTranslations('Import.parseError');
   const supabase = createClient();
   const { accountId, canEditSettings } = useAuth();
 
@@ -197,7 +198,7 @@ export function ImportModal({
     setFile(selected);
     setActiveSheet(undefined);
     setResult(null);
-    parser.parseFile(selected);
+    parser.parseFile(selected, { maxRows: MAX_CONTACTS_ROWS });
   }
 
   function handleClearFile() {
@@ -210,7 +211,7 @@ export function ImportModal({
   function handleSheetChange(name: string) {
     if (!file) return;
     setActiveSheet(name);
-    parser.parseFile(file, { sheetName: name });
+    parser.parseFile(file, { sheetName: name, maxRows: MAX_CONTACTS_ROWS });
   }
 
   async function handleSheetsImport(url: string) {
@@ -232,7 +233,9 @@ export function ImportModal({
 
       // O CSV baixado segue o mesmo caminho de um arquivo local — uma
       // única implementação de parsing para as três fontes.
-      await parser.parseCsvText(await res.text());
+      await parser.parseCsvText(await res.text(), {
+        maxRows: MAX_CONTACTS_ROWS,
+      });
     } catch {
       setSheetsErrorCode('fetch_failed');
     } finally {
@@ -301,19 +304,32 @@ export function ImportModal({
       const { unique, duplicates: inFileDupes } = dedupeByPhone(rows);
       skipped += inFileDupes;
 
-      // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → Set.
-      const { data: existingRows } = await supabase
-        .from('contacts')
-        .select('phone_normalized')
-        .eq('account_id', accountId);
-      const existing = new Set(
-        (existingRows ?? [])
-          .map(
-            (r) => (r as { phone_normalized: string | null }).phone_normalized
-          )
-          .filter((p): p is string => !!p)
-      );
+      // 2) Skip numbers already in this account. Consulta só os
+      //    telefones do PRÓPRIO ARQUIVO (SPEC 052 F6, correção de
+      //    revisão) — não a tabela `contacts` inteira. O arquivo já é
+      //    limitado a `MAX_CONTACTS_ROWS`, então isto é no máximo ~20
+      //    requisições; paginar a conta inteira por `.range()` seria
+      //    ilimitado no tamanho da conta (não do arquivo) — 200 mil
+      //    contatos existentes = 200 requisições sequenciais ANTES do
+      //    primeiro insert, o mesmo congelamento que o teto de linhas
+      //    deste diff foi criado para evitar.
+      const fileKeys = [
+        ...new Set(unique.map((row) => normalizeKey(row.phone))),
+      ];
+      const existing = new Set<string>();
+      const keyChunkSize = 500;
+      for (let i = 0; i < fileKeys.length; i += keyChunkSize) {
+        const chunk = fileKeys.slice(i, i + keyChunkSize);
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('phone_normalized')
+          .eq('account_id', accountId)
+          .in('phone_normalized', chunk);
+        if (error) throw new Error(error.message);
+        for (const row of data ?? []) {
+          if (row.phone_normalized) existing.add(row.phone_normalized);
+        }
+      }
 
       const toInsert = unique.filter((row) => {
         if (existing.has(normalizeKey(row.phone))) {
@@ -509,7 +525,7 @@ export function ImportModal({
               progress={parser.progress}
               onFileSelected={handleFileSelected}
               onClear={handleClearFile}
-              sheetNames={parser.result?.sheetNames}
+              sheetNames={parser.result?.sheetNames ?? parser.error?.sheetNames}
               activeSheet={activeSheet}
               onSheetChange={handleSheetChange}
             />

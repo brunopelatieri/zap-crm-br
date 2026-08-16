@@ -77,7 +77,8 @@ function isBlankRow(cells: string[]): boolean {
  */
 export function sheetToAudienceRows(
   sheet: XlsxSheet,
-  columns?: AudienceColumnMap
+  columns?: AudienceColumnMap,
+  maxRows: number = MAX_AUDIENCE_ROWS
 ): RawAudienceRow[] {
   const [headerCells, ...dataCells] = sheet.data;
 
@@ -104,15 +105,15 @@ export function sheetToAudienceRows(
     );
   }
 
-  if (rows.length > MAX_AUDIENCE_ROWS) {
+  if (rows.length > maxRows) {
     throw new SpreadsheetParseError(
       'too_many_rows',
-      `A planilha tem mais de ${MAX_AUDIENCE_ROWS} linhas.`,
-      { max: MAX_AUDIENCE_ROWS, found: rows.length }
+      `A planilha tem mais de ${maxRows} linhas.`,
+      { max: maxRows, found: rows.length }
     );
   }
 
-  return rowsFromTable(headers, rows, columns);
+  return rowsFromTable(headers, rows, columns, maxRows);
 }
 
 /**
@@ -152,7 +153,11 @@ export interface XlsxParseResult {
  */
 export function parseXlsxSheets(
   sheets: XlsxSheet[],
-  options: { sheetName?: string; columns?: AudienceColumnMap } = {}
+  options: {
+    sheetName?: string;
+    columns?: AudienceColumnMap;
+    maxRows?: number;
+  } = {}
 ): XlsxParseResult {
   if (sheets.length === 0) {
     throw new SpreadsheetParseError('empty_file', 'A planilha não tem abas.');
@@ -168,9 +173,25 @@ export function parseXlsxSheets(
     throw new SpreadsheetParseError('empty_file', 'A planilha não tem abas.');
   }
 
-  return {
-    rows: sheetToAudienceRows(target, options.columns),
-    sheetName: target.sheet,
-    sheetNames,
-  };
+  try {
+    return {
+      rows: sheetToAudienceRows(target, options.columns, options.maxRows),
+      sheetName: target.sheet,
+      sheetNames,
+    };
+  } catch (err) {
+    // Reanexa `sheetNames` ao erro (ex.: `too_many_rows` da aba ativa)
+    // para que a UI continue oferecendo o seletor de aba — sem isto o
+    // usuário fica preso na aba que estourou o teto, sem opção de
+    // trocar para uma menor (SPEC 052 F6, achado de revisão).
+    if (err instanceof SpreadsheetParseError && !err.sheetNames) {
+      throw new SpreadsheetParseError(
+        err.code,
+        err.message,
+        err.meta,
+        sheetNames
+      );
+    }
+    throw err;
+  }
 }

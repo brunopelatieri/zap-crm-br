@@ -188,6 +188,7 @@ describe('fetchContactsForExport — chunking de ids acima de CONTACT_ID_CHUNK',
             _ids?: string[];
             select: () => typeof builder;
             in: (col: string, ids: string[]) => typeof builder;
+            order: () => typeof builder;
             range: () => Promise<unknown>;
           } = {
             select: () => builder,
@@ -196,6 +197,7 @@ describe('fetchContactsForExport — chunking de ids acima de CONTACT_ID_CHUNK',
               builder._ids = ids;
               return builder;
             },
+            order: () => builder,
             range: () =>
               Promise.resolve({
                 data: contactTags.filter((r) =>

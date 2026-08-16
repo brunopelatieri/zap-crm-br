@@ -165,13 +165,23 @@ listadas. Bloquear o arquivo inteiro por causa de 3 linhas ruins seria pior para
 A validação BR **não** pode entrar em todos os caminhos com a mesma força: recusar um inbound
 por DDD estranho significaria **perder uma mensagem recebida**.
 
-| Caminho                    | Normaliza (DDI, dígitos-only) | Valida DDD/tipo  | Se inválido                |
-| -------------------------- | ----------------------------- | ---------------- | -------------------------- |
-| Formulário manual          | ✅                            | ✅               | **bloqueia** o salvar      |
-| Importação CSV de contatos | ✅                            | ✅               | pula a linha + reporta     |
-| Audiência de disparo       | ✅ (já faz)                   | ✅               | linha inválida (já existe) |
-| API pública `/api/v1`      | ✅ (já faz)                   | ❌ **desligada** | —                          |
-| Webhook Meta / QRCode      | ✅ (já faz)                   | ❌ **nunca**     | grava assim mesmo          |
+| Caminho                    | Normaliza (DDI, dígitos-only) | Valida DDD/tipo     | Se inválido                |
+| -------------------------- | ----------------------------- | ------------------- | -------------------------- |
+| Formulário manual          | ✅                            | ✅                  | **bloqueia** o salvar      |
+| Importação CSV de contatos | ✅                            | ✅                  | pula a linha + reporta     |
+| Audiência de disparo       | ✅ (já faz)                   | ✅ [^audiencia-ddd] | linha inválida (já existe) |
+| API pública `/api/v1`      | ✅ (já faz)                   | ❌ **desligada**    | —                          |
+| Webhook Meta / QRCode      | ✅ (já faz)                   | ❌ **nunca**        | grava assim mesmo          |
+
+[^audiencia-ddd]:
+    **Correção (2026-08-15, SPEC 052 D-2/F2):** esta célula
+    descrevia um estado que o código ainda não tinha — a audiência validava
+    telefone só com `isValidE164` (genérico, sem DDD/9º dígito), então o
+    mesmo número entrava formatado diferente pela audiência e por
+    contatos (SPEC 052 §2.2, achado J). A SPEC 052 unificou os dois
+    caminhos sobre `normalizeContactPhone` (`createRowNormalizer`, SPEC
+    052 F2) — a partir daí, e só a partir daí, esta linha passou a ser
+    verdade.
 
 **Aprovado (API pública):** liga a **normalização** (que só melhora o dado gravado) e mantém a
 validação de DDD **desligada**. Ligá-la quebraria integrações existentes que hoje criam contato

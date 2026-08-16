@@ -11,6 +11,11 @@
  * `useSpreadsheetParser` e reflete `parsing` / `progress`. Isso mantém
  * o componente livre de qualquer conhecimento de fatiamento ou
  * cancelamento.
+ *
+ * Namespace i18n fixo em `Import.upload` (SPEC 052 F7), não por prop —
+ * ao contrário de `SpreadsheetTemplateHint`, o texto aqui já é o mesmo
+ * para os dois consumidores (disparo e contatos), então não há por que
+ * cada um trazer sua própria cópia.
  */
 
 import { useRef, useState } from 'react';
@@ -47,7 +52,7 @@ export function SpreadsheetDropzone({
   activeSheet,
   onSheetChange,
 }: SpreadsheetDropzoneProps) {
-  const t = useTranslations('Broadcasts.audience.upload');
+  const t = useTranslations('Import.upload');
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 

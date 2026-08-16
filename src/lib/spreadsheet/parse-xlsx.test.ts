@@ -6,6 +6,7 @@ import {
   sheetToAudienceRows,
 } from './parse-xlsx';
 import type { XlsxSheet } from './parse-xlsx';
+import { SpreadsheetParseError } from './types';
 
 const sheet = (name: string, data: unknown[][]): XlsxSheet =>
   ({ sheet: name, data }) as XlsxSheet;
@@ -173,5 +174,45 @@ describe('parseXlsxSheets', () => {
     expect(() => parseXlsxSheets([])).toThrowError(
       expect.objectContaining({ code: 'empty_file' })
     );
+  });
+
+  // SPEC 052 D-7/F6: o teto também é parametrizável para .xlsx, não só CSV.
+  it('rejeita acima de um teto customizado (maxRows)', () => {
+    const big = sheet('Grande', [
+      ['phone'],
+      ['5511988887777'],
+      ['5511988887778'],
+      ['5511988887779'],
+    ]);
+
+    expect(() => parseXlsxSheets([big], { maxRows: 2 })).toThrowError(
+      expect.objectContaining({ code: 'too_many_rows' })
+    );
+  });
+
+  // SPEC 052 F6, achado de revisão: sem `sheetNames` no erro, uma pasta
+  // com uma aba grande e outra pequena travava o usuário na aba que
+  // estourou o teto, sem opção de trocar para a que serviria.
+  it('preserva sheetNames no erro quando a aba escolhida estoura o teto', () => {
+    const workbookWithBigSheet = [
+      sheet('Grande', [
+        ['phone'],
+        ['5511988887777'],
+        ['5511988887778'],
+        ['5511988887779'],
+      ]),
+      sheet('Pequena', [['phone'], ['5511911112222']]),
+    ];
+
+    try {
+      parseXlsxSheets(workbookWithBigSheet, { maxRows: 2 });
+      expect.unreachable('deveria ter lançado');
+    } catch (err) {
+      expect(err).toBeInstanceOf(SpreadsheetParseError);
+      expect((err as SpreadsheetParseError).sheetNames).toEqual([
+        'Grande',
+        'Pequena',
+      ]);
+    }
   });
 });

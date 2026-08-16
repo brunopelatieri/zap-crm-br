@@ -3,8 +3,12 @@
 /**
  * Importação por link do Google Sheets (SPEC 044 §3.2.2).
  *
- * Fonte padrão do passo 2: é a que não exige o usuário exportar nada.
- * Ele cola o link da planilha que já mantém e segue.
+ * Fonte padrão do passo 2 do disparo e do importador de contatos (SPEC
+ * 052 F5) — é a que não exige o usuário exportar nada, ele cola o link
+ * da planilha que já mantém e segue. Movido para `components/import/`
+ * na F7: já era usado pelos dois desde a F5, só não tinha acompanhado
+ * os outros componentes compartilhados na F4 porque não estava no
+ * escopo original dela.
  *
  * A validação de formato acontece aqui só para dar feedback imediato;
  * a validação que importa é a do servidor, que reconstrói a URL a
@@ -32,7 +36,7 @@ export function GoogleSheetsSource({
   loading,
   errorCode,
 }: GoogleSheetsSourceProps) {
-  const t = useTranslations('Broadcasts.audience.sheets');
+  const t = useTranslations('Import.sheets');
   const [url, setUrl] = useState('');
   const [touched, setTouched] = useState(false);
 

@@ -898,6 +898,39 @@
       "noteTags": "Etiquetas. Separe por ponto e vírgula (vip;lead) — funciona nos três formatos. Se preferir vírgula num arquivo .csv, coloque a célula entre aspas: \"vip, lead\". No Excel e no Google Planilhas basta escrever na célula.",
       "noteTagCreation": "Etiqueta nova é criada na importação — se você for dono ou administrador da conta. Agentes veem as etiquetas desconhecidas serem ignoradas, com aviso ao final.",
       "noteHeader": "A primeira linha é sempre o cabeçalho. Colunas que o sistema não conhece são ignoradas sem erro — pode deixar a planilha do jeito que ela já está."
+    },
+    "upload": {
+      "choose": "Escolher arquivo",
+      "orDrag": "ou arraste aqui",
+      "accepted": "CSV ou Excel (.xlsx), até {max}. CSV separado por ponto e vírgula (padrão do Excel em português) também funciona.",
+      "parsing": "Lendo…",
+      "clear": "Remover arquivo",
+      "sheet": "Aba",
+      "columnsHint": "Precisa de uma coluna de telefone. Nome, e-mail, empresa e etiquetas são opcionais.",
+      "parsingProgress": "Lendo {processed} de {total} linhas…"
+    },
+    "sheets": {
+      "title": "Importar do Google Planilhas",
+      "placeholder": "https://docs.google.com/spreadsheets/d/…",
+      "import": "Importar",
+      "invalidUrl": "Isso não parece um link do Google Planilhas.",
+      "shareHint": "A planilha precisa estar compartilhada como \"Qualquer pessoa com o link pode ver\".",
+      "error": {
+        "invalid_url": "Isso não parece um link do Google Planilhas.",
+        "not_public": "Esta planilha não está pública. Compartilhe como \"Qualquer pessoa com o link pode ver\" e tente de novo.",
+        "not_found": "Planilha não encontrada. Confira o link.",
+        "too_large": "Esta planilha é grande demais para importar.",
+        "timeout": "O Google demorou demais para responder. Tente de novo.",
+        "fetch_failed": "Não foi possível ler a planilha. Tente de novo."
+      }
+    },
+    "parseError": {
+      "file_too_large": "Este arquivo é grande demais. O limite é 10 MB.",
+      "too_many_rows": "Este arquivo tem mais de {max} linhas. Divida em arquivos menores.",
+      "missing_phone_column": "Nenhuma coluna de telefone encontrada. Adicione uma coluna \"telefone\" e tente de novo.",
+      "empty_file": "Este arquivo não tem linhas de dados.",
+      "unreadable": "Não foi possível ler este arquivo. Confira se é um CSV ou Excel válido.",
+      "unsupported_format": "Formato não suportado. Use um arquivo .csv ou .xlsx."
     }
   },
   "Pipelines": {
@@ -1301,16 +1334,6 @@
           "description": "Enviar para contatos que atendam a uma regra de campo."
         }
       },
-      "upload": {
-        "choose": "Escolher arquivo",
-        "orDrag": "ou arraste aqui",
-        "accepted": "CSV ou Excel (.xlsx), até {max}. CSV separado por ponto e vírgula (padrão do Excel em português) também funciona.",
-        "parsing": "Lendo…",
-        "clear": "Remover arquivo",
-        "sheet": "Aba",
-        "columnsHint": "Precisa de uma coluna de telefone. Nome, e-mail, empresa e etiquetas são opcionais.",
-        "parsingProgress": "Lendo {processed} de {total} linhas…"
-      },
       "template": {
         "title": "Modelo de planilha",
         "subtitle": "Baixe o modelo, substitua as linhas de exemplo pelos seus contatos e envie. A primeira linha precisa ser o cabeçalho.",
@@ -1326,21 +1349,6 @@
           "tags": "Etiquetas separadas por vírgula ou ponto e vírgula."
         }
       },
-      "sheets": {
-        "title": "Importar do Google Planilhas",
-        "placeholder": "https://docs.google.com/spreadsheets/d/…",
-        "import": "Importar",
-        "invalidUrl": "Isso não parece um link do Google Planilhas.",
-        "shareHint": "A planilha precisa estar compartilhada como \"Qualquer pessoa com o link pode ver\".",
-        "error": {
-          "invalid_url": "Isso não parece um link do Google Planilhas.",
-          "not_public": "Esta planilha não está pública. Compartilhe como \"Qualquer pessoa com o link pode ver\" e tente de novo.",
-          "not_found": "Planilha não encontrada. Confira o link.",
-          "too_large": "Esta planilha é grande demais para importar.",
-          "timeout": "O Google demorou demais para responder. Tente de novo.",
-          "fetch_failed": "Não foi possível ler a planilha. Tente de novo."
-        }
-      },
       "summary": {
         "title": "Resumo da importação",
         "sheet": "Aba: {name}",
@@ -1351,19 +1359,6 @@
         "rejectedRows": "{count} linhas não foram importadas",
         "line": "Linha {n}",
         "showAll": "Ver todas as {count}"
-      },
-      "invalidReason": {
-        "missing_phone": "sem telefone",
-        "invalid_phone": "telefone inválido",
-        "duplicate_in_file": "duplicada"
-      },
-      "parseError": {
-        "file_too_large": "Este arquivo é grande demais. O limite é 10 MB.",
-        "too_many_rows": "Este arquivo tem mais de {max} linhas. Divida em arquivos menores.",
-        "missing_phone_column": "Nenhuma coluna de telefone encontrada. Adicione uma coluna \"telefone\" e tente de novo.",
-        "empty_file": "Este arquivo não tem linhas de dados.",
-        "unreadable": "Não foi possível ler este arquivo. Confira se é um CSV ou Excel válido.",
-        "unsupported_format": "Formato não suportado. Use um arquivo .csv ou .xlsx."
       },
       "quota": {
         "title": "Contatos por disparo",

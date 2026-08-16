@@ -898,6 +898,39 @@
       "noteTags": "Tags: separate with a semicolon (vip;lead) — works in all three formats. In a .csv, if you prefer commas, wrap the cell in quotes: \"vip, lead\". In Excel or Google Sheets, just type it in the cell.",
       "noteTagCreation": "A new tag is created during import — if you're the account owner or an admin. Agents will see unknown tags get skipped, with a warning at the end.",
       "noteHeader": "The first row is always the header. Columns the system doesn't recognize are ignored without error — you can leave your spreadsheet as it is."
+    },
+    "upload": {
+      "choose": "Choose a file",
+      "orDrag": "or drag it here",
+      "accepted": "CSV or Excel (.xlsx), up to {max}. Semicolon-separated .csv (the Excel-Brazil default) works too.",
+      "parsing": "Reading…",
+      "clear": "Remove file",
+      "sheet": "Sheet",
+      "columnsHint": "Needs a phone column. Name, email, company and tags are optional.",
+      "parsingProgress": "Reading {processed} of {total} rows…"
+    },
+    "sheets": {
+      "title": "Import from Google Sheets",
+      "placeholder": "https://docs.google.com/spreadsheets/d/…",
+      "import": "Import",
+      "invalidUrl": "That doesn't look like a Google Sheets link.",
+      "shareHint": "The spreadsheet must be shared as \"Anyone with the link can view\".",
+      "error": {
+        "invalid_url": "That doesn't look like a Google Sheets link.",
+        "not_public": "This spreadsheet is not public. Share it as \"Anyone with the link can view\" and try again.",
+        "not_found": "Spreadsheet not found. Check the link.",
+        "too_large": "This spreadsheet is too large to import.",
+        "timeout": "Google took too long to respond. Try again.",
+        "fetch_failed": "Could not read the spreadsheet. Try again."
+      }
+    },
+    "parseError": {
+      "file_too_large": "This file is too large. The limit is 10 MB.",
+      "too_many_rows": "This file has more than {max} rows. Split it into smaller files.",
+      "missing_phone_column": "No phone column found. Add a column named \"phone\" and try again.",
+      "empty_file": "This file has no data rows.",
+      "unreadable": "Could not read this file. Check that it is a valid CSV or Excel file.",
+      "unsupported_format": "Unsupported format. Use a .csv or .xlsx file."
     }
   },
   "Pipelines": {
@@ -1301,16 +1334,6 @@
           "description": "Send to contacts matching a custom field rule."
         }
       },
-      "upload": {
-        "choose": "Choose a file",
-        "orDrag": "or drag it here",
-        "accepted": "CSV or Excel (.xlsx), up to {max}. Semicolon-separated .csv (the Excel-Brazil default) works too.",
-        "parsing": "Reading…",
-        "clear": "Remove file",
-        "sheet": "Sheet",
-        "columnsHint": "Needs a phone column. Name, email, company and tags are optional.",
-        "parsingProgress": "Reading {processed} of {total} rows…"
-      },
       "template": {
         "title": "Spreadsheet template",
         "subtitle": "Download the template, replace the sample rows with your contacts and upload it. The first row must be the header.",
@@ -1326,21 +1349,6 @@
           "tags": "Tags separated by comma or semicolon."
         }
       },
-      "sheets": {
-        "title": "Import from Google Sheets",
-        "placeholder": "https://docs.google.com/spreadsheets/d/…",
-        "import": "Import",
-        "invalidUrl": "That doesn't look like a Google Sheets link.",
-        "shareHint": "The spreadsheet must be shared as \"Anyone with the link can view\".",
-        "error": {
-          "invalid_url": "That doesn't look like a Google Sheets link.",
-          "not_public": "This spreadsheet is not public. Share it as \"Anyone with the link can view\" and try again.",
-          "not_found": "Spreadsheet not found. Check the link.",
-          "too_large": "This spreadsheet is too large to import.",
-          "timeout": "Google took too long to respond. Try again.",
-          "fetch_failed": "Could not read the spreadsheet. Try again."
-        }
-      },
       "summary": {
         "title": "Import summary",
         "sheet": "Sheet: {name}",
@@ -1351,19 +1359,6 @@
         "rejectedRows": "{count} rows were not imported",
         "line": "Line {n}",
         "showAll": "Show all {count}"
-      },
-      "invalidReason": {
-        "missing_phone": "no phone",
-        "invalid_phone": "invalid phone",
-        "duplicate_in_file": "duplicate"
-      },
-      "parseError": {
-        "file_too_large": "This file is too large. The limit is 10 MB.",
-        "too_many_rows": "This file has more than {max} rows. Split it into smaller files.",
-        "missing_phone_column": "No phone column found. Add a column named \"phone\" and try again.",
-        "empty_file": "This file has no data rows.",
-        "unreadable": "Could not read this file. Check that it is a valid CSV or Excel file.",
-        "unsupported_format": "Unsupported format. Use a .csv or .xlsx file."
       },
       "quota": {
         "title": "Contacts per broadcast",

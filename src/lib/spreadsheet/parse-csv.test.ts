@@ -100,6 +100,40 @@ describe('parseAudienceCsv', () => {
 
     expect(rows[0]).toMatchObject({ phone: '5511988887777', name: 'Maria' });
   });
+
+  // SPEC 052 D-7/F6: cada consumidor tem seu próprio teto — contatos
+  // (10 000) é bem mais apertado que o padrão da audiência (50 000).
+  describe('teto de linhas parametrizável (D-7/F6)', () => {
+    it('rejeita acima do teto customizado, mesmo bem abaixo do padrão de 50 000', () => {
+      const csv = 'phone\n' + Array(5).fill('5511988887777').join('\n');
+      expect(() => parseAudienceCsv(csv, undefined, 3)).toThrowError(
+        expect.objectContaining({
+          code: 'too_many_rows',
+          meta: { max: 3, found: 5 },
+        })
+      );
+    });
+
+    it('aceita exatamente o teto customizado', () => {
+      const csv = 'phone\n' + Array(3).fill('5511988887777').join('\n');
+      expect(() => parseAudienceCsv(csv, undefined, 3)).not.toThrow();
+    });
+
+    // Achado de revisão: uma linha só de delimitadores (`,,,`) não é
+    // texto vazio, mas vira células todas vazias — o XLSX já descartava
+    // isso via `isBlankRow` antes de contar contra o teto; o CSV não
+    // filtrava, então a mesma planilha (range do Google estendido além
+    // dos dados) era aceita como .xlsx e rejeitada como .csv.
+    it('não conta linha só de delimitadores contra o teto (paridade com XLSX)', () => {
+      const csv =
+        'phone,name,email\n' +
+        Array(3).fill('5511988887777,Maria,m@x.com').join('\n') +
+        '\n,,\n,,';
+
+      expect(() => parseAudienceCsv(csv, undefined, 3)).not.toThrow();
+      expect(parseAudienceCsv(csv, undefined, 3)).toHaveLength(3);
+    });
+  });
 });
 
 // SPEC 052 §2.2 / §9.1 — casos A-K, colhidos executando os parsers

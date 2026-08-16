@@ -92,11 +92,14 @@ export function mapAudienceColumns(headers: string[]): AudienceColumnMap {
  * produz exatamente a mesma matriz, então a partir daqui o caminho é um só.
  *
  * @param columns mapeamento explícito; quando omitido é inferido do cabeçalho
+ * @param maxRows teto de linhas — cada consumidor tem o seu (SPEC 052
+ *   D-7/F6: audiência lê, contatos escreve, então o teto é bem menor)
  */
 export function rowsFromTable(
   headers: string[],
   rows: { values: string[]; lineNumber: number }[],
-  columns?: AudienceColumnMap
+  columns?: AudienceColumnMap,
+  maxRows: number = MAX_AUDIENCE_ROWS
 ): RawAudienceRow[] {
   const cols = columns ?? mapAudienceColumns(headers);
 
@@ -107,11 +110,11 @@ export function rowsFromTable(
     );
   }
 
-  if (rows.length > MAX_AUDIENCE_ROWS) {
+  if (rows.length > maxRows) {
     throw new SpreadsheetParseError(
       'too_many_rows',
-      `A planilha tem mais de ${MAX_AUDIENCE_ROWS} linhas.`,
-      { max: MAX_AUDIENCE_ROWS, found: rows.length }
+      `A planilha tem mais de ${maxRows} linhas.`,
+      { max: maxRows, found: rows.length }
     );
   }
 
@@ -130,7 +133,8 @@ export function rowsFromTable(
 /** Lê um CSV completo em linhas de audiência. */
 export function parseAudienceCsv(
   text: string,
-  columns?: AudienceColumnMap
+  columns?: AudienceColumnMap,
+  maxRows?: number
 ): RawAudienceRow[] {
   const { headers, rows } = readCsvTable(text);
 
@@ -141,5 +145,5 @@ export function parseAudienceCsv(
     );
   }
 
-  return rowsFromTable(headers, rows, columns);
+  return rowsFromTable(headers, rows, columns, maxRows);
 }

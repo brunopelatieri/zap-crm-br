@@ -15,7 +15,7 @@ import {
   type AudienceSourceId,
 } from './audience/audience-source-options';
 import { AudienceImportSummary } from './audience/audience-import-summary';
-import { GoogleSheetsSource } from './audience/google-sheets-source';
+import { GoogleSheetsSource } from '@/components/import/google-sheets-source';
 import { ImportSourcePicker } from '@/components/import/import-source-picker';
 import { SpreadsheetTemplateHint } from '@/components/import/spreadsheet-template-hint';
 import { SpreadsheetDropzone } from '@/components/import/spreadsheet-dropzone';
@@ -90,7 +90,7 @@ export function Step2SelectAudience({
   const router = useRouter();
   const t = useTranslations('Broadcasts.wizard');
   const tAudience = useTranslations('Broadcasts.audience');
-  const tParseError = useTranslations('Broadcasts.audience.parseError');
+  const tParseError = useTranslations('Import.parseError');
   const tStageError = useTranslations('Broadcasts.audience.stageError');
   const sourceOptions = useAudienceSourceOptions();
 
@@ -439,7 +439,7 @@ export function Step2SelectAudience({
           progress={parser.progress}
           onFileSelected={handleFileSelected}
           onClear={handleClearFile}
-          sheetNames={parser.result?.sheetNames}
+          sheetNames={parser.result?.sheetNames ?? parser.error?.sheetNames}
           activeSheet={activeSheet}
           onSheetChange={handleSheetChange}
         />
