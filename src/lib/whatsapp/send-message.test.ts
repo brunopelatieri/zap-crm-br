@@ -26,17 +26,21 @@ vi.mock('@/lib/channels/registry', async (importOriginal) => {
   };
 });
 
+// Cliente de service-role de mentira, compartilhado pelos DOIS pontos
+// desta função que escalam privilégio: o pause-on-agent-send (chama
+// supabaseAdmin() direto, importado de @/lib/flows/admin-client) e
+// recordColdSend (chama supabaseAdmin() de dentro de
+// cold-send-wiring.ts, que importa de @/lib/supabase/admin — caminho
+// diferente, mesmo singleton em produção). Os dois mocks resolvem pro
+// MESMO fake — construído com `makeDb()` (declarado mais abaixo) em
+// cada `beforeEach` — senão um insert gravado por um caminho não
+// apareceria nas asserções que checam o outro.
+const adminState: { client: unknown } = { client: undefined };
 vi.mock('@/lib/flows/admin-client', () => ({
-  supabaseAdmin: () => ({
-    from: () => {
-      const b: Record<string, unknown> = {};
-      const chain = () => b;
-      for (const m of ['update', 'eq', 'select']) b[m] = vi.fn(chain);
-      b.then = (resolve: (v: unknown) => unknown) =>
-        resolve({ data: null, error: null });
-      return b;
-    },
-  }),
+  supabaseAdmin: () => adminState.client,
+}));
+vi.mock('@/lib/supabase/admin', () => ({
+  supabaseAdmin: () => adminState.client,
 }));
 
 import {
@@ -284,7 +288,12 @@ function dbForQr(over: Record<string, QueuedResult> = {}) {
   });
 }
 
+/** Fake admin db do teste corrente — trocado a cada `beforeEach` abaixo. */
+let adminDb: ReturnType<typeof makeDb>;
+
 beforeEach(() => {
+  adminDb = makeDb({});
+  adminState.client = adminDb.client;
   resolveInstanceByChannelId.mockReset();
   resolveInstanceByChannelId.mockResolvedValue({
     instanceId: 'inst-1',
@@ -318,7 +327,14 @@ describe('sendMessageToConversation — coldSendOrigin (canal QR)', () => {
 
     expect(result.whatsappMessageId).toBe('evo.1');
     expect(qrSendText).toHaveBeenCalledTimes(1);
-    const record = db.inserts.find((i) => i.table === 'channel_cold_sends');
+    // supabaseAdmin(), não `db` — 062 proíbe policy de escrita em
+    // channel_cold_sends pro cliente de sessão.
+    expect(db.inserts.some((i) => i.table === 'channel_cold_sends')).toBe(
+      false
+    );
+    const record = adminDb.inserts.find(
+      (i) => i.table === 'channel_cold_sends'
+    );
     expect(record?.payload).toEqual({
       channel_id: 'chan-qr-1',
       account_id: 'acct-1',
@@ -357,7 +373,15 @@ describe('sendMessageToConversation — coldSendOrigin (canal QR)', () => {
     });
 
     expect(result.whatsappMessageId).toBe('evo.1');
-    const record = db.inserts.find((i) => i.table === 'channel_cold_sends');
+    // supabaseAdmin(), não `db` — mesma checagem dos irmãos "human"/"api
+    // bloqueado" acima; um double-write reintroduziria a violação de RLS
+    // que este teto existe pra evitar.
+    expect(db.inserts.some((i) => i.table === 'channel_cold_sends')).toBe(
+      false
+    );
+    const record = adminDb.inserts.find(
+      (i) => i.table === 'channel_cold_sends'
+    );
     expect(record?.payload).toMatchObject({ origin: 'api' });
   });
 

@@ -174,6 +174,12 @@ export interface PlanDashboardBroadcastParams {
    * adotando o rascunho pelo `draftId`, exigindo `status = 'draft'`.
    */
   adoptBroadcastId?: string;
+  /**
+   * SPEC 057 D-1 — `canEditSettings(role)` de quem disparou (ou, no cron,
+   * de quem agendou). Admin+ cria etiquetas ausentes da planilha; demais
+   * papéis só vinculam as que já existem.
+   */
+  canCreateTags?: boolean;
 }
 
 // ============================================================
@@ -283,18 +289,22 @@ async function resolveSendableAudience(
     userId,
     audience,
     templateCategory,
+    canCreateTags,
   }: {
     accountId: string;
     userId: string;
     audience: AudienceConfig;
     /** Categoria do template — decide se o opt-out se aplica (§6.8). */
     templateCategory: string | null;
+    /** SPEC 057 D-1 — admin+ pode criar etiquetas ausentes da planilha. */
+    canCreateTags?: boolean;
   }
 ): Promise<ResolvedAudience> {
   const resolved = await resolveAudienceContacts(db, {
     accountId,
     userId,
     audience,
+    canCreateTags,
   });
 
   // ── Opt-out (LGPD, §6.8) ───────────────────────────────────────
@@ -684,6 +694,7 @@ export async function planDashboardBroadcast(
     input,
     batchLimit,
     adoptBroadcastId,
+    canCreateTags,
   }: PlanDashboardBroadcastParams
 ): Promise<DashboardBroadcastPlan> {
   const templateLanguage = input.templateLanguage || 'en_US';
@@ -707,6 +718,7 @@ export async function planDashboardBroadcast(
       userId,
       audience: input.audience,
       templateCategory: context.templateRow?.category ?? null,
+      canCreateTags,
     });
 
   const evaluated = evaluatePhones(contacts);
@@ -759,6 +771,8 @@ export interface PlanAbTestParams {
   adoptVariantBroadcastId?: string;
   /** Injetável para o teste fixar o sorteio; produção usa `Math.random`. */
   rng?: () => number;
+  /** SPEC 057 D-1 — ver `PlanDashboardBroadcastParams.canCreateTags`. */
+  canCreateTags?: boolean;
 }
 
 export interface AbTestPlan {
@@ -806,6 +820,7 @@ export async function planAbTestBroadcast(
     adoptBroadcastId,
     adoptVariantBroadcastId,
     rng,
+    canCreateTags,
   }: PlanAbTestParams
 ): Promise<AbTestPlan> {
   const languageA = input.templateLanguage || 'en_US';
@@ -862,6 +877,7 @@ export async function planAbTestBroadcast(
       userId,
       audience: input.audience,
       templateCategory: categoryA ?? categoryB,
+      canCreateTags,
     });
 
   const evaluated = evaluatePhones(contacts);

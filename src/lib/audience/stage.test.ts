@@ -40,6 +40,7 @@ describe('stageAudience — csv', () => {
       userId: USER,
       templateName: TEMPLATE,
       templateLanguage: LANG,
+      canCreateTags: false,
       audience: {
         type: 'csv',
         rows: [
@@ -59,6 +60,12 @@ describe('stageAudience — csv', () => {
       duplicates: 0,
       invalid: 1,
       existingContacts: 1,
+      // c-1 já existente sem email/company na planilha → nada a
+      // atualizar; a segunda linha não tem contato → 1 criação.
+      willCreate: 1,
+      willUpdate: 0,
+      tagsToCreate: [],
+      tagsSkipped: [],
     });
 
     // Nunca insere/atualiza `contacts` — a materialização é do envio.
@@ -112,6 +119,7 @@ describe('stageAudience — csv', () => {
       userId: USER,
       templateName: TEMPLATE,
       templateLanguage: LANG,
+      canCreateTags: false,
       audience: {
         type: 'csv',
         rows: [{ phone: '+5511999990001', name: 'Alice', sourceRow: 2 }],
@@ -153,6 +161,7 @@ describe('stageAudience — csv', () => {
       userId: USER,
       templateName: TEMPLATE,
       templateLanguage: LANG,
+      canCreateTags: false,
       audience: {
         type: 'csv',
         rows: [{ phone: '+5511999990001', name: 'Alice', sourceRow: 2 }],
@@ -174,6 +183,7 @@ describe('stageAudience — csv', () => {
         userId: USER,
         templateName: TEMPLATE,
         templateLanguage: LANG,
+        canCreateTags: false,
         audience: { type: 'csv', rows: [], invalidRows: [] },
       })
     ).rejects.toMatchObject({ code: 'template_not_found' });
@@ -188,9 +198,118 @@ describe('stageAudience — csv', () => {
         userId: USER,
         templateName: TEMPLATE,
         templateLanguage: LANG,
+        canCreateTags: false,
         audience: { type: 'csv', rows: [], invalidRows: [] },
       })
     ).rejects.toMatchObject({ code: 'empty_audience' });
+  });
+
+  // SPEC 057 D-7 — a projeção mostrada na triagem, sem escrever nada.
+  it('projeta willUpdate quando o contato existente tem campo vazio e a planilha traz valor', async () => {
+    const mock = createSupabaseMock((table) => {
+      const found = templateFound(table);
+      if (found) return found;
+      if (table === 'contacts') {
+        // Contato existente SEM email — a planilha traz um.
+        return {
+          data: [
+            {
+              id: 'c-1',
+              phone: '+5511999990001',
+              email: null,
+              company: 'Acme',
+            },
+          ],
+        };
+      }
+      if (table === 'broadcasts') return { data: { id: 'draft-5' } };
+      if (table === 'broadcast_audience_staging') return { data: null };
+      return undefined;
+    });
+
+    const result = await stageAudience(mock.db, {
+      accountId: ACCOUNT,
+      userId: USER,
+      templateName: TEMPLATE,
+      templateLanguage: LANG,
+      canCreateTags: false,
+      audience: {
+        type: 'csv',
+        // company já preenchida (Acme) — não conta como update; email vazio conta.
+        rows: [
+          {
+            phone: '+5511999990001',
+            name: 'Alice',
+            email: 'alice@example.com',
+            company: 'Acme',
+            sourceRow: 2,
+          },
+        ],
+        invalidRows: [],
+      },
+    });
+
+    expect(result.summary.willCreate).toBe(0);
+    expect(result.summary.willUpdate).toBe(1);
+  });
+
+  it('projeta tagsToCreate quando canCreateTags e tagsSkipped quando não', async () => {
+    const baseMock = () =>
+      createSupabaseMock((table) => {
+        const found = templateFound(table);
+        if (found) return found;
+        if (table === 'contacts') return { data: [] };
+        if (table === 'tags') {
+          // Conta já tem "vip"; "novaetiqueta" ainda não existe.
+          return { data: [{ name: 'vip' }] };
+        }
+        if (table === 'broadcasts') return { data: { id: 'draft-6' } };
+        if (table === 'broadcast_audience_staging') return { data: null };
+        return undefined;
+      });
+
+    const rowsWithTags = {
+      type: 'csv' as const,
+      rows: [
+        {
+          phone: '+5511999990001',
+          name: 'Alice',
+          tagNames: ['vip', 'novaetiqueta'],
+          sourceRow: 2,
+        },
+      ],
+      invalidRows: [],
+    };
+
+    const adminMock = baseMock();
+    const admin = await stageAudience(adminMock.db, {
+      accountId: ACCOUNT,
+      userId: USER,
+      templateName: TEMPLATE,
+      templateLanguage: LANG,
+      canCreateTags: true,
+      audience: rowsWithTags,
+    });
+    expect(admin.summary.tagsToCreate).toEqual(['novaetiqueta']);
+    expect(admin.summary.tagsSkipped).toEqual([]);
+    // Projeção pura — nenhuma escrita em `tags` (D-7).
+    expect(
+      adminMock
+        .callsFor('tags')
+        .some((c) => c.ops.some((o) => o.fn === 'insert'))
+    ).toBe(false);
+
+    const agentMock = baseMock();
+    const agent = await stageAudience(agentMock.db, {
+      accountId: ACCOUNT,
+      userId: USER,
+      templateName: TEMPLATE,
+      templateLanguage: LANG,
+      canCreateTags: false,
+      audience: rowsWithTags,
+    });
+    expect(agent.summary.tagsToCreate).toEqual([]);
+    expect(agent.summary.tagsSkipped).toEqual(['novaetiqueta']);
   });
 });
 
@@ -231,11 +350,16 @@ describe('stageAudience — tags', () => {
       userId: USER,
       templateName: TEMPLATE,
       templateLanguage: LANG,
+      canCreateTags: false,
       audience: { type: 'tags', tagIds: ['t-1'] },
     });
 
     expect(result.draftId).toBe('draft-2');
     expect(result.summary.valid).toBe(2);
+    expect(result.summary.willCreate).toBe(0);
+    expect(result.summary.willUpdate).toBe(0);
+    expect(result.summary.tagsToCreate).toEqual([]);
+    expect(result.summary.tagsSkipped).toEqual([]);
     const rows = inserted[0] as Record<string, unknown>[];
     expect(rows.map((r) => r.existing_contact_id)).toEqual(['c-1', 'c-2']);
     // Contatos já existentes: nenhuma linha nasce inválida.
@@ -255,6 +379,7 @@ describe('stageAudience — tags', () => {
         userId: USER,
         templateName: TEMPLATE,
         templateLanguage: LANG,
+        canCreateTags: false,
         audience: { type: 'tags', tagIds: ['t-empty'] },
       })
     ).rejects.toMatchObject({ code: 'empty_audience' });

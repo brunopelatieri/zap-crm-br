@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
@@ -28,6 +28,8 @@ import { useDealPicker } from '@/components/inbox/deal-picker/deal-picker-contex
 import { canSendMessages } from '@/lib/auth/roles';
 import { formatPhoneForDisplay } from '@/lib/phone/br';
 import { useAccountChannels } from '@/lib/channels/use-account-channels';
+import { useTransferChannels } from '@/hooks/use-transfer-channels';
+import { TransferChannelDialog } from './transfer-channel-dialog';
 
 interface SiblingThread {
   id: string;
@@ -40,13 +42,21 @@ interface ContactSidebarProps {
   contact: Contact | null;
   /** Conversa aberta agora — excluída da lista de "irmãs" abaixo. */
   conversationId?: string | null;
-  /** Abre outra thread do mesmo contato (SPEC 049 §4.4). */
+  /**
+   * Canal da conversa aberta agora (SPEC 056) — precisa junto de
+   * `conversationId` para saber por qual canal um "falar por este
+   * canal" transferiria. `null` desativa a seção inteira (nenhuma
+   * conversa aberta ainda não tem "de onde" transferir).
+   */
+  currentChannelId?: string | null;
+  /** Abre outra thread do mesmo contato (SPEC 049 §4.4 / SPEC 056 §4.2). */
   onOpenConversation?: (conversationId: string) => void;
 }
 
 export function ContactSidebar({
   contact,
   conversationId = null,
+  currentChannelId = null,
   onOpenConversation,
 }: ContactSidebarProps) {
   const tSidebar = useTranslations('Inbox.sidebar');
@@ -63,6 +73,22 @@ export function ContactSidebar({
   const [addingNote, setAddingNote] = useState(false);
   const accountChannels = useAccountChannels();
   const [siblingThreads, setSiblingThreads] = useState<SiblingThread[]>([]);
+
+  // SPEC 056 §4.1 — entrada secundária. Canais elegíveis que este
+  // contato AINDA não tem thread — cada um vira "falar por este canal"
+  // em vez do "abrir" que a lista de irmãs mostra.
+  const { evaluations: transferEvaluations } = useTransferChannels(
+    contact?.id,
+    currentChannelId
+  );
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferChannelId, setTransferChannelId] = useState<string | null>(
+    null
+  );
+  const openTransferDialog = useCallback((channelId: string) => {
+    setTransferChannelId(channelId);
+    setTransferDialogOpen(true);
+  }, []);
 
   // As etiquetas vêm de `contact.tags`, já hidratado pela página via
   // CONVERSATION_SELECT (`contact_tags(tags(*))`). Manter uma cópia
@@ -156,6 +182,20 @@ export function ContactSidebar({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSiblingThreads();
   }, [fetchSiblingThreads]);
+
+  // Elegíveis MENOS os que já têm thread — aqueles ganham "abrir" na
+  // lista de irmãs acima; estes ganham "falar por este canal" (§4.1).
+  const siblingChannelIds = useMemo(
+    () => new Set(siblingThreads.map((s) => s.channelId)),
+    [siblingThreads]
+  );
+  const channelsWithoutThread = useMemo(
+    () =>
+      transferEvaluations
+        .filter((e) => e.eligible && !siblingChannelIds.has(e.channel.id))
+        .map((e) => e.channel),
+    [transferEvaluations, siblingChannelIds]
+  );
 
   // Único destino da criação: esta lista é local, não vive no estado
   // da página (deals não está em CONVERSATION_SELECT nem alimenta
@@ -271,7 +311,7 @@ export function ContactSidebar({
               menos uma irmã; sem thread noutro canal, a seção nem
               renderiza (nem vazia) — é ruído numa conta de canal único
               e, mesmo em conta multicanal, na maioria dos contatos. */}
-          {siblingThreads.length > 0 && (
+          {(siblingThreads.length > 0 || channelsWithoutThread.length > 0) && (
             <>
               <div className="border-border my-4 border-t" />
               <div>
@@ -280,6 +320,35 @@ export function ContactSidebar({
                   {tSidebar('alsoInThisContact')}
                 </div>
                 <div className="mt-2 space-y-1.5">
+                  {/* SPEC 056 §4.1 — canais elegíveis SEM thread ainda:
+                      "falar por este canal" em vez de "abrir". */}
+                  {channelsWithoutThread.map((channel) => (
+                    <div
+                      key={channel.id}
+                      className="bg-muted flex items-center gap-2 rounded-lg px-3 py-2"
+                    >
+                      {channel.type === 'whatsapp_qr' ? (
+                        <QrCode className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <BadgeCheck className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-foreground truncate text-xs font-medium">
+                          {channel.name}
+                        </p>
+                        <p className="text-muted-foreground truncate text-[11px]">
+                          {tSidebar('noThreadYet')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openTransferDialog(channel.id)}
+                        className="text-primary shrink-0 text-xs font-medium hover:underline"
+                      >
+                        {tSidebar('speakOnThisChannel')}
+                      </button>
+                    </div>
+                  ))}
                   {siblingThreads.map((sibling) => {
                     const ch = accountChannels.byId.get(sibling.channelId);
                     return (
@@ -487,6 +556,18 @@ export function ContactSidebar({
           </div>
         </div>
       </ScrollArea>
+
+      {contact && conversationId && currentChannelId && transferChannelId && (
+        <TransferChannelDialog
+          open={transferDialogOpen}
+          onOpenChange={setTransferDialogOpen}
+          sourceConversationId={conversationId}
+          contactId={contact.id}
+          currentChannelId={currentChannelId}
+          initialChannelId={transferChannelId}
+          onTransferred={(id) => onOpenConversation?.(id)}
+        />
+      )}
     </div>
   );
 }

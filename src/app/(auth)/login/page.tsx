@@ -9,6 +9,7 @@ import {
   getAuthErrorMessageKey,
   getAuthErrorLogDetails,
 } from '@/lib/auth/error-messages';
+import { normalizePassword } from '@/lib/auth/password-policy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -67,7 +68,7 @@ function LoginPageInner() {
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
-      password,
+      password: normalizePassword(password),
     });
 
     if (error) {

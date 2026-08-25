@@ -6,6 +6,14 @@ import { Loader2, KeyRound } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import {
+  evaluatePassword,
+  isPasswordValid,
+  normalizePassword,
+  passwordsMatch,
+  PASSWORD_MIN_LENGTH,
+} from '@/lib/auth/password-policy';
+import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,8 +26,6 @@ import {
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
 
-const MIN_PASSWORD = 8;
-
 export function PasswordForm() {
   const t = useTranslations('Settings.profile');
   const { profile } = useAuth();
@@ -31,17 +37,19 @@ export function PasswordForm() {
   const [saving, setSaving] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
+  const nextPasswordValid = isPasswordValid(evaluatePassword(next));
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.email) {
       toast.error(t('cannotChangeNoEmail'));
       return;
     }
-    if (next.length < MIN_PASSWORD) {
-      setConfirmError(t('passwordTooShort', { min: MIN_PASSWORD }));
+    if (!nextPasswordValid) {
+      setConfirmError(t('passwordPolicyNotMet'));
       return;
     }
-    if (next !== confirm) {
+    if (!passwordsMatch(next, confirm)) {
       setConfirmError(t('passwordMismatch'));
       return;
     }
@@ -55,7 +63,7 @@ export function PasswordForm() {
       // doesn't, we abort before calling updateUser.
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: profile.email,
-        password: current,
+        password: normalizePassword(current),
       });
       if (signInError) {
         toast.error(t('currentPasswordIncorrect'));
@@ -63,7 +71,7 @@ export function PasswordForm() {
       }
 
       const { error: updateError } = await supabase.auth.updateUser({
-        password: next,
+        password: normalizePassword(next),
       });
       if (updateError) {
         toast.error(
@@ -92,7 +100,7 @@ export function PasswordForm() {
           {t('passwordTitle')}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {t('passwordDesc', { min: MIN_PASSWORD })}
+          {t('passwordDesc', { min: PASSWORD_MIN_LENGTH })}
         </CardDescription>
       </CardHeader>
 
@@ -124,10 +132,11 @@ export function PasswordForm() {
                 value={next}
                 onChange={(e) => setNext(e.target.value)}
                 autoComplete="new-password"
-                minLength={MIN_PASSWORD}
+                minLength={PASSWORD_MIN_LENGTH}
                 disabled={saving}
                 required
               />
+              {next && <PasswordStrengthMeter password={next} />}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm-password" className="text-foreground">
@@ -139,7 +148,7 @@ export function PasswordForm() {
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 autoComplete="new-password"
-                minLength={MIN_PASSWORD}
+                minLength={PASSWORD_MIN_LENGTH}
                 disabled={saving}
                 required
               />
@@ -155,7 +164,14 @@ export function PasswordForm() {
           <div className="flex justify-end">
             <Button
               type="submit"
-              disabled={saving || !current || !next || !confirm}
+              disabled={
+                saving ||
+                !current ||
+                !next ||
+                !confirm ||
+                !nextPasswordValid ||
+                !passwordsMatch(next, confirm)
+              }
             >
               {saving ? (
                 <>

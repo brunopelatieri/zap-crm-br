@@ -87,6 +87,13 @@ export interface StageAudienceParams {
   templateName: string;
   templateLanguage: string;
   audience: StageAudienceInput;
+  /**
+   * SPEC 057 D-1 — `canEditSettings(role)` de quem está montando o
+   * disparo. Decide só a PROJEÇÃO de `tagsToCreate`/`tagsSkipped` (D-7):
+   * a criação de verdade acontece no envio, com o mesmo valor recalculado
+   * lá — este parâmetro nunca grava nada aqui.
+   */
+  canCreateTags: boolean;
 }
 
 export interface StageAudienceSummary {
@@ -96,6 +103,19 @@ export interface StageAudienceSummary {
   invalid: number;
   /** Quantas linhas válidas já casaram com um `contacts.id` existente. */
   existingContacts: number;
+  /**
+   * SPEC 057 D-7 — projeção do que o ENVIO vai fazer, não fato: nada é
+   * escrito em `contacts`/`tags` no stage. `willCreate` conta linhas sem
+   * contato existente; `willUpdate` conta contatos existentes cujo
+   * e-mail ou empresa está vazio e a planilha traz um valor (D-2 —
+   * campo já preenchido nunca é sobrescrito, então não conta aqui).
+   */
+  willCreate: number;
+  willUpdate: number;
+  /** Nomes de etiqueta da planilha que ainda não existem na conta. */
+  tagsToCreate: string[];
+  /** Subconjunto de `tagsToCreate` que NÃO será criado (sem permissão). */
+  tagsSkipped: string[];
 }
 
 export interface StageAudienceResult {
@@ -116,24 +136,34 @@ interface StagingInsertRow {
   source_row: number | null;
 }
 
+interface CrossReferencedContact {
+  id: string;
+  email: string | null;
+  company: string | null;
+}
+
 /**
  * Cruza chaves de telefone já normalizadas contra `contacts` — leitura
  * pura, nunca cria. Espelha o loop de lookup de `upsertImportedContacts`
  * (SPEC 044 §1.4) sem a metade que insere: a triagem pode descartar a
  * linha antes de virar contato de verdade.
+ *
+ * Traz também `email`/`company` (SPEC 057 D-7): é o que permite projetar
+ * `willUpdate` sem escrever nada — o envio decide de verdade com a MESMA
+ * regra de COALESCE (D-2).
  */
 async function crossReferenceContacts(
   db: SupabaseClient,
   accountId: string,
   keys: string[]
-): Promise<Map<string, string>> {
-  const byKey = new Map<string, string>();
+): Promise<Map<string, CrossReferencedContact>> {
+  const byKey = new Map<string, CrossReferencedContact>();
 
   for (let i = 0; i < keys.length; i += LOOKUP_CHUNK) {
     const slice = keys.slice(i, i + LOOKUP_CHUNK);
     const { data, error } = await db
       .from('contacts')
-      .select('id, phone')
+      .select('id, phone, email, company')
       .eq('account_id', accountId)
       .in('phone_normalized', slice);
 
@@ -144,13 +174,66 @@ async function crossReferenceContacts(
         500
       );
     }
-    for (const row of (data ?? []) as { id: string; phone: string }[]) {
+    for (const row of (data ?? []) as {
+      id: string;
+      phone: string;
+      email: string | null;
+      company: string | null;
+    }[]) {
       const key = normalizeKey(row.phone);
-      if (key) byKey.set(key, row.id);
+      if (key)
+        byKey.set(key, { id: row.id, email: row.email, company: row.company });
     }
   }
 
   return byKey;
+}
+
+/**
+ * SPEC 057 D-7 — projeta `tagsToCreate`/`tagsSkipped` SEM criar nada:
+ * lê os nomes de etiqueta já existentes na conta e separa os ausentes da
+ * planilha conforme `canCreateTags`. A criação de verdade só acontece no
+ * envio, via `resolveImportTagIds` (mesma regra, recalculada lá).
+ */
+async function projectTagOutcomes(
+  db: SupabaseClient,
+  accountId: string,
+  rows: StageRawRow[],
+  canCreateTags: boolean
+): Promise<{ tagsToCreate: string[]; tagsSkipped: string[] }> {
+  const uniqueNames: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const raw of row.tagNames ?? []) {
+      const name = raw.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniqueNames.push(name);
+    }
+  }
+  if (uniqueNames.length === 0) return { tagsToCreate: [], tagsSkipped: [] };
+
+  const { data: existing, error } = await db
+    .from('tags')
+    .select('name')
+    .eq('account_id', accountId);
+  if (error) {
+    throw new BroadcastError(
+      'internal',
+      `Failed to read tags: ${error.message}`,
+      500
+    );
+  }
+  const existingKeys = new Set(
+    (existing ?? []).map((t) => t.name.trim().toLowerCase())
+  );
+  const missing = uniqueNames.filter((n) => !existingKeys.has(n.toLowerCase()));
+
+  return canCreateTags
+    ? { tagsToCreate: missing, tagsSkipped: [] }
+    : { tagsToCreate: [], tagsSkipped: missing };
 }
 
 function contactToStagingRow(
@@ -176,7 +259,8 @@ function contactToStagingRow(
 async function buildCsvStagingRows(
   db: SupabaseClient,
   accountId: string,
-  audience: Extract<StageAudienceInput, { type: 'csv' }>
+  audience: Extract<StageAudienceInput, { type: 'csv' }>,
+  canCreateTags: boolean
 ): Promise<{ rows: StagingInsertRow[]; summary: StageAudienceSummary }> {
   const { rows, invalidRows } = audience;
 
@@ -203,7 +287,7 @@ async function buildCsvStagingRows(
     email: r.email?.trim() || null,
     company: r.company?.trim() || null,
     tag_names: r.tagNames ?? [],
-    existing_contact_id: byKey.get(normalizeKey(r.phone)) ?? null,
+    existing_contact_id: byKey.get(normalizeKey(r.phone))?.id ?? null,
     invalid_reason: null,
     source_row: r.sourceRow ?? null,
   }));
@@ -220,6 +304,22 @@ async function buildCsvStagingRows(
     source_row: r.sourceRow,
   }));
 
+  // SPEC 057 D-7 — projeção do que o ENVIO fará, sem escrever nada aqui.
+  let willUpdate = 0;
+  for (const r of rows) {
+    const match = byKey.get(normalizeKey(r.phone));
+    if (!match) continue;
+    const email = r.email?.trim();
+    const company = r.company?.trim();
+    if ((!match.email && email) || (!match.company && company)) willUpdate++;
+  }
+  const { tagsToCreate, tagsSkipped } = await projectTagOutcomes(
+    db,
+    accountId,
+    rows,
+    canCreateTags
+  );
+
   return {
     rows: [...validRows, ...invalidStagingRows],
     summary: {
@@ -230,6 +330,10 @@ async function buildCsvStagingRows(
       invalid: invalidRows.filter((r) => r.reason !== 'duplicate_in_file')
         .length,
       existingContacts: validRows.filter((r) => r.existing_contact_id).length,
+      willCreate: validRows.filter((r) => !r.existing_contact_id).length,
+      willUpdate,
+      tagsToCreate,
+      tagsSkipped,
     },
   };
 }
@@ -279,6 +383,12 @@ async function buildFilterStagingRows(
       duplicates: 0,
       invalid: 0,
       existingContacts: contacts.length,
+      // Fonte é `contacts` — nenhuma linha é nova nem traz dado de fora
+      // para preencher, e não há coluna de etiquetas soltas neste ramo.
+      willCreate: 0,
+      willUpdate: 0,
+      tagsToCreate: [],
+      tagsSkipped: [],
     },
   };
 }
@@ -291,8 +401,14 @@ export async function stageAudience(
   db: SupabaseClient,
   params: StageAudienceParams
 ): Promise<StageAudienceResult> {
-  const { accountId, userId, templateName, templateLanguage, audience } =
-    params;
+  const {
+    accountId,
+    userId,
+    templateName,
+    templateLanguage,
+    audience,
+    canCreateTags,
+  } = params;
 
   // Falha cedo, antes de gravar qualquer linha — mesmo cuidado de
   // `planDashboardBroadcast` (broadcast-dispatch.ts).
@@ -313,7 +429,7 @@ export async function stageAudience(
 
   const { rows, summary } =
     audience.type === 'csv'
-      ? await buildCsvStagingRows(db, accountId, audience)
+      ? await buildCsvStagingRows(db, accountId, audience, canCreateTags)
       : await buildFilterStagingRows(db, accountId, audience);
 
   // O nome real só é escolhido no passo 4; até lá o nome do template é

@@ -686,8 +686,12 @@ export async function sendMessageToConversation(
 
   // Gravado DEPOIS da entrega confirmada (§6.1 ponto 4 da SPEC 049) —
   // contar antes faria uma falha de rede consumir cota que nunca saiu.
+  // `recordColdSend` já escala pra supabaseAdmin() internamente (062: só
+  // service_role escreve em channel_cold_sends) e nunca lança —
+  // best-effort de verdade, diferente do pause-on-agent-send acima, que
+  // precisa do try/catch explícito porque ele mesmo chama supabaseAdmin().
   if (coldSendCheck?.cold) {
-    await recordColdSend(db, {
+    await recordColdSend({
       channelId: channelCtx.channel.id,
       accountId,
       contactId: contact.id,

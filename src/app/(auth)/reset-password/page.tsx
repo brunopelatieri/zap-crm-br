@@ -8,6 +8,13 @@ import {
   getAuthErrorMessageKey,
   getAuthErrorLogDetails,
 } from '@/lib/auth/error-messages';
+import {
+  evaluatePassword,
+  isPasswordValid,
+  normalizePassword,
+  passwordsMatch,
+} from '@/lib/auth/password-policy';
+import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,23 +36,27 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
   const supabase = createClient();
 
+  const passwordValid = isPasswordValid(evaluatePassword(password));
+
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (password !== confirmPassword) {
+    if (!passwordsMatch(password, confirmPassword)) {
       setError(t('passwordsMismatch'));
       return;
     }
 
-    if (password.length < 6) {
-      setError(t('passwordTooShort'));
+    if (!passwordValid) {
+      setError(t('errorPasswordPolicy'));
       return;
     }
 
     setLoading(true);
 
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error } = await supabase.auth.updateUser({
+      password: normalizePassword(password),
+    });
 
     if (error) {
       console.error(
@@ -130,12 +141,14 @@ export default function ResetPasswordPage() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="new-password"
                 placeholder={t('passwordPlaceholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
               />
+              {password && <PasswordStrengthMeter password={password} />}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -148,6 +161,7 @@ export default function ResetPasswordPage() {
               <Input
                 id="confirmPassword"
                 type="password"
+                autoComplete="new-password"
                 placeholder={t('confirmPasswordPlaceholder')}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -158,7 +172,11 @@ export default function ResetPasswordPage() {
 
             <Button
               type="submit"
-              disabled={loading}
+              disabled={
+                loading ||
+                !passwordValid ||
+                !passwordsMatch(password, confirmPassword)
+              }
               className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 h-10 w-full disabled:opacity-50"
             >
               {loading ? t('saving') : t('savePassword')}

@@ -335,6 +335,13 @@ export async function loadActivity(
     db
       .from('broadcasts')
       .select('id, name, status, total_recipients, created_at')
+      // SPEC 055: exclui funis de webhook (source='webhook') — `name`
+      // ali é texto livre informado por quem chama a API pública, e
+      // `status` fica sempre 'streaming'. Sem este filtro, a primeira
+      // ingestão de um `webhook_id` novo aparece no feed "atividade
+      // recente" com um rótulo externo, indistinguível de uma campanha
+      // de verdade.
+      .neq('source', 'webhook')
       .order('created_at', { ascending: false })
       .limit(5),
     db

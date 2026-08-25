@@ -16,6 +16,7 @@ import {
   Plus,
   MessageSquareDashed,
   Zap,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GatedButton } from '@/components/ui/gated-button';
@@ -133,6 +134,14 @@ interface MessageComposerProps {
     replyToId?: string
   ) => void;
   onOpenTemplates: () => void;
+  /**
+   * Continuar por outro canal (SPEC 056 §4.1) — segundo botão da faixa
+   * de janela expirada, ao lado do de template. Ausente = nenhum canal
+   * elegível existe (conta de canal único ou sem instância que sirva de
+   * destino): a faixa fica IDÊNTICA à de antes desta SPEC, sem ruído.
+   * A decisão de elegibilidade mora em quem passa esta prop, não aqui.
+   */
+  onTransferChannel?: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
 }
@@ -156,6 +165,7 @@ export function MessageComposer({
   onSendMedia,
   onSendInteractive,
   onOpenTemplates,
+  onTransferChannel,
   replyTo,
   onClearReply,
 }: MessageComposerProps) {
@@ -617,15 +627,32 @@ export function MessageComposer({
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">{t('sessionExpiredHint')}</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-amber-400 hover:text-amber-300"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="mr-1 h-3 w-3" />
-            {t('templates')}
-          </Button>
+          <div className="flex items-center gap-1">
+            {/* SPEC 056 §4.1 — resgatar por outro canal em vez de pagar
+                template. Só existe quando quem chama já sabe de um
+                destino elegível; ausente = ruído em conta de canal
+                único, faixa idêntica à de antes. */}
+            {onTransferChannel && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-amber-400 hover:text-amber-300"
+                onClick={onTransferChannel}
+              >
+                <ArrowRightLeft className="mr-1 h-3 w-3" />
+                {t('transferChannel')}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-amber-400 hover:text-amber-300"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="mr-1 h-3 w-3" />
+              {t('templates')}
+            </Button>
+          </div>
         </div>
       )}
 

@@ -56,6 +56,29 @@ async function throwMetaError(
         : err.message;
       if (err.error_subcode) message += ` (subcode ${err.error_subcode})`;
     }
+    // Prefix the numeric code in the same `(#N)` shape the async webhook
+    // status callback already uses (see handleStatusUpdate in
+    // app/api/whatsapp/webhook/route.ts). Without this, a SYNCHRONOUS
+    // rejection (e.g. #100 invalid parameter, #131042 payment issue)
+    // stored a code-less message in broadcast_recipients.error_message,
+    // so `src/lib/meta-errors.ts` could only ever match it by fragile
+    // English text — the code-based lookup only worked for errors that
+    // arrived via webhook.
+    //
+    // Outside the `if (err?.message)` block on purpose: an empty-string
+    // `message` with a real `code` must still get prefixed, instead of
+    // silently falling back to the code-less `fallback` string.
+    //
+    // Meta's own `message` text occasionally already embeds "(#N)"
+    // literally (see the `'Rate limit (#80007).'` fixture in
+    // template-lifecycle.test.ts) — guard with `includes` so that case
+    // doesn't end up double-prefixed.
+    if (err?.code != null) {
+      const codePrefix = `(#${err.code})`;
+      if (!message.includes(codePrefix)) {
+        message = `${codePrefix} ${message}`;
+      }
+    }
   } catch {
     // response body wasn't JSON — keep the fallback
   }

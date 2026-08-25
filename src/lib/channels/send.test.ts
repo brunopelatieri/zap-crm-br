@@ -57,8 +57,17 @@ vi.mock('@/lib/evolution/instances', () => ({
  * esse erro sem nunca exercitar o guard. O override dá um adaptador
  * registrado ao canal, para a recusa vir de onde ela deve vir.
  */
-const { adapterOverrides } = vi.hoisted(() => ({
+const { adapterOverrides, adminState } = vi.hoisted(() => ({
   adapterOverrides: new Map<string, unknown>(),
+  // `recordColdSend` grava por `supabaseAdmin()` (062: só service_role
+  // pode escrever em channel_cold_sends), não pelo `db` de sessão que os
+  // testes deste arquivo controlam — precisa do próprio fake, trocado a
+  // cada teste em `beforeEach`.
+  adminState: { client: undefined as unknown },
+}));
+
+vi.mock('@/lib/supabase/admin', () => ({
+  supabaseAdmin: () => adminState.client,
 }));
 
 vi.mock('./registry', async (importOriginal) => {
@@ -191,9 +200,14 @@ const qrAdapterStub = {
   normalizeInbound: () => [],
 };
 
+/** Fake admin db do teste corrente — trocado a cada `beforeEach` abaixo. */
+let adminDb: ReturnType<typeof makeDb>;
+
 beforeEach(() => {
   vi.clearAllMocks();
   adapterOverrides.clear();
+  adminDb = makeDb();
+  adminState.client = adminDb.client;
   qrAdapterStub.sendText.mockResolvedValue({ providerMessageId: 'evo.1' });
   sendTextMessage.mockResolvedValue({ messageId: 'wamid.out' });
   sendMediaMessage.mockResolvedValue({ messageId: 'wamid.out' });
@@ -830,7 +844,18 @@ describe('sendAndPersistOutbound', () => {
       });
 
       expect(qrAdapterStub.sendText).toHaveBeenCalledTimes(1);
-      const record = db.ops.find(
+      // Grava por supabaseAdmin(), não pelo `db` de sessão — 062 proíbe
+      // qualquer policy de escrita em channel_cold_sends para o cliente
+      // comum (é exatamente o bug real que gerou "new row violates
+      // row-level security policy" em produção). `db` ainda LÊ essa
+      // tabela (leitura de uso, dentro de checkColdSend) — só o INSERT
+      // precisa sair do lado privilegiado.
+      expect(
+        db.ops.some(
+          (o) => o.table === 'channel_cold_sends' && o.verb === 'insert'
+        )
+      ).toBe(false);
+      const record = adminDb.ops.find(
         (o) => o.table === 'channel_cold_sends' && o.verb === 'insert'
       );
       expect(record?.payload).toEqual({

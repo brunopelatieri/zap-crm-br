@@ -9,6 +9,15 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+/** Callbacks que `send()` entregou a `after()` — o backfill de LID roda
+ *  aqui dentro, fora do caminho crítico (ver comentário em evolution.ts). */
+const afterCallbacks: Array<() => unknown> = [];
+vi.mock('next/server', () => ({
+  after: (cb: () => unknown) => {
+    afterCallbacks.push(cb);
+  },
+}));
+
 const evolutionRequest = vi.fn();
 vi.mock('@/lib/evolution/client', async (importOriginal) => {
   const actual =
@@ -28,6 +37,7 @@ vi.mock('@/lib/evolution/config', () => ({
     instancePrefix: 'zapcrm',
     webhookPublicUrl: 'https://crm.example',
     requestTimeoutMs: 15000,
+    mediaRequestTimeoutMs: 60000,
   }),
 }));
 
@@ -41,6 +51,11 @@ vi.mock('@/lib/supabase/admin', () => ({
       },
     }),
   }),
+}));
+
+const ensureContactIdentity = vi.fn();
+vi.mock('@/lib/evolution/contact-identity', () => ({
+  ensureContactIdentity: (...args: unknown[]) => ensureContactIdentity(...args),
 }));
 
 import { EvolutionApiError } from '@/lib/evolution/client';
@@ -69,6 +84,7 @@ const CTX: ChannelContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  afterCallbacks.length = 0;
 });
 
 describe('sendText', () => {
@@ -93,6 +109,18 @@ describe('sendText', () => {
       })
     );
     expect(result.providerMessageId).toBe('EVO123');
+    // Fecha a lacuna do backfill puramente reativo (SPEC 048 §6.4):
+    // sabemos o telefone por sermos NÓS a mandar, então o vínculo
+    // telefone→LID pode nascer sem depender de um inbound sortudo.
+    // Agendado via after() — não roda inline, então dispara o callback
+    // capturado pra provar o que ele faz.
+    expect(afterCallbacks).toHaveLength(1);
+    await afterCallbacks[0]!();
+    expect(ensureContactIdentity).toHaveBeenCalledWith({
+      accountId: 'acct-1',
+      instanceToken: 'instance-token-1',
+      phone: '5519992496598',
+    });
   });
 
   it('inclui quoted quando há citação', async () => {
@@ -220,6 +248,26 @@ describe('sendMedia', () => {
       caption: 'legenda',
       filename: 'foto.jpg',
     });
+    expect(afterCallbacks).toHaveLength(1);
+    await afterCallbacks[0]!();
+    expect(ensureContactIdentity).toHaveBeenCalledWith({
+      accountId: 'acct-1',
+      instanceToken: 'instance-token-1',
+      phone: '5511999999999',
+    });
+  });
+
+  it('usa mediaRequestTimeoutMs (não requestTimeoutMs) — Evolution baixa e sobe o arquivo dentro da mesma requisição', async () => {
+    evolutionRequest.mockResolvedValue({ data: { id: 'EVO2' } });
+
+    await evolutionAdapter.sendMedia(CTX, {
+      to: '5511999999999',
+      kind: 'video',
+      url: 'https://bucket/signed.mp4',
+    });
+
+    const [, , opts] = evolutionRequest.mock.calls[0];
+    expect((opts as { timeoutMs?: number }).timeoutMs).toBe(60000);
   });
 });
 
@@ -255,6 +303,41 @@ describe('sendLocation e sendPoll', () => {
       question: 'Qual sua cor favorita?',
       options: ['Azul', 'Verde'],
       maxAnswer: 1,
+    });
+  });
+});
+
+describe('backfill de LID (SPEC 048 §6.4) — vive no send() compartilhado', () => {
+  // Regressão: o backfill só era chamado de sendText/sendMedia — um
+  // contato cujo primeiro contato de saída fosse localização, enquete
+  // ou reação nunca ganhava o vínculo telefone→LID. Mover pra dentro de
+  // send() cobre todo endpoint que carregue `number`, de graça.
+  it('sendLocation, sendPoll e sendReaction também agendam o backfill via after()', async () => {
+    evolutionRequest.mockResolvedValue({ data: { id: 'EVO5' } });
+
+    await evolutionAdapter.sendLocation!(CTX, {
+      to: '5511999999999',
+      latitude: -22.9,
+      longitude: -47.0,
+    });
+    await evolutionAdapter.sendPoll!(CTX, {
+      to: '5511999999999',
+      question: 'oi',
+      options: ['a', 'b'],
+    });
+    await evolutionAdapter.sendReaction!(CTX, {
+      to: '5511999999999',
+      targetProviderMessageId: 'msg-1',
+      emoji: '👍',
+    });
+
+    expect(afterCallbacks).toHaveLength(3);
+    for (const cb of afterCallbacks) await cb();
+    expect(ensureContactIdentity).toHaveBeenCalledTimes(3);
+    expect(ensureContactIdentity).toHaveBeenCalledWith({
+      accountId: 'acct-1',
+      instanceToken: 'instance-token-1',
+      phone: '5511999999999',
     });
   });
 });

@@ -58,6 +58,11 @@ vi.mock('@/lib/evolution/config', () => ({
   readEvolutionConfig: () => null, // desliga o backfill de LID por padrão
 }));
 
+const ensureContactIdentity = vi.fn();
+vi.mock('@/lib/evolution/contact-identity', () => ({
+  ensureContactIdentity: (...args: unknown[]) => ensureContactIdentity(...args),
+}));
+
 // ------------------------------------------------------------
 // Supabase de mentira — mesmo espírito de `ingest.test.ts`.
 // ------------------------------------------------------------
@@ -301,6 +306,43 @@ describe('MESSAGE — identidade', () => {
 
     const [, event] = ingestInbound.mock.calls[0];
     expect(event.fromPhone).toBe('5511999999999');
+  });
+
+  it('inbound identificado por telefone aciona o backfill de LID com os parâmetros certos', async () => {
+    // Sobra do gatilho original (§6.4): hoje o vínculo nasce principalmente
+    // do lado outbound (lib/channels/adapters/evolution.ts), mas o
+    // caminho reativo continua existindo — e precisa passar accountId,
+    // instanceToken e telefone corretos pra ensureContactIdentity, sem
+    // inversão nem confusão de campo.
+    await post(
+      SECRET,
+      payload('MESSAGE', {
+        Info: { Chat: '5511999999999@s.whatsapp.net', ID: 'msg-1' },
+        Message: { conversation: 'oi' },
+      })
+    );
+
+    expect(ensureContactIdentity).toHaveBeenCalledWith({
+      accountId: 'acct-1',
+      instanceToken: TOKEN,
+      phone: '5511999999999',
+    });
+  });
+
+  it('inbound identificado só por LID não aciona o backfill (nada a aprender — o telefone é o desconhecido)', async () => {
+    currentDb = makeDb(
+      baseResults({ 'contact_identities.select': { data: null, error: null } })
+    );
+
+    await post(
+      SECRET,
+      payload('MESSAGE', {
+        Info: { Chat: '226559659127039@lid', ID: 'msg-1' },
+        Message: { conversation: 'oi' },
+      })
+    );
+
+    expect(ensureContactIdentity).not.toHaveBeenCalled();
   });
 
   it('LID sem vínculo conhecido descarta — nunca chama ingestInbound', async () => {

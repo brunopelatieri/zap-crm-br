@@ -27,6 +27,17 @@ import { signMediaUrl } from './sign-media-client';
  * espalhados: bolha de mensagem, lightbox, pré-visualização de template,
  * construtor de flows e o passo de personalização de disparo.
  */
+/**
+ * URLs de proxy (`/api/whatsapp/media/<mediaId>`) já confirmadas mortas
+ * nesta aba. A Meta expira mídia recebida bem mais cedo do que a
+ * documentação sugere (ver investigação de 2026-08-17); sem isto, toda
+ * mensagem antiga com mídia morta refaz a chamada à Graph API — e volta
+ * a falhar — a cada re-render da thread (reconexão do realtime, troca
+ * de aba). `mediaId` é único por objeto da Meta, então a URL nunca
+ * volta a ficar viva: cache para a vida da aba, sem TTL.
+ */
+const deadProxyMedia = new Set<string>();
+
 export function useMediaSrc(
   url: string | null | undefined,
   path?: string | null
@@ -59,6 +70,13 @@ export function useMediaSrc(
       }
 
       if (ref.kind === 'proxy') {
+        if (deadProxyMedia.has(ref.url)) {
+          if (!cancelled) {
+            setError(true);
+            setLoading(false);
+          }
+          return;
+        }
         try {
           const res = await fetch(ref.url);
           if (!res.ok) throw new Error('Failed to load media');
@@ -66,6 +84,7 @@ export function useMediaSrc(
           blobUrl = URL.createObjectURL(blob);
           if (!cancelled) setSrc(blobUrl);
         } catch {
+          deadProxyMedia.add(ref.url);
           if (!cancelled) setError(true);
         } finally {
           if (!cancelled) setLoading(false);

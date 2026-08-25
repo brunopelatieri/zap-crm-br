@@ -22,7 +22,8 @@
     "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
     "errorSignupDisabled": "Este recurso está temporariamente indisponível. Tente novamente mais tarde.",
     "errorGeneric": "Não foi possível entrar agora. Tente novamente em instantes ou fale com o suporte.",
-    "errorCallbackFailed": "Este link expirou ou já foi utilizado. Solicite um novo link de redefinição de senha."
+    "errorCallbackFailed": "Este link expirou ou já foi utilizado. Solicite um novo link de redefinição de senha.",
+    "errorLinkExpired": "Este link expirou ou já foi utilizado. Solicite um novo link de redefinição de senha."
   },
   "SignupPage": {
     "title": "Criar conta",
@@ -34,7 +35,7 @@
     "emailLabel": "E-mail",
     "emailPlaceholder": "voce@exemplo.com",
     "passwordLabel": "Senha",
-    "passwordPlaceholder": "Pelo menos 6 caracteres",
+    "passwordPlaceholder": "Pelo menos 8 caracteres",
     "confirmPasswordLabel": "Confirmar senha",
     "confirmPasswordPlaceholder": "Repita sua senha",
     "createAccount": "Criar conta",
@@ -42,7 +43,7 @@
     "haveAccount": "Já tem uma conta?",
     "signIn": "Entrar",
     "passwordsMismatch": "As senhas não coincidem",
-    "passwordTooShort": "A senha deve ter pelo menos 6 caracteres",
+    "errorPasswordPolicy": "Sua senha não atende a todos os requisitos acima.",
     "errorUserExists": "Já existe uma conta com este e-mail. Tente entrar ou recuperar sua senha.",
     "errorWeakPassword": "Esta senha é muito fraca. Escolha uma senha mais forte.",
     "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
@@ -51,6 +52,7 @@
     "errorInvalidCredentials": "E-mail ou senha inválidos.",
     "errorUserBanned": "Esta conta está temporariamente bloqueada. Fale com o suporte.",
     "errorEmailNotConfirmed": "Confirme seu e-mail antes de continuar. Verifique sua caixa de entrada.",
+    "errorLinkExpired": "Este link expirou ou já foi utilizado. Solicite um novo.",
     "errorGeneric": "Não foi possível criar sua conta agora. Tente novamente em instantes ou fale com o suporte.",
     "successTitle": "Verifique seu e-mail",
     "successDesc": "Enviamos um link de confirmação para <highlight>{email}</highlight>. Verifique sua caixa de entrada e clique no link para verificar sua conta.",
@@ -71,13 +73,13 @@
     "title": "Defina sua nova senha",
     "desc": "Escolha uma nova senha para sua conta",
     "passwordLabel": "Nova senha",
-    "passwordPlaceholder": "Pelo menos 6 caracteres",
+    "passwordPlaceholder": "Pelo menos 8 caracteres",
     "confirmPasswordLabel": "Confirmar nova senha",
     "confirmPasswordPlaceholder": "Repita a nova senha",
     "savePassword": "Salvar nova senha",
     "saving": "Salvando...",
     "passwordsMismatch": "As senhas não coincidem",
-    "passwordTooShort": "A senha deve ter pelo menos 6 caracteres",
+    "errorPasswordPolicy": "Sua senha não atende a todos os requisitos acima.",
     "errorWeakPassword": "Esta senha é muito fraca. Escolha uma senha mais forte.",
     "errorRateLimit": "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.",
     "errorUserBanned": "Esta conta está temporariamente bloqueada. Fale com o suporte.",
@@ -86,10 +88,39 @@
     "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
     "errorUserExists": "Já existe uma conta com este e-mail.",
     "errorSignupDisabled": "Este recurso está temporariamente indisponível. Tente novamente mais tarde.",
+    "errorLinkExpired": "Este link expirou ou já foi utilizado. Solicite um novo link de redefinição de senha.",
     "errorGeneric": "Não foi possível salvar sua nova senha agora. Solicite um novo link e tente novamente.",
     "successTitle": "Senha redefinida",
     "successDesc": "Sua senha foi alterada com sucesso. Entre novamente com a nova senha.",
     "goToSignIn": "Ir para o login"
+  },
+  "AuthConfirmPage": {
+    "title": "Confirme a redefinição de senha",
+    "desc": "Clique no botão abaixo para continuar. Essa etapa extra evita que scanners de segurança de e-mail gastem seu link antes de você.",
+    "confirmButton": "Redefinir senha",
+    "confirming": "Confirmando...",
+    "errorInvalidLink": "Este link é inválido. Solicite um novo link de redefinição de senha.",
+    "errorLinkExpired": "Este link expirou ou já foi utilizado. Solicite um novo link de redefinição de senha.",
+    "errorRateLimit": "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.",
+    "errorUserExists": "Já existe uma conta com este e-mail.",
+    "errorWeakPassword": "Esta senha é muito fraca. Escolha uma senha mais forte.",
+    "errorInvalidEmail": "Este e-mail não é válido ou não pode ser usado.",
+    "errorSignupDisabled": "Este recurso está temporariamente indisponível. Tente novamente mais tarde.",
+    "errorInvalidCredentials": "Não foi possível validar sua identidade. Solicite um novo link de redefinição.",
+    "errorUserBanned": "Esta conta está temporariamente bloqueada. Fale com o suporte.",
+    "errorEmailNotConfirmed": "Confirme seu e-mail antes de continuar. Verifique sua caixa de entrada.",
+    "errorGeneric": "Não foi possível confirmar este link. Solicite um novo link de redefinição de senha.",
+    "requestNewLink": "Solicitar novo link"
+  },
+  "PasswordPolicy": {
+    "strengthLabel": "Força da senha",
+    "ruleMinLength": "Pelo menos {min} caracteres",
+    "ruleUppercase": "Uma letra maiúscula",
+    "ruleLowercase": "Uma letra minúscula",
+    "ruleNumber": "Um número",
+    "ruleSpecialChar": "Um caractere especial ({chars})",
+    "ruleTooLong": "Esta senha está muito longa — use menos caracteres.",
+    "ruleControlChars": "Esta senha contém um caractere inválido — tente digitar de novo em vez de colar."
   },
   "JoinPage": {
     "verifying": "Verificando convite…",
@@ -396,13 +427,15 @@
       "quickReplySaved": "Salva como resposta rápida.",
       "quickReplySaveError": "Não foi possível salvar a resposta rápida.",
       "audioAsAttachmentHint": "Neste canal, o áudio chega como anexo, não como mensagem de voz.",
-      "quickRepliesAvailable": "{shown} de {total} disponíveis neste canal"
+      "quickRepliesAvailable": "{shown} de {total} disponíveis neste canal",
+      "transferChannel": "Continuar por outro canal"
     },
     "bubble": {
       "photo": "Foto",
       "video": "Vídeo",
       "audio": "Áudio",
       "unavailable": "{label} indisponível",
+      "expired": "{label} não está mais disponível",
       "document": "Documento",
       "locationShared": "Localização compartilhada",
       "template": "Template",
@@ -412,6 +445,8 @@
       "aiBadge": "IA",
       "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
       "channelBadgeTitle": "Entregue via {channel} — um canal diferente do que esta conversa normalmente usa",
+      "broadcastOrigin": "Campanha: {name}",
+      "broadcastOriginDate": "Enviada em {date}",
       "bot": "Automação",
       "customerFallback": "Cliente",
       "download": "Baixar",
@@ -473,7 +508,27 @@
       "unknownChannel": "Canal desconhecido",
       "siblingMessageCount": "{count} mensagens",
       "siblingLastMessage": "última {time}",
-      "openThread": "Abrir"
+      "openThread": "Abrir",
+      "noThreadYet": "Ainda sem conversa neste canal",
+      "speakOnThisChannel": "Falar por este canal"
+    },
+    "transferChannel": {
+      "title": "Continuar por outro canal",
+      "explanation": "O contato vai receber esta mensagem do número abaixo, e a conversa continua por lá — as respostas dele voltam por esse mesmo canal.",
+      "loadingChannels": "Verificando canais disponíveis…",
+      "noEligibleChannel": "Nenhum canal pode receber esta conversa agora.",
+      "windowClosedHint": "Janela de 24h fechada — uma mensagem livre seria recusada aqui. Envie um template, ou espere o contato escrever para este número.",
+      "riskWarning": "Este é um número não-oficial que o contato ainda não viu. Use só para resgatar quem está em silêncio — o envio conta na cota de envio frio desta instância.",
+      "selectionBecameUnavailable": "O canal escolhido deixou de estar disponível — escolha outro abaixo.",
+      "messagePlaceholder": "Digite a mensagem a enviar por este canal…",
+      "cancel": "Cancelar",
+      "confirm": "Enviar e continuar por lá",
+      "sent": "Enviado por {channel} — a conversa foi para lá.",
+      "networkError": "Não foi possível falar com o servidor.",
+      "errorOptedOut": "Este contato optou por sair — não é permitido contatá-lo por outro número.",
+      "errorWindowClosed": "A janela de 24h desse canal está fechada — uma mensagem livre seria recusada.",
+      "errorNotConnected": "Esse canal não está conectado agora.",
+      "errorGeneric": "Não foi possível transferir esta conversa."
     },
     "tagPicker": {
       "title": "Etiquetas de {name}",
@@ -626,6 +681,7 @@
       "contactDetailsDesc": "Detalhes do contato",
       "phone": "Telefone",
       "email": "E-mail",
+      "nameLabel": "Nome",
       "company": "Empresa",
       "createdAt": "Criado em",
       "customFields": "Campos personalizados",
@@ -1082,11 +1138,27 @@
       "sending": "Enviando",
       "sent": "Enviado",
       "failed": "Falhou",
+      "streaming": "Em fluxo",
       "pending": "Pendente",
       "delivered": "Entregue",
       "read": "Lida",
       "replied": "Respondido",
       "unknown": "Desconhecido"
+    },
+    "sourceFilter": {
+      "campaigns": "Campanhas",
+      "webhooks": "Funis de webhook",
+      "noneYet": "Ainda sem funis de webhook",
+      "noneYetHint": "Um funil aparece aqui na primeira vez que POST /api/v1/ingest/contact é chamado com um webhook_id novo.",
+      "webhookId": "ID do webhook",
+      "ingested": "Ingeridos",
+      "recipientsSent": "Enviados"
+    },
+    "webhookFunnel": {
+      "copyId": "Copiar webhook_id",
+      "idCopied": "webhook_id copiado",
+      "viewLog": "Ver log",
+      "recipientsNote": "Este funil é acumulativo: \"Enviados\" conta cada tentativa de envio para este webhook_id ao longo do tempo, não pessoas distintas — o mesmo contato pode ser alcançado de novo numa requisição posterior."
     },
     "detail": {
       "backToBroadcasts": "Voltar aos disparos",
@@ -1099,6 +1171,7 @@
       "deleting": "Excluindo…",
       "delete": "Excluir",
       "cannotDeleteSending": "Não é possível excluir enquanto um disparo está sendo enviado",
+      "cannotDeleteStreaming": "Não é possível excluir um funil de webhook enquanto pode haver um envio em andamento",
       "deleteHover": "Excluir este disparo",
       "funnel": "Funil",
       "recipientsHeader": "Destinatários ({filtered} de {total})",
@@ -1147,6 +1220,137 @@
           "pValue": "valor-p"
         },
         "deleteCascade": "Apagar a variante A apaga o teste inteiro, incluindo a variante B. Confirmar?"
+      },
+      "metaErrorCategories": {
+        "delivery_restriction": "Entrega e restrições de destinatário",
+        "rate_limit": "Limite de taxa e spam",
+        "payload_media": "Payload, templates e mídia",
+        "account_auth": "Conta, autenticação e faturamento",
+        "internal": "Erros internos da Meta"
+      },
+      "metaErrorCode": "Código",
+      "metaErrorAction": "Ação recomendada",
+      "metaErrors": {
+        "131026": {
+          "title": "Mensagem não foi entregue",
+          "description": "O número do destinatário não está no WhatsApp, não aceitou os Termos de Serviço atuais da Meta, ou está usando uma versão do app não suportada.",
+          "action": "Marcar o número como inválido e não tentar novamente."
+        },
+        "131047": {
+          "title": "Janela de 24 horas fechada",
+          "description": "Mais de 24 horas se passaram desde a última mensagem do contato, então uma mensagem livre não pode mais ser enviada.",
+          "action": "Usar um template aprovado para reabrir a janela de conversa."
+        },
+        "131049": {
+          "title": "Mensagem bloqueada para preservar a integridade do sistema",
+          "description": "As heurísticas antispam da Meta bloquearam este envio para proteger a qualidade da plataforma.",
+          "action": "Aguardar 24 horas antes de tentar novamente e reduzir o volume de disparos em massa."
+        },
+        "131050": {
+          "title": "Destinatário optou por sair",
+          "description": "O destinatário clicou em \"Parar promoções\" em um template de marketing anterior.",
+          "action": "Bloquear envios automáticos para este número a partir de agora."
+        },
+        "130472": {
+          "title": "Número do contato faz parte de um experimento",
+          "description": "Este destinatário faz parte do grupo de testes globais da Meta (cerca de 1% dos números).",
+          "action": "Nenhuma — é um bloqueio temporário da própria Meta, não um problema da conta."
+        },
+        "130497": {
+          "title": "País não permitido",
+          "description": "Esta WABA não tem permissão para enviar mensagens para o país ou região do destinatário.",
+          "action": "Revisar as configurações regionais no Business Manager."
+        },
+        "131021": {
+          "title": "Destinatário é o remetente",
+          "description": "A mensagem foi endereçada para o mesmo número que está enviando.",
+          "action": "Corrigir a lógica de roteamento que montou esta requisição."
+        },
+        "131060": {
+          "title": "Mensagem temporariamente indisponível",
+          "description": "Uma falha de entrega temporária e não especificada do lado da Meta.",
+          "action": "Aguardar de 5 a 10 minutos e tentar novamente."
+        },
+        "130429": {
+          "title": "Limite de taxa excedido",
+          "description": "O limite de throughput da Cloud API (mensagens por segundo) foi excedido.",
+          "action": "Implementar backoff exponencial na fila de disparos."
+        },
+        "131048": {
+          "title": "Limite de taxa de spam",
+          "description": "Esta WABA recebeu muitos bloqueios de usuários, ou excedeu seu limite diário de mensagens.",
+          "action": "Pausar campanhas frias e revisar a qualidade das listas de contatos."
+        },
+        "131056": {
+          "title": "Muitas mensagens para o mesmo destinatário",
+          "description": "Várias mensagens foram disparadas para o mesmo usuário em um espaço de tempo muito curto.",
+          "action": "Inserir atrasos entre mensagens automáticas seguidas para o mesmo contato."
+        },
+        "80007": {
+          "title": "Excesso de chamadas à API",
+          "description": "Os limites de chamadas em nível de app ou de WABA no Graph API foram atingidos.",
+          "action": "Reduzir a velocidade geral das requisições."
+        },
+        "100": {
+          "title": "Parâmetro inválido",
+          "description": "Um campo do JSON da requisição está incorreto, mal formatado ou não existe na API.",
+          "action": "Revisar a estrutura da requisição (aspas soltas, chaves erradas, etc.)."
+        },
+        "131008": {
+          "title": "Parâmetro obrigatório ausente",
+          "description": "Falta um campo obrigatório no corpo da requisição para este tipo de mensagem.",
+          "action": "Validar os dados de entrada antes de montar a requisição."
+        },
+        "131051": {
+          "title": "Tipo de mensagem não suportado",
+          "description": "Este tipo de mensagem (ex: sticker, variante de localização não suportada) não é suportado neste endpoint.",
+          "action": "Consultar a referência da Meta para tipos de mensagem suportados."
+        },
+        "131053": {
+          "title": "Erro de upload de mídia",
+          "description": "O arquivo excede os limites de tamanho da Meta ou tem um tipo MIME inválido.",
+          "action": "Validar o tipo MIME e comprimir a mídia antes do upload."
+        },
+        "131052": {
+          "title": "Erro de download de mídia",
+          "description": "A Meta não conseguiu baixar a mídia a partir do link externo fornecido.",
+          "action": "Garantir que a URL é pública e não exige autenticação."
+        },
+        "132000": {
+          "title": "Erro no envio do template",
+          "description": "O template está pausado ou rejeitado, falta uma variável, ou o idioma usado está errado.",
+          "action": "Sincronizar o status do template (Aprovado/Pausado/Rejeitado) diariamente e revisar as variáveis enviadas."
+        },
+        "190": {
+          "title": "Token de acesso expirado",
+          "description": "O Token de Acesso (Bearer) expirou ou foi invalidado no Meta for Developers.",
+          "action": "Renovar ou trocar o Token de Acesso permanente."
+        },
+        "131005": {
+          "title": "Permissão negada",
+          "description": "O token atual não possui os escopos necessários (ex: whatsapp_business_messaging).",
+          "action": "Revisar os escopos no Access Token Debugger."
+        },
+        "131042": {
+          "title": "Problema de pagamento",
+          "description": "Falha de faturamento: cartão recusado, sem fundos ou limite de crédito atingido.",
+          "action": "Regularizar imediatamente no Business Manager."
+        },
+        "131031": {
+          "title": "Conta bloqueada",
+          "description": "A WABA está temporariamente bloqueada por verificações de segurança.",
+          "action": "Tratar diretamente no WhatsApp Manager."
+        },
+        "130403": {
+          "title": "Empresa bloqueada",
+          "description": "O número foi banido por violação severa das Políticas de Comércio da Meta.",
+          "action": "Entrar com recurso (Appeal) pelo painel da Meta."
+        },
+        "131000": {
+          "title": "Algo deu errado",
+          "description": "Instabilidade nos servidores da Meta ou erro interno no Graph API.",
+          "action": "Tentar novamente automaticamente, de forma controlada."
+        }
       }
     },
     "new": {
@@ -1501,7 +1705,13 @@
         "consentFilters": "Consentimento",
         "removeOptedOut": "Remover quem pediu para sair",
         "removeCooldown": "Remover quem está em espera",
-        "overrideCooldown": "Incluir quem está em espera"
+        "overrideCooldown": "Incluir quem está em espera",
+        "dataSaveNotice": {
+          "contactsWillBeSaved": "{count} contatos serão salvos na sua base de contatos ao disparar.",
+          "tagsWillBeCreated": "{count} etiquetas novas serão criadas: {names}.",
+          "tagsSkippedNoPermission": "Você não tem permissão para criar etiquetas. Estas serão ignoradas: {names}",
+          "repliesWillShowCampaign": "Quando os contatos responderem, a conversa mostrará esta campanha."
+        }
       },
       "consent": {
         "excludedFromMarketing": "Contatos que pediram para não receber marketing já estão fora desta contagem."
@@ -2664,7 +2874,8 @@
       "fields": "Campos e etiquetas",
       "deals": "Negócios e moeda",
       "members": "Membros da equipe",
-      "api": "Chaves de API"
+      "api": "Chaves de API",
+      "webhook-log": "Log de webhook"
     },
     "groups": {
       "account": "Conta",
@@ -2706,7 +2917,7 @@
       "updating": "Atualizando…",
       "updatePassword": "Atualizar senha",
       "cannotChangeNoEmail": "Não é possível alterar a senha sem um e-mail atual",
-      "passwordTooShort": "A senha deve ter pelo menos {min} caracteres",
+      "passwordPolicyNotMet": "Sua nova senha não atende a todos os requisitos acima.",
       "passwordMismatch": "A nova senha e a confirmação não coincidem",
       "currentPasswordIncorrect": "A senha atual está incorreta",
       "passwordUpdateFailed": "Falha ao atualizar senha: {message}",
@@ -2795,6 +3006,44 @@
       "accountScopeWarning": "Uma chave enxerga <bold>todas as conversas da conta</bold>, inclusive as atribuídas a outros agentes — ela não equivale a um usuário agente. Trate-a como credencial de administrador e crie uma chave por integração, para poder revogar isoladamente.",
       "done": "Concluído",
       "networkError": "Não foi possível conectar ao servidor"
+    },
+    "webhookLog": {
+      "title": "Log de webhook",
+      "description": "Aqui só entram requisições rejeitadas ou parcialmente processadas do webhook de entrada (POST /api/v1/ingest/contact) — o sucesso fica no funil, em Disparos. Uma requisição rejeitada por chave de API ausente ou inválida também não aparece aqui, pois não há conta a que a linha possa pertencer.",
+      "clear": "Limpar log",
+      "clearConfirmTitle": "Limpar o log de webhook?",
+      "clearConfirmDescription": "Isto apaga permanentemente todas as entradas do log de webhook desta conta. Não afeta nenhum contato, etiqueta ou disparo já criado.",
+      "clearSuccess": "Log de webhook limpo",
+      "clearFailed": "Falha ao limpar o log de webhook",
+      "cancel": "Cancelar",
+      "loadFailed": "Falha ao carregar o log de webhook",
+      "networkError": "Não foi possível conectar ao servidor",
+      "levelAll": "Todos os níveis",
+      "levelError": "Erros",
+      "levelWarning": "Avisos",
+      "webhookAll": "Todos os webhooks",
+      "unnamedWebhook": "Webhook sem nome",
+      "noWebhook": "Sem webhook_id/webhook_name (a própria validação desses campos falhou)",
+      "viewPayload": "Ver payload",
+      "payloadTitle": "Payload da requisição",
+      "payloadWarning": "Este é o corpo bruto da requisição — pode conter dado pessoal (nome, telefone, notas). Truncado em 8 KB.",
+      "loadMore": "Carregar mais",
+      "empty": "Nenhuma falha ou aviso ainda.",
+      "codes": {
+        "bad_request": "Corpo da requisição malformado",
+        "invalid_webhook_id": "webhook_id inválido",
+        "invalid_webhook_name": "webhook_name inválido",
+        "invalid_phone": "Telefone inválido",
+        "template_not_found": "Template não encontrado",
+        "template_not_approved": "Template não aprovado",
+        "channel_not_capable": "Canal não pode enviar isto",
+        "send_failed": "Falha no envio",
+        "custom_field_not_found": "Campo personalizado não encontrado",
+        "custom_field_ambiguous": "Nome de campo personalizado é ambíguo",
+        "custom_fields_malformed": "custom_fields está no formato errado",
+        "note_empty": "Nota vazia ignorada",
+        "payload_truncated": "Payload acima de 8 KB, truncado"
+      }
     },
     "deals": {
       "title": "Negócios e moeda",

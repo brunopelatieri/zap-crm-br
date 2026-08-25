@@ -222,3 +222,37 @@ SELECT cron.schedule(
 -- SELECT cron.unschedule('zapcrm-automations-cron');
 -- SELECT cron.unschedule('zapcrm-flows-cron');
 -- DELETE FROM vault.secrets WHERE name IN ('zapcrm_app_url', 'zapcrm_cron_secret');
+
+
+-- ============================================================
+-- OPCIONAL — purga do log de webhook de entrada (SPEC 055 D-13)
+--
+-- `webhook_ingest_logs` (migração 065) não tem purga automática: a
+-- migração cria só a FUNÇÃO (`purge_webhook_ingest_logs`), porque
+-- agendar algo que assume pg_cron instalado reproduziria exatamente o
+-- silêncio que a memória do projeto já registrou uma vez (o pg_cron
+-- não está instalado em todo projeto Supabase deste app). Sem este
+-- job, a tabela só CRESCE — aceitável, é uma linha por FALHA de
+-- validação, não por requisição.
+--
+-- Diferente dos três pingers acima, este job roda inteiramente dentro
+-- do Postgres — sem pg_net, sem Vault, sem segredo — porque a purga é
+-- uma função SQL local, não uma chamada HTTP à app. Descomente e rode
+-- separadamente, no MESMO projeto Supabase onde a migração 065 já foi
+-- aplicada.
+--
+-- CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+-- GRANT USAGE ON SCHEMA cron TO postgres;
+--
+-- SELECT cron.schedule(
+--   'zapcrm-webhook-ingest-logs-purge',
+--   '0 3 * * *',                          -- diário, às 03:00 (fuso do banco)
+--   $job$ SELECT public.purge_webhook_ingest_logs(90); $job$
+-- );
+--
+-- Conferir depois:
+--   SELECT jobname, schedule, active FROM cron.job
+--    WHERE jobname = 'zapcrm-webhook-ingest-logs-purge';
+--
+-- Desfazer:
+--   SELECT cron.unschedule('zapcrm-webhook-ingest-logs-purge');

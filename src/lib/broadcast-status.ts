@@ -45,6 +45,14 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
     label: 'failed',
     classes: 'bg-red-500/10 text-red-400 border-red-500/20',
   },
+  // SPEC 055 (migração 065) — exclusivo de source='webhook'. Pulsa
+  // como 'sending' pela mesma razão: é um fluxo vivo, não um estado
+  // parado.
+  streaming: {
+    label: 'streaming',
+    classes: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+    pulse: true,
+  },
 };
 
 export const recipientStatusConfig: Record<RecipientStatus, StatusDisplay> = {

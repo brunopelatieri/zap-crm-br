@@ -740,9 +740,11 @@ export async function sendAndPersistOutbound(input: {
     .eq('id', conversationId);
 
   // Gravado DEPOIS da entrega confirmada (§6.1 ponto 4) — contar antes
-  // faria uma falha de rede consumir cota que nunca saiu.
+  // faria uma falha de rede consumir cota que nunca saiu. `recordColdSend`
+  // já escala pra supabaseAdmin() internamente (062: só service_role
+  // escreve em channel_cold_sends) e nunca lança — best-effort de verdade.
   if (coldSend?.cold) {
-    await recordColdSend(db, {
+    await recordColdSend({
       channelId: ctx.channel.id,
       accountId,
       contactId: contact.id,

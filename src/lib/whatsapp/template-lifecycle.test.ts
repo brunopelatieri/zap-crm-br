@@ -85,6 +85,50 @@ describe('submitMessageTemplate', () => {
     ).rejects.toThrow(/Rate limit/);
   });
 
+  it('does not duplicate a "(#N)" Meta already embedded in its own message text', async () => {
+    // Same fixture as above, but WITH `code` set — this is the case
+    // throwMetaError's own code-prefixing logic must not double up on.
+    // The prefix is already there naturally, so the thrown message
+    // should stay EXACTLY as Meta sent it, not "(#80007) (#80007) ...".
+    fetchMock.mockResolvedValueOnce(
+      errorResponse(429, {
+        error: { code: 80007, message: 'Rate limit (#80007).' },
+      })
+    );
+    await expect(
+      submitMessageTemplate({
+        wabaId: 'W',
+        accessToken: 't',
+        payload: {
+          name: 'n',
+          category: 'UTILITY',
+          language: 'en_US',
+          components: [],
+        },
+      })
+    ).rejects.toThrow(/^Rate limit \(#80007\)\.$/);
+  });
+
+  it('prefixes the code even when Meta returns an empty message string', async () => {
+    fetchMock.mockResolvedValueOnce(
+      errorResponse(400, {
+        error: { code: 131042, message: '' },
+      })
+    );
+    await expect(
+      submitMessageTemplate({
+        wabaId: 'W',
+        accessToken: 't',
+        payload: {
+          name: 'n',
+          category: 'UTILITY',
+          language: 'en_US',
+          components: [],
+        },
+      })
+    ).rejects.toThrow('(#131042)');
+  });
+
   it('throws if Meta accepts but returns no id (data integrity guard)', async () => {
     fetchMock.mockResolvedValueOnce(okResponse({ status: 'PENDING' }));
     await expect(

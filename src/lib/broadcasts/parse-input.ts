@@ -103,12 +103,25 @@ export function parseAudienceConfig(raw: unknown): AudienceConfig | null {
     // antes de virar milhares de linhas em memória no servidor.
     if (raw.csvContacts.length > MAX_DASHBOARD_RECIPIENTS) return null;
 
-    const rows: { phone: string; name?: string }[] = [];
+    const rows: {
+      phone: string;
+      name?: string;
+      email?: string;
+      company?: string;
+      tagNames?: string[];
+    }[] = [];
     for (const row of raw.csvContacts) {
       if (!isRecord(row) || typeof row.phone !== 'string') continue;
       rows.push({
         phone: row.phone,
         name: typeof row.name === 'string' ? row.name : undefined,
+        // SPEC 057 F2/F3 — sem isto, um `POST /api/broadcasts/send` (ou
+        // um agendamento persistido) com `audience.type === 'csv'` fora
+        // do fluxo de triagem perdia email/company/tagNames em silêncio,
+        // mesmo já carregando os campos em `AudienceConfig.csvContacts`.
+        email: typeof row.email === 'string' ? row.email : undefined,
+        company: typeof row.company === 'string' ? row.company : undefined,
+        tagNames: stringArray(row.tagNames),
       });
     }
     if (rows.length === 0) return null;

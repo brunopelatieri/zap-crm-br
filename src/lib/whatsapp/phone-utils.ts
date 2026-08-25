@@ -1,3 +1,5 @@
+import { matchMetaError } from '@/lib/meta-errors';
+
 /**
  * Sanitize phone number for Meta WhatsApp API.
  * Meta requires digits only — no + prefix, no spaces, no dashes.
@@ -116,7 +118,12 @@ export function isRecipientNotAllowedError(message: string): boolean {
  * unlike the "≥2 consecutive failures" heuristic, Meta has already
  * told us the number can't receive messages, so there's no value in
  * waiting for a second attempt to confirm it.
+ *
+ * Delegates to the code 131026 catalog entry in `@/lib/meta-errors`
+ * instead of keeping a second, separately-maintained regex — the two
+ * used to diverge silently (this file matched a bare `131026` digit
+ * string with no `(#...)` wrapper, which the catalog never did).
  */
 export function isInvalidWhatsappNumberError(message: string): boolean {
-  return /131026|not a whatsapp (user|phone number)/i.test(message);
+  return matchMetaError(message)?.code === '131026';
 }

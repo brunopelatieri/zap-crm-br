@@ -27,23 +27,31 @@ interface MediaLightboxProps {
   onNavigate: (index: number) => void;
 }
 
+function LightboxUnavailable({ label }: { label: string }) {
+  const t = useTranslations('Inbox.bubble');
+  return (
+    <div className="flex h-40 w-60 flex-col items-center justify-center gap-2 text-center text-white/60">
+      <ImageOff className="h-8 w-8" />
+      <span className="px-3 text-xs">{t('expired', { label })}</span>
+    </div>
+  );
+}
+
 function LightboxImage({
   url,
   path,
   alt,
+  label,
 }: {
   url: string | null;
   path?: string | null;
   alt: string;
+  label: string;
 }) {
   const { src, loading, error } = useMediaSrc(url, path);
 
   if (error) {
-    return (
-      <div className="flex h-40 w-60 items-center justify-center">
-        <ImageOff className="h-8 w-8 text-white/60" />
-      </div>
-    );
+    return <LightboxUnavailable label={label} />;
   }
 
   if (loading || !src) {
@@ -66,18 +74,16 @@ function LightboxImage({
 function LightboxVideo({
   url,
   path,
+  label,
 }: {
   url: string | null;
   path?: string | null;
+  label: string;
 }) {
   const { src, loading, error } = useMediaSrc(url, path);
 
   if (error) {
-    return (
-      <div className="flex h-40 w-60 items-center justify-center">
-        <ImageOff className="h-8 w-8 text-white/60" />
-      </div>
-    );
+    return <LightboxUnavailable label={label} />;
   }
 
   if (loading || !src) {
@@ -169,12 +175,14 @@ export function MediaLightbox({
                     url={current.url}
                     path={current.path}
                     alt={current.caption ?? ''}
+                    label={t('photo')}
                   />
                 ) : (
                   <LightboxVideo
                     key={current.id}
                     url={current.url}
                     path={current.path}
+                    label={t('video')}
                   />
                 )}
                 {current.downloadable && (

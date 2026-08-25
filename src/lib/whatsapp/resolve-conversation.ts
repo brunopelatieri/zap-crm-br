@@ -184,12 +184,12 @@ export async function resolveConversationByPhone(
   // `.maybeSingle()`, which errors on ≥2 rows: if duplicates predate the
   // unique index (migration 036), we resolve to the canonical survivor
   // instead of falling through and creating yet another (issue #363).
-  const conversationId = await findOrCreateConversationRow(
+  const conversationId = await findOrCreateConversation(
     db,
     accountId,
     contactId,
-    ownerUserId,
-    channelId
+    channelId,
+    ownerUserId
   );
 
   return { conversationId, contactId, contactCreated };
@@ -197,16 +197,25 @@ export async function resolveConversationByPhone(
 
 /**
  * Find (oldest-first) or create the single conversation for
- * `(accountId, contactId)`. Handles the unique-index race the same way
- * the inbound webhook does: on a 23505 from a concurrent create,
- * re-resolve the winning row rather than failing the send.
+ * `(accountId, contactId, channelId)`. Handles the unique-index race
+ * the same way the inbound webhook does: on a 23505 from a concurrent
+ * create, re-resolve the winning row rather than failing the send.
+ *
+ * Exported for `resolveConversationByPhone` above (its only caller) —
+ * service-role, no assignment on create, re-resolves on race. This is
+ * NOT what the SPEC 056 channel-transfer flow uses: that flow runs
+ * under the CALLER's RLS and needs the thread to be born ASSIGNED to
+ * whoever transferred it, with a 409 (not a silent re-resolve) when the
+ * unique index collides — see `findOrCreateInboxConversation` in
+ * `@/lib/inbox/find-or-create-conversation.ts`, whose header explains
+ * why the two can't share one implementation.
  */
-async function findOrCreateConversationRow(
+export async function findOrCreateConversation(
   db: SupabaseClient,
   accountId: string,
   contactId: string,
-  ownerUserId: string,
-  channelId: string
+  channelId: string,
+  ownerUserId: string
 ): Promise<string> {
   const { data: existing, error: findErr } = await db
     .from('conversations')

@@ -47,6 +47,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
+import { refreshAccountChannels } from '@/lib/channels/use-account-channels';
 import { SettingsPanelHead } from './settings-panel-head';
 
 // ------------------------------------------------------------
@@ -180,6 +181,13 @@ export function WhatsappQrcodeConfig() {
         return;
       }
       toast.success(successMessage);
+      // Achado do code-review da SPEC 056: `useAccountChannels()` tem
+      // cache em nível de módulo que nenhuma tela invalidava — o inbox
+      // (selo de canal, diálogo de transferência) podia continuar
+      // mostrando o status de ANTES de desconectar/reconectar até um
+      // reload manual da página. Invalida aqui, na única tela que muda
+      // status de canal por ação do usuário.
+      refreshAccountChannels();
       await load();
     } catch (err) {
       console.error(`[WhatsappQrcodeConfig] ${path} error:`, err);
@@ -246,9 +254,7 @@ export function WhatsappQrcodeConfig() {
         className="border-amber-500/40 bg-amber-500/10"
       >
         <AlertTriangle className="text-amber-400" />
-        <AlertTitle>
-          {t('riskBannerTitle')}
-        </AlertTitle>
+        <AlertTitle>{t('riskBannerTitle')}</AlertTitle>
         <AlertDescription className="text-amber-100/80">
           {t('riskBannerBody')}
         </AlertDescription>
@@ -350,6 +356,7 @@ export function WhatsappQrcodeConfig() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(instanceId, channelId) => {
+          refreshAccountChannels();
           void load();
           setConnectTarget({
             id: instanceId,
@@ -374,6 +381,7 @@ export function WhatsappQrcodeConfig() {
           }}
           onConnected={() => {
             setConnectTarget(null);
+            refreshAccountChannels();
             void load();
           }}
         />
@@ -400,6 +408,7 @@ export function WhatsappQrcodeConfig() {
           }}
           onDeleted={() => {
             setDeleteTarget(null);
+            refreshAccountChannels();
             void load();
           }}
         />

@@ -46,10 +46,9 @@ import { NextResponse, after } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { baseMimeType, buildMediaPath } from '@/lib/storage/upload-media';
-import { evolutionRequest } from '@/lib/evolution/client';
-import { readEvolutionConfig } from '@/lib/evolution/config';
 import { bindChannelToPhone } from '@/lib/evolution/instances';
 import { evolutionDebugLog } from '@/lib/evolution/debug';
+import { ensureContactIdentity } from '@/lib/evolution/contact-identity';
 import {
   asRecord,
   pickBoolean,
@@ -805,10 +804,23 @@ async function handleMessageEvent(
   await ingestInbound(buildIngestContext(resolved), event);
 
   // Backfill best-effort do vínculo telefone→LID (§6.4) — só quando o
-  // remetente chegou identificado por telefone; sem isso um contato que
-  // só aparecer por LID no futuro nunca casaria com este.
+  // remetente chegou identificado por telefone. É sobra do caminho
+  // original: hoje o vínculo nasce principalmente do lado OUTBOUND (ver
+  // `ensureContactIdentity` / `lib/channels/adapters/evolution.ts`),
+  // porque muitos contatos nunca chegam identificados por telefone no
+  // sentido inbound — e sem o lado outbound este `if` nunca dispararia
+  // pra eles.
+  //
+  // `await`, não `void`: esta função inteira já roda dentro do `after()`
+  // do handler (ver o topo do arquivo) — já estamos fora do caminho
+  // crítico da resposta, então uma promessa solta aqui só arrisca ser
+  // abortada pelo runtime antes de terminar, sem ganhar nada em troca.
   if (!isEcho && jid.phone) {
-    void backfillContactIdentity(resolved, jid.phone);
+    await ensureContactIdentity({
+      accountId: resolved.accountId,
+      instanceToken: resolved.instanceToken,
+      phone: jid.phone,
+    });
   }
 }
 
@@ -820,97 +832,6 @@ function buildIngestContext(resolved: ResolvedWebhookInstance): IngestContext {
     channelType: 'whatsapp_qr',
     channelId: resolved.channelId,
   };
-}
-
-/**
- * Aprende o LID do contato via `POST /user/check` e grava o vínculo em
- * `contact_identities`. Best-effort e fora do caminho crítico — uma
- * falha aqui custa a resolução de uma futura mensagem só-LID, nunca a
- * mensagem atual.
- */
-async function backfillContactIdentity(
-  resolved: ResolvedWebhookInstance,
-  phone: string
-): Promise<void> {
-  try {
-    const config = readEvolutionConfig();
-    if (!config) return;
-
-    const raw = await evolutionRequest(config, '/user/check', {
-      method: 'POST',
-      key: resolved.instanceToken,
-      body: { number: [phone] },
-    });
-
-    const lid = extractLidFromUserCheck(raw, phone);
-    if (!lid) return;
-
-    const db = supabaseAdmin();
-    const { data: contact } = await db
-      .from('contacts')
-      .select('id')
-      .eq('account_id', resolved.accountId)
-      .eq('phone', phone)
-      .maybeSingle();
-    if (!contact) return;
-
-    const { error } = await db.from('contact_identities').upsert(
-      {
-        account_id: resolved.accountId,
-        contact_id: contact.id,
-        channel_type: 'whatsapp_qr',
-        external_id: lid,
-      },
-      { onConflict: 'account_id,channel_type,external_id' }
-    );
-    if (error) {
-      console.error(
-        '[evolution webhook] contact_identities upsert failed:',
-        error.message
-      );
-    }
-  } catch (err) {
-    console.error('[evolution webhook] LID backfill failed:', err);
-  }
-}
-
-/**
- * `/user/check` não fez parte da sondagem de mensageria da F0 — o
- * exemplo em SPEC 048 §1.2 mostra um objeto plano (`{Query,JID,LID,…}`)
- * para uma consulta; um array por número (mesma forma de `/user/info`)
- * é a alternativa mais provável quando o body pede `number: [...]`.
- * Aceita as duas sem lançar.
- */
-function extractLidFromUserCheck(raw: unknown, phone: string): string | null {
-  const tryOne = (v: unknown): string | null => {
-    const rec = asRecord(v);
-    if (!rec) return null;
-    return firstString(rec, 'LID', 'lid');
-  };
-
-  if (Array.isArray(raw)) {
-    for (const item of raw) {
-      const lid = tryOne(item);
-      if (lid) return lid;
-    }
-    return null;
-  }
-
-  const rec = asRecord(raw);
-  if (!rec) return null;
-
-  // Envelope {data:...} eventual.
-  const data = asRecord(rec.data) ?? rec;
-  const direct = tryOne(data);
-  if (direct) return direct;
-
-  // Mapa chaveado por JID/telefone (forma de /user/info — R3).
-  for (const value of Object.values(data)) {
-    const lid = tryOne(value);
-    if (lid) return lid;
-  }
-  void phone;
-  return null;
 }
 
 // ------------------------------------------------------------

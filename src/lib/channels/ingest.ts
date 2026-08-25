@@ -32,6 +32,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { hydrateBroadcastReply } from '@/lib/broadcasts/hydrate-reply';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { setContactOptIn } from '@/lib/contacts/consent';
 import { detectOptOut } from '@/lib/contacts/opt-out';
@@ -401,8 +402,15 @@ export async function ingestInbound(
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
-  // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(db, accountId, contactRecord.id);
+  // trigger installed in migration 003). SPEC 057 D-4: also hydrates the
+  // conversation with the template message that started it (lazy —
+  // only when a reply actually arrives).
+  await flagBroadcastReplyIfAny(
+    db,
+    accountId,
+    contactRecord.id,
+    conversation.id
+  );
 
   // ============================================================
   // Opt-out por palavra-chave (SPEC 044 §6.8).
@@ -822,7 +830,8 @@ async function handleReaction(
 async function flagBroadcastReplyIfAny(
   db: SupabaseClient,
   accountId: string,
-  contactId: string
+  contactId: string,
+  conversationId: string
 ) {
   try {
     // Most recent outbound broadcast in this account that hasn't
@@ -848,7 +857,18 @@ async function flagBroadcastReplyIfAny(
 
     if (updErr) {
       console.error('Error marking broadcast recipient replied:', updErr);
+      return;
     }
+
+    // SPEC 057 D-4 — best-effort, nunca derruba o inbound (ver o
+    // cabeçalho de `hydrateBroadcastReply`).
+    await hydrateBroadcastReply(db, {
+      conversationId,
+      accountId,
+      contactId,
+      broadcastId: row.broadcast_id as string,
+      recipientId: row.id as string,
+    });
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err);
   }

@@ -118,6 +118,9 @@ interface EvolutionRequestOptions {
   /** Chave a usar. Para escopo 'instance', o token JÁ decriptado. */
   key: string;
   body?: unknown;
+  /** Sobrepõe `config.requestTimeoutMs` — usado por `/send/media`, que
+   *  precisa de bem mais folga (ver `EvolutionConfig.mediaRequestTimeoutMs`). */
+  timeoutMs?: number;
 }
 
 /**
@@ -128,10 +131,13 @@ interface EvolutionRequestOptions {
 export async function evolutionRequest(
   config: EvolutionConfig,
   path: string,
-  { method = 'GET', key, body }: EvolutionRequestOptions
+  { method = 'GET', key, body, timeoutMs }: EvolutionRequestOptions
 ): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    timeoutMs ?? config.requestTimeoutMs
+  );
 
   let response: Response;
   try {

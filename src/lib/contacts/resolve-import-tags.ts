@@ -7,6 +7,15 @@ export interface ResolveImportTagsResult {
   tagIdByKey: Map<string, string>;
   /** Names that could not be matched and were not created. */
   skippedNames: string[];
+  /**
+   * Names actually created by THIS call (subset of the input names,
+   * original casing). Lets a caller derive "created vs. already
+   * existed" counts from this single round trip instead of running its
+   * own separate `tags` SELECT beforehand — a second read would race
+   * against this function's own read/create and could disagree with
+   * what actually happened (code-review finding, SPEC 055).
+   */
+  createdNames: string[];
 }
 
 /**
@@ -43,7 +52,7 @@ export async function resolveImportTagIds(
   }
 
   if (uniqueNames.length === 0) {
-    return { tagIdByKey: new Map(), skippedNames: [] };
+    return { tagIdByKey: new Map(), skippedNames: [], createdNames: [] };
   }
 
   const { data: existing, error: fetchError } = await supabase
@@ -69,6 +78,8 @@ export async function resolveImportTagIds(
     else skippedNames.push(name);
   }
 
+  const createdNames: string[] = [];
+
   if (toCreate.length > 0) {
     const { data: created, error: createError } = await supabase
       .from('tags')
@@ -86,10 +97,11 @@ export async function resolveImportTagIds(
 
     for (const tag of created ?? []) {
       tagIdByKey.set(tag.name.trim().toLowerCase(), tag.id);
+      createdNames.push(tag.name);
     }
   }
 
-  return { tagIdByKey, skippedNames };
+  return { tagIdByKey, skippedNames, createdNames };
 }
 
 export interface ContactTagAssignment {

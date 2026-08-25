@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
+import { canEditSettings } from '@/lib/auth/roles';
 import {
   RATE_LIMITS,
   checkRateLimit,
@@ -181,7 +182,7 @@ function parseAudience(raw: unknown): StageAudienceInput | null {
 export async function POST(request: Request) {
   try {
     // Mesmo piso de papel do envio — a triagem faz parte de criar disparo.
-    const { supabase, userId, accountId } = await requireRole('agent');
+    const { supabase, userId, accountId, role } = await requireRole('agent');
 
     const limit = checkRateLimit(
       `audience-stage:${userId}`,
@@ -212,6 +213,17 @@ export async function POST(request: Request) {
       templateName,
       templateLanguage,
       audience,
+      // SPEC 057 D-7 — só decide a PROJEÇÃO mostrada na triagem; a
+      // criação de verdade (D-1) acontece no envio, com o papel LIDO DE
+      // NOVO naquele momento (revisão de código pós-057). Isto é
+      // deliberado, não um descuido: reusar o papel de agora seria
+      // travar uma permissão obtida na triagem mesmo que o usuário seja
+      // rebaixado antes do disparo (agendamentos passam horas/dias entre
+      // as duas pontas) — persistir a decisão do stage aqui criaria uma
+      // escalação de privilégio, não uma correção. O trade-off aceito é
+      // a banda RARA em que o aviso da triagem promete uma etiqueta que
+      // o envio acaba não criando porque o papel mudou no meio.
+      canCreateTags: canEditSettings(role),
     });
 
     return NextResponse.json(result, { status: 201 });

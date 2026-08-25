@@ -6,6 +6,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import { detectDeadNumberOnFailure } from '@/lib/contacts/whatsapp-status';
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature';
 import { proxyMediaUrl } from '@/lib/storage/media-url';
+import { buildMediaPath, baseMimeType } from '@/lib/storage/upload-media';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 import { ingestInbound, type IngestContext } from '@/lib/channels/ingest';
 import { resolveDefaultChannelId } from '@/lib/channels/send';
@@ -621,8 +622,14 @@ async function processMessage(
   //    lança (falha vira `mediaUrl: null`) e o resultado só é usado no
   //    INSERT da mensagem. O custo é uma chamada à Meta desperdiçada no
   //    caso raro em que a criação do contato falha logo depois.
-  const { contentText, mediaUrl, mediaId, mediaType, interactiveReplyId } =
-    await parseMessageContent(message, accessToken);
+  const {
+    contentText,
+    mediaUrl,
+    mediaId,
+    mediaPath,
+    mediaType,
+    interactiveReplyId,
+  } = await parseMessageContent(message, accountId, accessToken);
 
   // `mediaType` is intentionally unused — the schema has no media_type
   // column; the MIME type is only used to construct the proxy URL during
@@ -646,6 +653,7 @@ async function processMessage(
     text: contentText,
     mediaUrl,
     mediaId,
+    mediaPath,
     interactiveReplyId,
     occurredAt: metaMessageAt,
     // Resposta com citação. O ingest resolve o pai dentro da conversa;
@@ -657,8 +665,77 @@ async function processMessage(
   });
 }
 
+/**
+ * Extensão de arquivo a partir do subtipo MIME (`image/jpeg` → `jpg` não
+ * é coberto — usamos o subtipo cru, que já serve pra maioria e não
+ * precisa de uma tabela pra manter). Só afeta o nome do objeto no bucket;
+ * quem determina o tipo real servido é o `Content-Type` do upload.
+ */
+function extensionFromMime(mime: string | null): string {
+  if (!mime) return 'bin';
+  const subtype = mime.split('/')[1];
+  return subtype ? subtype.replace(/^x-/, '') : 'bin';
+}
+
+/**
+ * Baixa o byte da mídia recebida (via a `downloadUrl` que `getMediaUrl`
+ * acabou de obter) e sobe ao bucket privado `chat-media`, no mesmo
+ * padrão que o canal QRCode já usa (`storeInboundMedia` em
+ * `evolution/webhook/route.ts`).
+ *
+ * Por quê: até aqui, `verifyMedia` só CONFIRMAVA que a mídia existia na
+ * Meta no instante do webhook — o byte em si só era buscado depois,
+ * quando um agente abria a conversa (rota-proxy). Na prática a Meta
+ * apaga mídia recebida bem antes do que a documentação sugere (casos
+ * observados em produção falhando minutos depois de confirmados), então
+ * qualquer mensagem não aberta a tempo virava bolha quebrada pra
+ * sempre — sem retry possível, porque o byte nunca tinha sido guardado
+ * em lugar nenhum. Copiar o arquivo agora, na entrada, fecha essa janela.
+ *
+ * Best-effort: falha aqui não derruba o webhook. Quando retorna `null`,
+ * o chamador cai de volta pro caminho antigo (proxy sob demanda) — pior
+ * que ter o byte garantido, mas não pior que o comportamento anterior.
+ */
+async function storeInboundMedia(
+  accountId: string,
+  downloadUrl: string,
+  accessToken: string,
+  metaMimeType: string
+): Promise<string | null> {
+  try {
+    const { buffer, contentType } = await downloadMedia({
+      downloadUrl,
+      accessToken,
+    });
+    if (buffer.length === 0) {
+      console.error('[webhook] mídia recebida veio vazia — nada a guardar.');
+      return null;
+    }
+    const mime = baseMimeType(contentType) ?? baseMimeType(metaMimeType);
+    const path = buildMediaPath(accountId, `media.${extensionFromMime(mime)}`);
+    const { error } = await supabaseAdmin()
+      .storage.from('chat-media')
+      .upload(path, buffer, {
+        contentType: mime ?? undefined,
+        upsert: false,
+      });
+    if (error) {
+      console.error(
+        `[webhook] upload da mídia recebida falhou (${mime ?? 'sem mimetype'}):`,
+        error.message
+      );
+      return null;
+    }
+    return path;
+  } catch (err) {
+    console.error('[webhook] falha ao baixar/guardar a mídia recebida:', err);
+    return null;
+  }
+}
+
 async function parseMessageContent(
   message: WhatsAppMessage,
+  accountId: string,
   accessToken: string
 ): Promise<{
   contentText: string | null;
@@ -672,6 +749,12 @@ async function parseMessageContent(
    * cuja mídia não existe não deve virar uma linha "autorizável".
    */
   mediaId: string | null;
+  /**
+   * Caminho no bucket `chat-media`, quando o download eager (acima) deu
+   * certo. `resolveMediaRef` prioriza este campo sobre `mediaUrl` — uma
+   * vez preenchido, a rota-proxy nunca mais é chamada pra essa mensagem.
+   */
+  mediaPath: string | null;
   mediaType: string | null;
   /**
    * For interactive button / list replies: the stable id of the tapped
@@ -686,24 +769,35 @@ async function parseMessageContent(
   // the args swapped, so every verification hit an invalid Meta URL and
   // fell through to the catch block, leaving mediaUrl as null. That's
   // why images showed up as empty bubbles in the inbox.
-  //
-  // Devolve os dois campos juntos, e não só a URL, para que seja
-  // impossível gravar `media_id` sem `media_url` (ou o contrário): a
-  // rota-proxy autoriza por `media_id` e exibe o que a `media_url`
-  // aponta — se um existir sem o outro, ou a mídia fica inacessível ou
-  // fica autorizável sem existir.
   const verifyMedia = async (
     mediaId: string
-  ): Promise<{ mediaUrl: string | null; mediaId: string | null }> => {
+  ): Promise<{
+    mediaUrl: string | null;
+    mediaId: string | null;
+    mediaPath: string | null;
+  }> => {
     try {
-      await getMediaUrl({ mediaId, accessToken });
-      return { mediaUrl: proxyMediaUrl(mediaId), mediaId };
+      const { url, mimeType } = await getMediaUrl({ mediaId, accessToken });
+      const path = await storeInboundMedia(
+        accountId,
+        url,
+        accessToken,
+        mimeType
+      );
+      if (path) {
+        return { mediaUrl: null, mediaId, mediaPath: path };
+      }
+      // Download/upload eager falhou — cai pro caminho antigo (a
+      // verificação acima já confirmou que a mídia existe AGORA; pode
+      // não existir mais quando o proxy tentar buscá-la de novo, mas é
+      // a mesma garantia que o código já dava antes desta mudança).
+      return { mediaUrl: proxyMediaUrl(mediaId), mediaId, mediaPath: null };
     } catch (error) {
       console.error(
         `Failed to verify media ${mediaId} with Meta:`,
         error instanceof Error ? error.message : error
       );
-      return { mediaUrl: null, mediaId: null };
+      return { mediaUrl: null, mediaId: null, mediaPath: null };
     }
   };
 
@@ -713,6 +807,7 @@ async function parseMessageContent(
     contentText: null,
     mediaUrl: null,
     mediaId: null,
+    mediaPath: null,
     mediaType: null,
     interactiveReplyId: null,
   };

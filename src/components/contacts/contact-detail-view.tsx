@@ -644,7 +644,7 @@ export function ContactDetailView({
                   <div className="space-y-3">
                     <div className="space-y-1.5">
                       <Label className="text-muted-foreground text-xs">
-                        {t('company', { fallback: 'Name' })}
+                        {t('nameLabel', { fallback: 'Name' })}
                       </Label>
                       <Input
                         value={editName}

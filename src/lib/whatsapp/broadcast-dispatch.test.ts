@@ -6,6 +6,7 @@ import {
   type MockResult,
   type QueryOp,
 } from '@/lib/audience/supabase-mock';
+import { normalizeKey } from '@/lib/contacts/dedupe';
 
 // O token está cifrado em repouso; o planner decifra. Nos testes o
 // valor não importa — só que ele nunca vaze para fora do servidor.
@@ -87,13 +88,25 @@ function makeDb(scenario: Scenario) {
       }
 
       case 'contacts': {
-        // Hidratação por id (caminho `staged`): devolve os contatos do
-        // cenário que casam com o `.in('id', …)`.
-        const ids = opArgs(ops, 'in')?.[1] as string[] | undefined;
-        if (ids) {
-          return {
-            data: contacts.filter((c) => ids.includes(c.id as string)),
-          };
+        const inArgs = opArgs(ops, 'in');
+        if (inArgs) {
+          const [column, values] = inArgs as [string, string[]];
+          if (column === 'id') {
+            return {
+              data: contacts.filter((c) => values.includes(c.id as string)),
+            };
+          }
+          // SPEC 057 — `upsertImportedContacts` (e, desde a SPEC, o
+          // caminho `staged` inteiro) casa por `phone_normalized`, não
+          // por id.
+          if (column === 'phone_normalized') {
+            return {
+              data: contacts.filter((c) =>
+                values.includes(normalizeKey((c.phone as string) ?? ''))
+              ),
+            };
+          }
+          return { data: [] };
         }
         const range = opArgs(ops, 'range');
         if (!range) return { data: [] };

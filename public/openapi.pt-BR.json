@@ -1,0 +1,1911 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ZAP CRM BR — API Pública",
+    "version": "1.0.0",
+    "summary": "API REST para operar uma instância auto-hospedada do ZAP CRM BR a partir dos seus próprios scripts e automações.",
+    "description": "A API pública permite operar uma conta do ZAP CRM BR a partir dos seus próprios scripts e automações (n8n, integrações no estilo Zapier, cron jobs) sem passar pela interface do painel — enviar mensagens, gerenciar contatos, lançar campanhas de disparo, ingerir contatos por webhook de entrada e assinar webhooks de eventos de saída.\n\nToda requisição autentica com uma **chave de API** (`Authorization: Bearer wacrm_live_...`), criada no painel em **Configurações → Chaves de API** por um admin ou dono da conta. Uma chave é escopada a exatamente uma conta — não há acesso entre contas — e só faz o que os [escopos](#tag/Meta) concedidos a ela permitem.\n\n**Uma chave de API é uma credencial de toda a conta, não uma identidade de agente.** Ela enxerga toda conversa e mensagem da conta, inclusive threads atribuídas a outros agentes — não há isolamento por linha por agente na API pública (esse isolamento existe só dentro do painel, garantido pelo RLS do Postgres associado ao usuário autenticado). Trate uma chave como uma credencial de administrador e emita uma por integração, para poder revogá-la isoladamente.\n\n**Os exemplos de JSON deste documento são mostrados exatamente como trafegam na rede — em inglês** (nomes de campo, valores de enum, códigos de erro, mensagens de erro). Só o texto explicativo ao redor (resumos, descrições) está em português; ver [Idioma das mensagens de erro](#language-of-error-messages).\n\nFonte de verdade deste contrato: `docs/public-api.md` no repositório do ZAP CRM BR. Este `openapi.json` (e seu espelho `openapi.pt-BR.json`) são gerados a partir daquele documento — e precisam ser mantidos em sincronia com ele.",
+    "contact": {
+      "name": "ZAP CRM BR",
+      "url": "https://github.com/brunopelatieri/zap-crm-br"
+    },
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://{domain}/api/v1",
+      "description": "Sua instância auto-hospedada do ZAP CRM BR",
+      "variables": {
+        "domain": {
+          "default": "your-crm.example.com",
+          "description": "O domínio onde sua instância do ZAP CRM BR está implantada."
+        }
+      }
+    }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [
+    { "name": "Meta", "description": "Identidade / introspecção da chave." },
+    {
+      "name": "Messages",
+      "description": "Envie mensagens de WhatsApp e leia o histórico de mensagens de uma conversa."
+    },
+    {
+      "name": "Contacts",
+      "description": "Liste, crie, leia e atualize contatos."
+    },
+    { "name": "Conversations", "description": "Liste e leia conversas." },
+    {
+      "name": "Broadcasts",
+      "description": "Lance e acompanhe campanhas de disparo por template."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Registre e gerencie endpoints de webhook de eventos de saída."
+    },
+    {
+      "name": "Ingest",
+      "description": "Webhook de entrada — um terceiro cria um contato (e opcionalmente dispara um template) chamando o ZAP CRM BR. É o inverso de Webhooks, que notificam terceiros sobre eventos do ZAP CRM BR."
+    }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "tags": ["Meta"],
+        "summary": "Verificar uma chave e descobrir seus escopos",
+        "description": "Devolve a conta a que uma chave pertence e os escopos que ela carrega. Exige apenas uma chave válida — nenhum escopo. Use para verificar se uma chave funciona antes de plugar chamadas reais; também exercita toda a pilha de autenticação da API pública de ponta a ponta (parse do bearer → busca por hash → vivacidade → limite de taxa → envelope).",
+        "operationId": "getMe",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "A conta e os escopos a que esta chave pertence.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["account", "key"],
+                      "properties": {
+                        "account": {
+                          "type": "object",
+                          "required": ["id", "name"],
+                          "properties": {
+                            "id": { "type": "string", "format": "uuid" },
+                            "name": { "type": "string" }
+                          }
+                        },
+                        "key": {
+                          "type": "object",
+                          "required": ["id", "scopes"],
+                          "properties": {
+                            "id": { "type": "string", "format": "uuid" },
+                            "scopes": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/ApiScope"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "account": {
+                      "id": "8f3c1e2a-0000-4000-8000-000000000001",
+                      "name": "Acme Inc"
+                    },
+                    "key": {
+                      "id": "8f3c1e2a-0000-4000-8000-000000000002",
+                      "scopes": ["messages:send"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/messages": {
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Enviar uma mensagem de WhatsApp",
+        "description": "Envia uma mensagem de WhatsApp para um número de telefone. Você informa um **número E.164**, não um id interno de conversa — o endpoint encontra-ou-cria o contato + conversa, e então envia.\n\n**`cold_send_limit` (429).** Num canal WhatsApp QRCode (Evolution) sem janela de sessão ativa de 24h da Meta, o envio para um contato frio é limitado por um teto diário/por hora por instância e um intervalo mínimo entre envios frios (SPEC 049 §6.2). Este caminho **sempre bloqueia** quando o limite é atingido — mais rígido que o inbox do painel, que só avisa um agente humano. Tente novamente após o header `Retry-After`.",
+        "operationId": "sendMessage",
+        "security": [{ "bearerAuth": ["messages:send"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendMessageRequest" },
+              "examples": {
+                "text": {
+                  "summary": "Texto simples",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "text",
+                    "text": "Hi 👋"
+                  }
+                },
+                "template": {
+                  "summary": "Template aprovado",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "template",
+                    "template": {
+                      "name": "order_update",
+                      "language": "en_US",
+                      "params": ["A123"]
+                    }
+                  }
+                },
+                "media": {
+                  "summary": "Documento com legenda",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "document",
+                    "media_url": "https://example.com/invoice.pdf",
+                    "filename": "invoice.pdf",
+                    "text": "Here's your invoice"
+                  }
+                },
+                "interactiveButtons": {
+                  "summary": "Interativa — botões de resposta",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "interactive",
+                    "interactive_payload": {
+                      "kind": "buttons",
+                      "body": "How can we help?",
+                      "buttons": [
+                        { "id": "track_order", "title": "Track order" },
+                        { "id": "talk_to_human", "title": "Talk to a human" }
+                      ]
+                    }
+                  }
+                },
+                "interactiveList": {
+                  "summary": "Interativa — lista",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "interactive",
+                    "interactive_payload": {
+                      "kind": "list",
+                      "body": "Pick a topic",
+                      "button_label": "Choose",
+                      "sections": [
+                        {
+                          "title": "Billing",
+                          "rows": [
+                            {
+                              "id": "invoice",
+                              "title": "Get an invoice",
+                              "description": "PDF, sent by email"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Mensagem enviada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/SendMessageResult" }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "message_id": "8f3c1e2a-0000-4000-8000-000000000010",
+                    "whatsapp_message_id": "wamid.HBgLMTQxNTU1NTAxMjM=",
+                    "conversation_id": "8f3c1e2a-0000-4000-8000-000000000011",
+                    "contact_id": "8f3c1e2a-0000-4000-8000-000000000012",
+                    "contact_created": true
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": {
+            "description": "Limite de taxa por chave excedido (`rate_limited`), ou o limite de envio frio do WhatsApp QRCode foi atingido (`cold_send_limit`). Ambos trazem `Retry-After`.",
+            "headers": {
+              "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "rateLimited": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "Rate limit exceeded for this API key"
+                      }
+                    }
+                  },
+                  "coldSendLimit": {
+                    "value": {
+                      "error": {
+                        "code": "cold_send_limit",
+                        "message": "cold-send hourly limit reached (5/h)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": {
+            "description": "A requisição chegou à Meta e a Meta recusou o envio (`meta_error`).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "error": {
+                    "code": "meta_error",
+                    "message": "(#131026) Message undeliverable"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contacts": {
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Listar contatos",
+        "description": "Lista contatos, mais recentes primeiro.",
+        "operationId": "listContacts",
+        "security": [{ "bearerAuth": ["contacts:read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Filtro de texto livre, comparado com o nome ou telefone do contato.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "description": "Restringe a contatos que carregam esta etiqueta.",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uma página de contatos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Contact" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "post": {
+        "tags": ["Contacts"],
+        "summary": "Criar um contato (encontra-ou-cria por telefone)",
+        "description": "Cria um contato. Uma correspondência existente por telefone devolve `200` com o contato existente (nenhuma duplicata é criada); um contato genuinamente novo devolve `201`.",
+        "operationId": "createContact",
+        "security": [{ "bearerAuth": ["contacts:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ContactCreateRequest" },
+              "example": {
+                "phone": "+14155550123",
+                "name": "Jane Doe",
+                "tags": ["vip"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Um contato existente já correspondia a este número de telefone — devolvido como está (nenhuma duplicata criada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Um novo contato foi criado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/contacts/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/ContactId" }],
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Ler um contato",
+        "operationId": "getContact",
+        "security": [{ "bearerAuth": ["contacts:read"] }],
+        "responses": {
+          "200": {
+            "description": "O contato.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "patch": {
+        "tags": ["Contacts"],
+        "summary": "Atualizar um contato",
+        "description": "Atualiza apenas os campos presentes no corpo da requisição — campos omitidos ficam intocados. Envie `tags` (um array de nomes de etiqueta, criadas se não existirem) para **substituir** o conjunto completo de etiquetas do contato.",
+        "operationId": "updateContact",
+        "security": [{ "bearerAuth": ["contacts:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ContactUpdateRequest" },
+              "example": {
+                "company": "Acme Inc",
+                "tags": ["vip", "newsletter"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "O contato atualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/conversations": {
+      "get": {
+        "tags": ["Conversations"],
+        "summary": "Listar conversas",
+        "description": "Lista conversas, mais recentes primeiro. **Uma chave de API enxerga a conta inteira** — conversas atribuídas e não atribuídas, independentemente de qual agente estão atribuídas.",
+        "operationId": "listConversations",
+        "security": [{ "bearerAuth": ["conversations:read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["open", "pending", "closed"]
+            }
+          },
+          {
+            "name": "contact_id",
+            "in": "query",
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "channel_id",
+            "in": "query",
+            "description": "Restringe a conversas neste canal (SPEC 049 §5.4) — ex.: uma instância específica de WhatsApp QRCode.",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uma página de conversas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Conversation" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/conversations/{id}": {
+      "get": {
+        "tags": ["Conversations"],
+        "summary": "Ler uma conversa",
+        "operationId": "getConversation",
+        "security": [{ "bearerAuth": ["conversations:read"] }],
+        "parameters": [{ "$ref": "#/components/parameters/ConversationId" }],
+        "responses": {
+          "200": {
+            "description": "A conversa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Conversation" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/conversations/{id}/messages": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Listar mensagens de uma conversa",
+        "description": "Lista as mensagens de uma conversa, mais recentes primeiro. A conversa é verificada como pertencente à sua conta antes de qualquer mensagem ser devolvida (`404` caso contrário).",
+        "operationId": "listConversationMessages",
+        "security": [{ "bearerAuth": ["messages:read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ConversationId" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uma página de mensagens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Message" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/broadcasts": {
+      "post": {
+        "tags": ["Broadcasts"],
+        "summary": "Lançar um disparo por template",
+        "description": "Lança um disparo por template para uma lista de destinatários. O disparo + suas linhas de destinatário são persistidos imediatamente e os envios saem em segundo plano com um orçamento suave de 60 segundos, então a chamada retorna rápido — consulte `GET /broadcasts/{id}` para acompanhar o progresso. Destinatários são limitados a **1000 por requisição**; números de telefone inválidos são descartados e contados como `rejected`, sem falhar a chamada inteira.\n\nUma requisição próxima do teto de 1000 destinatários pode exceder o orçamento de 60 segundos do envio em segundo plano — ainda não há fila de retentativa durável, então destinatários que ficarem `pending` quando o orçamento se esgota permanecem `pending` em vez de retomar automaticamente. Prefira dividir envios grandes em algumas requisições menores.",
+        "operationId": "createBroadcast",
+        "security": [{ "bearerAuth": ["broadcasts:send"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BroadcastCreateRequest"
+              },
+              "example": {
+                "name": "July promo",
+                "template_name": "promo_july",
+                "template_language": "en_US",
+                "recipients": [
+                  { "to": "+14155550123", "params": ["Jane"] },
+                  { "to": "+14155550124" }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "O disparo foi aceito e o envio começou em segundo plano.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BroadcastCreateResult"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "broadcast_id": "8f3c1e2a-0000-4000-8000-000000000020",
+                    "status": "sending",
+                    "total_recipients": 2,
+                    "accepted": 2,
+                    "rejected": 0
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/broadcasts/{id}": {
+      "get": {
+        "tags": ["Broadcasts"],
+        "summary": "Obter status + contadores de um disparo",
+        "description": "`status` avança de `sending` → `sent`; `delivered_count` / `read_count` continuam subindo conforme os webhooks de entrega da Meta chegam depois que o envio inicial termina.",
+        "operationId": "getBroadcast",
+        "security": [{ "bearerAuth": ["broadcasts:send"] }],
+        "parameters": [{ "$ref": "#/components/parameters/BroadcastId" }],
+        "responses": {
+          "200": {
+            "description": "O status e os contadores atuais do disparo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Broadcast" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/ingest/contact": {
+      "post": {
+        "tags": ["Ingest"],
+        "summary": "Criar um contato a partir de um webhook de entrada (e opcionalmente enviar um template)",
+        "description": "O inverso de `/webhooks`: um terceiro (n8n, uma landing page, uma plataforma de e-commerce) faz POST aqui para criar ou casar um contato, gravar tags/notas/campos personalizados e — quando `template_id` está aprovado — enviar um template. Toda requisição aceita também alimenta um funil: uma linha de `broadcasts` escopada por `webhook_id`, reutilizada em toda requisição que carregue o mesmo id (SPEC 055).\n\n**A validação de telefone aqui é mais estrita que `POST /contacts`:** DDD brasileiro e formato de celular/fixo são exigidos — este endpoint é novo, então apertar a regra não quebra nenhuma integração existente.\n\n**Assimetria de falha.** Antes do contato ser criado, uma falha é `400` — nada foi gravado. Depois que o contato existe, uma falha é sempre `202`, com o problema relatado em `warnings[]` — nunca um 4xx/5xx, para que uma nova tentativa do chamador nunca duplique o contato (notas, em particular, nunca são deduplicadas). Uma requisição rejeitada por chave ausente/inválida (`401`/`403`/`429`) não registra nada — não há conta a que uma linha de log possa pertencer.",
+        "operationId": "ingestContact",
+        "security": [{ "bearerAuth": ["ingest:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestContactRequest"
+              },
+              "example": {
+                "webhook_id": "1234567890123456",
+                "webhook_name": "Landing page — Black Friday",
+                "phone": "(19) 9 9924-9658",
+                "name": "Maria Souza",
+                "email": "maria@empresa.com.br",
+                "company": "Empresa LTDA",
+                "tags": "Cliente VIP, lead quente",
+                "notes": {
+                  "nota_1": "Veio do formulário da LP de Black Friday",
+                  "nota_2": "Pediu contato à tarde"
+                },
+                "custom_fields": [
+                  { "field": "origem", "value": "landing_page_bf" }
+                ],
+                "template_id": "3f2b8c10-2a44-4a7e-9c1e-77c3b2a1d5e0",
+                "template_params": ["Maria"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Aceito — o contato foi criado ou casado com um existente. O envio do template (se houver) roda em segundo plano e nunca é aguardado por esta resposta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IngestContactResult"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "contact_id": "b630a43f-0000-4000-8000-000000000040",
+                    "contact_created": true,
+                    "funnel": {
+                      "broadcast_id": "9c1e1e2a-0000-4000-8000-000000000041",
+                      "webhook_id": "1234567890123456"
+                    },
+                    "tags": { "linked": 1, "created": 1 },
+                    "notes": { "inserted": 2 },
+                    "custom_fields": { "matched": 1, "skipped": [] },
+                    "send": {
+                      "attempted": true,
+                      "template_id": "3f2b8c10-2a44-4a7e-9c1e-77c3b2a1d5e0"
+                    },
+                    "warnings": []
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Rejeitado antes do contato ser criado (`invalid_webhook_id`, `invalid_webhook_name`, `invalid_phone`, ou `bad_request`) — nada foi gravado.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidWebhookId": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_webhook_id",
+                        "message": "'webhook_id' must be a numeric string with at least 16 digits"
+                      }
+                    }
+                  },
+                  "invalidWebhookName": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_webhook_name",
+                        "message": "'webhook_name' is required and must not be empty"
+                      }
+                    }
+                  },
+                  "invalidPhone": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_phone",
+                        "message": "Phone number failed Brazilian validation: invalid_ddd"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/webhooks": {
+      "get": {
+        "tags": ["Webhooks"],
+        "summary": "Listar endpoints de webhook",
+        "description": "Lista os endpoints de webhook registrados na sua conta. Nunca devolve o segredo de assinatura.",
+        "operationId": "listWebhooks",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "Os endpoints de webhook da conta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEndpoint"
+                      }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "Registrar um endpoint de webhook",
+        "description": "Registra um endpoint HTTPS para receber entregas de eventos. **A resposta inclui `secret` exatamente uma vez** — guarde-o para verificar o header `X-Wacrm-Signature` nas entregas; o CRM mantém apenas uma cópia criptografada e nunca pode mostrá-lo de novo.\n\nA `url` de destino precisa resolver para um endereço público: `localhost`, faixas privadas/RFC1918, endereços link-local (incluindo o endereço de metadados de nuvem `169.254.169.254`) e alvos internos semelhantes são recusados (proteção contra SSRF).",
+        "operationId": "createWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookCreateRequest" },
+              "example": {
+                "url": "https://example.com/hooks/wacrm",
+                "events": ["message.received"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "O endpoint foi registrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "id": "8f3c1e2a-0000-4000-8000-000000000030",
+                    "url": "https://example.com/hooks/wacrm",
+                    "events": ["message.received"],
+                    "is_active": true,
+                    "last_delivery_at": null,
+                    "failure_count": 0,
+                    "created_at": "2026-07-01T12:00:00.000Z",
+                    "secret": "whsec_9f8e7d6c5b4a..."
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/webhooks/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/WebhookId" }],
+      "get": {
+        "tags": ["Webhooks"],
+        "summary": "Ler um endpoint de webhook",
+        "operationId": "getWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "O endpoint de webhook.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/WebhookEndpoint" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "patch": {
+        "tags": ["Webhooks"],
+        "summary": "Atualizar um endpoint de webhook",
+        "description": "Atualiza `url`, `events`, e/ou `is_active` — pelo menos um campo é exigido. Definir `is_active: true` num endpoint anteriormente auto-desativado também zera seu contador de falhas consecutivas.",
+        "operationId": "updateWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookUpdateRequest" },
+              "example": { "is_active": true }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "O endpoint de webhook atualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/WebhookEndpoint" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "delete": {
+        "tags": ["Webhooks"],
+        "summary": "Remover um endpoint de webhook",
+        "operationId": "deleteWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "O endpoint foi removido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["id", "deleted"],
+                      "properties": {
+                        "id": { "type": "string", "format": "uuid" },
+                        "deleted": { "type": "boolean", "enum": [true] }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "id": "8f3c1e2a-0000-4000-8000-000000000030",
+                    "deleted": true
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "wacrm_live_...",
+        "description": "Uma chave de API criada no painel em Configurações → Chaves de API, enviada como `Authorization: Bearer wacrm_live_...`. Os escopos são aplicados por endpoint; veja o escopo exigido de cada operação."
+      }
+    },
+    "parameters": {
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Tamanho da página.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "description": "Cursor opaco vindo do `meta.next_cursor` de uma página anterior. Envie de volta exatamente como recebido — nunca construa ou interprete o valor. Um cursor malformado/não reconhecido é tratado como ausente (reinicia a partir da primeira página).",
+        "schema": { "type": "string" }
+      },
+      "ContactId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "ConversationId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "BroadcastId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "WebhookId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "headers": {
+      "RetryAfter": {
+        "description": "Segundos até o chamador poder tentar de novo.",
+        "schema": { "type": "integer" }
+      },
+      "RateLimitLimit": {
+        "description": "O orçamento de requisições da janela atual.",
+        "schema": { "type": "integer" }
+      },
+      "RateLimitRemaining": {
+        "description": "Requisições ainda permitidas na janela atual.",
+        "schema": { "type": "integer" }
+      },
+      "RateLimitReset": {
+        "description": "Timestamp Unix (segundos) de quando a janela reinicia.",
+        "schema": { "type": "integer" }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Entrada malformada (`bad_request`).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": { "code": "bad_request", "message": "'to' is required" }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Chave de API ausente, malformada, desconhecida, revogada ou expirada (`unauthorized`). Estes casos são deliberadamente indistinguíveis no retorno.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "Missing or invalid API key"
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "A chave é válida mas não tem o escopo que este endpoint exige (`forbidden`).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "forbidden",
+                "message": "This API key is missing the 'messages:send' scope"
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Recurso inexistente, ou pertencente a outra conta (`not_found`). Nunca `403` para um id de outra conta — isso confirmaria que o id existe.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": { "code": "not_found", "message": "Contact not found" }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Limite de taxa por chave excedido — 120 requisições por minuto (`rate_limited`).",
+        "headers": {
+          "Retry-After": { "$ref": "#/components/headers/RetryAfter" },
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/RateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/RateLimitRemaining"
+          },
+          "X-RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "rate_limited",
+                "message": "Rate limit exceeded for this API key"
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Erro de servidor (`internal`). A mensagem nunca vaza detalhe interno.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "internal",
+                "message": "Internal server error"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ApiScope": {
+        "type": "string",
+        "enum": [
+          "messages:send",
+          "messages:read",
+          "contacts:read",
+          "contacts:write",
+          "conversations:read",
+          "broadcasts:send",
+          "webhooks:manage",
+          "ingest:write"
+        ],
+        "description": "As capacidades de uma chave são definidas inteiramente pelos escopos concedidos a ela na criação."
+      },
+      "Error": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Código de erro estável e comparável por máquina — trate a lógica sobre este campo, não sobre `message`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Texto voltado ao humano, em inglês (ver Idioma das mensagens de erro). Pode ser reformulado; não faça correspondência de padrão sobre ele."
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "$ref": "#/components/schemas/Error" } }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "required": ["next_cursor"],
+        "properties": {
+          "next_cursor": {
+            "type": ["string", "null"],
+            "description": "Cursor opaco para a próxima página, ou `null` na última página."
+          }
+        }
+      },
+      "Tag": {
+        "type": "object",
+        "required": ["id", "name", "color"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "color": { "type": "string", "example": "#3b82f6" }
+        }
+      },
+      "Contact": {
+        "type": "object",
+        "required": [
+          "id",
+          "phone",
+          "name",
+          "email",
+          "company",
+          "avatar_url",
+          "tags",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "phone": {
+            "type": "string",
+            "description": "Formato E.164.",
+            "example": "+14155550123"
+          },
+          "name": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"], "format": "email" },
+          "company": { "type": ["string", "null"] },
+          "avatar_url": { "type": ["string", "null"], "format": "uri" },
+          "tags": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Tag" }
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ContactCreateRequest": {
+        "type": "object",
+        "required": ["phone"],
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "Formato E.164.",
+            "example": "+14155550123"
+          },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "company": { "type": "string" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Nomes de etiqueta. Qualquer nome que ainda não existir é criado."
+          }
+        }
+      },
+      "ContactUpdateRequest": {
+        "type": "object",
+        "description": "Todo campo é opcional; só os campos presentes no corpo são alterados. Um campo definido como `null` o limpa (para `name`/`email`/`company`).",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"] },
+          "company": { "type": ["string", "null"] },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Nomes de etiqueta. Substitui o conjunto completo de etiquetas do contato (envie `[]` para remover todas)."
+          }
+        }
+      },
+      "ConversationContact": {
+        "type": ["object", "null"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "phone": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"] },
+          "company": { "type": ["string", "null"] },
+          "tags": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Tag" }
+          }
+        }
+      },
+      "Conversation": {
+        "type": "object",
+        "required": [
+          "id",
+          "contact_id",
+          "status",
+          "assigned_agent_id",
+          "channel_id",
+          "last_message_text",
+          "last_message_at",
+          "unread_count",
+          "created_at",
+          "updated_at",
+          "contact"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "contact_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["open", "pending", "closed"] },
+          "assigned_agent_id": { "type": ["string", "null"], "format": "uuid" },
+          "channel_id": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "A qual canal da conta esta conversa pertence (SPEC 049 §5.4). `null` só numa linha anterior ao suporte multi-canal."
+          },
+          "last_message_text": { "type": ["string", "null"] },
+          "last_message_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "unread_count": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "contact": { "$ref": "#/components/schemas/ConversationContact" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "direction",
+          "sender_type",
+          "content_type",
+          "content_text",
+          "media_url",
+          "template_name",
+          "whatsapp_message_id",
+          "status",
+          "reply_to_message_id",
+          "interactive_reply_id",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "conversation_id": { "type": "string", "format": "uuid" },
+          "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+          "sender_type": {
+            "type": "string",
+            "description": "ex.: `customer`, `agent`, `automation`, `api`."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "ex.: `text`, `template`, `interactive`, `image`, `video`, `document`, `audio`."
+          },
+          "content_text": { "type": ["string", "null"] },
+          "media_url": { "type": ["string", "null"], "format": "uri" },
+          "template_name": { "type": ["string", "null"] },
+          "whatsapp_message_id": {
+            "type": ["string", "null"],
+            "description": "O id `wamid.*` da Meta."
+          },
+          "status": {
+            "type": "string",
+            "description": "Estado de entrega, ex.: `sent`, `delivered`, `read`, `failed`."
+          },
+          "reply_to_message_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "interactive_reply_id": {
+            "type": ["string", "null"],
+            "description": "O `id` do botão/linha de lista interativa que o contato tocou, quando esta mensagem é uma resposta a um deles."
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InteractiveButton": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id estável, ecoado de volta quando o destinatário toca este botão."
+          },
+          "title": { "type": "string", "maxLength": 20 }
+        }
+      },
+      "InteractiveButtonsPayload": {
+        "type": "object",
+        "required": ["kind", "body", "buttons"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["buttons"] },
+          "body": { "type": "string", "maxLength": 1024 },
+          "header": { "type": "string", "maxLength": 60 },
+          "footer": { "type": "string", "maxLength": 60 },
+          "buttons": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": { "$ref": "#/components/schemas/InteractiveButton" },
+            "description": "1 a 3 botões. Os ids precisam ser únicos dentro da mensagem."
+          }
+        }
+      },
+      "InteractiveListRow": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id estável, ecoado de volta quando o destinatário seleciona esta linha."
+          },
+          "title": { "type": "string", "maxLength": 24 },
+          "description": { "type": "string", "maxLength": 72 }
+        }
+      },
+      "InteractiveListSection": {
+        "type": "object",
+        "required": ["rows"],
+        "properties": {
+          "title": { "type": "string" },
+          "rows": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InteractiveListRow" }
+          }
+        }
+      },
+      "InteractiveListPayload": {
+        "type": "object",
+        "required": ["kind", "body", "button_label", "sections"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["list"] },
+          "body": { "type": "string", "maxLength": 1024 },
+          "header": { "type": "string", "maxLength": 60 },
+          "footer": { "type": "string", "maxLength": 60 },
+          "button_label": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Rótulo do botão de tocar-para-expandir."
+          },
+          "sections": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": { "$ref": "#/components/schemas/InteractiveListSection" },
+            "description": "Até 10 seções; 1 a 10 linhas NO TOTAL entre todas as seções. Ids de linha precisam ser únicos em toda a mensagem."
+          }
+        }
+      },
+      "InteractiveMessagePayload": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/InteractiveButtonsPayload" },
+          { "$ref": "#/components/schemas/InteractiveListPayload" }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "buttons": "#/components/schemas/InteractiveButtonsPayload",
+            "list": "#/components/schemas/InteractiveListPayload"
+          }
+        }
+      },
+      "TemplateSendParams": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Um nome de template aprovado pela Meta."
+          },
+          "language": {
+            "type": "string",
+            "default": "en_US",
+            "example": "en_US"
+          },
+          "params": {
+            "description": "Variáveis posicionais do corpo como um array, ou um objeto estruturado `{ header, body, buttons }`.",
+            "oneOf": [
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "object" }
+            ]
+          }
+        }
+      },
+      "SendMessageCommon": {
+        "type": "object",
+        "required": ["to"],
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Número de telefone em E.164. Encontra-ou-cria o contato + conversa.",
+            "example": "+14155550123"
+          },
+          "reply_to_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Precisa ser uma mensagem na mesma conversa."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "De qual canal da conta enviar (SPEC 049 §5.4). Omita para usar o canal padrão da conta."
+          },
+          "name": {
+            "type": "string",
+            "description": "Nome a dar a um contato recém-criado. Ignorado se o contato já existir."
+          }
+        }
+      },
+      "TextMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["text"],
+            "properties": {
+              "type": { "type": "string", "enum": ["text"], "default": "text" },
+              "text": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "TemplateMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["type", "template"],
+            "properties": {
+              "type": { "type": "string", "enum": ["template"] },
+              "template": { "$ref": "#/components/schemas/TemplateSendParams" }
+            }
+          }
+        ]
+      },
+      "MediaMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["type", "media_url"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["image", "video", "document", "audio"]
+              },
+              "media_url": { "type": "string", "format": "uri" },
+              "filename": {
+                "type": "string",
+                "description": "Nome do arquivo do documento."
+              },
+              "text": {
+                "type": "string",
+                "description": "Também funciona como a legenda da mídia."
+              }
+            }
+          }
+        ]
+      },
+      "InteractiveMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["type", "interactive_payload"],
+            "properties": {
+              "type": { "type": "string", "enum": ["interactive"] },
+              "interactive_payload": {
+                "$ref": "#/components/schemas/InteractiveMessagePayload"
+              }
+            }
+          }
+        ]
+      },
+      "SendMessageRequest": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/TextMessageRequest" },
+          { "$ref": "#/components/schemas/TemplateMessageRequest" },
+          { "$ref": "#/components/schemas/MediaMessageRequest" },
+          { "$ref": "#/components/schemas/InteractiveMessageRequest" }
+        ]
+      },
+      "SendMessageResult": {
+        "type": "object",
+        "required": [
+          "message_id",
+          "whatsapp_message_id",
+          "conversation_id",
+          "contact_id",
+          "contact_created"
+        ],
+        "properties": {
+          "message_id": { "type": "string", "format": "uuid" },
+          "whatsapp_message_id": {
+            "type": ["string", "null"],
+            "description": "O id `wamid.*` da Meta."
+          },
+          "conversation_id": { "type": "string", "format": "uuid" },
+          "contact_id": { "type": "string", "format": "uuid" },
+          "contact_created": {
+            "type": "boolean",
+            "description": "True se `to` não correspondia a um contato existente."
+          }
+        }
+      },
+      "BroadcastRecipient": {
+        "type": "object",
+        "required": ["to"],
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Número de telefone em E.164.",
+            "example": "+14155550123"
+          },
+          "params": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Variáveis posicionais do corpo do template para este destinatário."
+          }
+        }
+      },
+      "BroadcastCreateRequest": {
+        "type": "object",
+        "required": ["template_name", "recipients"],
+        "properties": {
+          "name": { "type": "string", "description": "Rótulo opcional." },
+          "template_name": {
+            "type": "string",
+            "description": "Um nome de template aprovado pela Meta."
+          },
+          "template_language": { "type": "string", "default": "en_US" },
+          "recipients": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": { "$ref": "#/components/schemas/BroadcastRecipient" }
+          }
+        }
+      },
+      "BroadcastCreateResult": {
+        "type": "object",
+        "required": [
+          "broadcast_id",
+          "status",
+          "total_recipients",
+          "accepted",
+          "rejected"
+        ],
+        "properties": {
+          "broadcast_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["sending"] },
+          "total_recipients": { "type": "integer" },
+          "accepted": { "type": "integer" },
+          "rejected": {
+            "type": "integer",
+            "description": "Destinatários descartados por número de telefone inválido."
+          }
+        }
+      },
+      "Broadcast": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "template_name",
+          "template_language",
+          "status",
+          "total_recipients",
+          "sent_count",
+          "delivered_count",
+          "read_count",
+          "replied_count",
+          "failed_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": ["string", "null"] },
+          "template_name": { "type": "string" },
+          "template_language": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["scheduled", "sending", "sent", "failed"]
+          },
+          "total_recipients": { "type": "integer" },
+          "sent_count": { "type": "integer" },
+          "delivered_count": { "type": "integer" },
+          "read_count": { "type": "integer" },
+          "replied_count": { "type": "integer" },
+          "failed_count": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "WebhookEvent": {
+        "type": "string",
+        "enum": [
+          "message.received",
+          "message.status_updated",
+          "conversation.created"
+        ]
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "events",
+          "is_active",
+          "last_delivery_at",
+          "failure_count",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "url": { "type": "string", "format": "uri" },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WebhookEvent" }
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "Definido automaticamente como `false` após 15 falhas de entrega consecutivas. Reative com PATCH, que também zera o contador de falhas."
+          },
+          "last_delivery_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "failure_count": {
+            "type": "integer",
+            "description": "Falhas de entrega consecutivas. Zerado por qualquer entrega bem-sucedida ou por reativação via PATCH."
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "WebhookEndpointWithSecret": {
+        "allOf": [
+          { "$ref": "#/components/schemas/WebhookEndpoint" },
+          {
+            "type": "object",
+            "required": ["secret"],
+            "properties": {
+              "secret": {
+                "type": "string",
+                "description": "O segredo de assinatura HMAC, em texto plano. Mostrado exatamente uma vez, na criação — guarde-o agora. Prefixado com `whsec_`."
+              }
+            }
+          }
+        ]
+      },
+      "WebhookCreateRequest": {
+        "type": "object",
+        "required": ["url", "events"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Precisa ser `https://` e resolver para um endereço público."
+          },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/WebhookEvent" }
+          }
+        }
+      },
+      "WebhookUpdateRequest": {
+        "type": "object",
+        "description": "Pelo menos um campo é exigido.",
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/WebhookEvent" }
+          },
+          "is_active": { "type": "boolean" }
+        }
+      },
+      "IngestCustomFieldEntry": {
+        "type": "object",
+        "required": ["field", "value"],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Comparado sem diferenciar maiúsculas/minúsculas com um nome de campo personalizado existente nesta conta. Sem correspondência (ou uma correspondência ambígua) pula esta entrada — nunca falha a requisição."
+          },
+          "value": { "type": "string" }
+        }
+      },
+      "IngestContactRequest": {
+        "type": "object",
+        "required": ["webhook_id", "webhook_name", "phone"],
+        "properties": {
+          "webhook_id": {
+            "oneOf": [{ "type": "string" }, { "type": "number" }],
+            "description": "Somente dígitos, mínimo de 16 caracteres — identifica o FUNIL que esta requisição alimenta, reutilizado em toda requisição que carregar o mesmo id. Não é uma credencial; a chave de API é.",
+            "example": "1234567890123456"
+          },
+          "webhook_name": {
+            "type": "string",
+            "description": "Rótulo de exibição do funil. Não vazio após remover espaços; truncado (não rejeitado) além de 120 caracteres. O valor da última requisição prevalece.",
+            "example": "Landing page — Black Friday"
+          },
+          "phone": {
+            "oneOf": [{ "type": "string" }, { "type": "number" }],
+            "description": "Validado com regras brasileiras estritas (DDD contra a lista da Anatel, formato de celular/fixo) — mais estrito que `POST /contacts`.",
+            "example": "(19) 9 9924-9658"
+          },
+          "name": {
+            "type": "string",
+            "description": "Cai de volta para o telefone normalizado se omitido."
+          },
+          "email": { "type": "string" },
+          "company": { "type": "string" },
+          "tags": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Nomes de etiqueta separados por vírgula."
+              },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Aditivo — nunca remove uma etiqueta que o contato já tem. Cria uma etiqueta que ainda não existir."
+          },
+          "notes": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "description": "Objeto indexado, ex.: `{\"nota_1\": \"…\", \"nota_2\": \"…\"}`. As chaves são ordenadas pelo SUFIXO NUMÉRICO (`nota_2` antes de `nota_10`), não alfabeticamente."
+              },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Sempre acrescenta — nunca deduplica ou substitui notas existentes."
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IngestCustomFieldEntry" }
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Um `message_templates.id` nesta conta, com status `APPROVED` na Meta."
+          },
+          "template_params": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Variáveis posicionais do corpo (`{{1}}`, `{{2}}`…) para o template. Entradas não-string são convertidas para string, nunca descartadas — descartar deslocaria todo placeholder seguinte."
+          }
+        }
+      },
+      "IngestWarning": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "ex.: `custom_field_not_found`, `custom_field_ambiguous`, `note_empty`, `payload_truncated`, `template_not_found`, `template_not_approved`, `channel_not_capable`, `send_failed`."
+          },
+          "message": { "type": "string" }
+        }
+      },
+      "IngestFunnelRef": {
+        "type": ["object", "null"],
+        "required": ["broadcast_id", "webhook_id"],
+        "description": "`null` apenas quando a própria linha do funil não pôde ser criada/atualizada (uma falha rara de infraestrutura) — o contato ainda assim é criado nesse caso.",
+        "properties": {
+          "broadcast_id": { "type": "string", "format": "uuid" },
+          "webhook_id": { "type": "string" }
+        }
+      },
+      "IngestContactResult": {
+        "type": "object",
+        "required": [
+          "contact_id",
+          "contact_created",
+          "funnel",
+          "tags",
+          "notes",
+          "custom_fields",
+          "send",
+          "warnings"
+        ],
+        "properties": {
+          "contact_id": { "type": "string", "format": "uuid" },
+          "contact_created": {
+            "type": "boolean",
+            "description": "True se `phone` não correspondia a um contato existente."
+          },
+          "funnel": { "$ref": "#/components/schemas/IngestFunnelRef" },
+          "tags": {
+            "type": "object",
+            "required": ["linked", "created"],
+            "properties": {
+              "linked": {
+                "type": "integer",
+                "description": "Etiquetas pedidas que já existiam na conta."
+              },
+              "created": {
+                "type": "integer",
+                "description": "Etiquetas pedidas que foram recém-criadas."
+              }
+            }
+          },
+          "notes": {
+            "type": "object",
+            "required": ["inserted"],
+            "properties": { "inserted": { "type": "integer" } }
+          },
+          "custom_fields": {
+            "type": "object",
+            "required": ["matched", "skipped"],
+            "properties": {
+              "matched": { "type": "integer" },
+              "skipped": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Nomes de campo sem correspondência (ou com correspondência ambígua) que foram pulados."
+              }
+            }
+          },
+          "send": {
+            "type": "object",
+            "required": ["attempted"],
+            "properties": {
+              "attempted": {
+                "type": "boolean",
+                "description": "True quando `template_id` estava presente e um envio foi enfileirado — NÃO é garantia de sucesso; veja `warnings[]` e o log do painel para o resultado."
+              },
+              "template_id": { "type": "string", "format": "uuid" }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IngestWarning" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1911 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ZAP CRM BR — Public API",
+    "version": "1.0.0",
+    "summary": "REST API to drive a self-hosted ZAP CRM BR instance from your own scripts and automations.",
+    "description": "The public API lets you operate a ZAP CRM BR account from your own scripts and automations (n8n, Zapier-style integrations, cron jobs) without going through the dashboard UI — send messages, manage contacts, launch broadcast campaigns, and subscribe to outbound event webhooks.\n\nEvery request authenticates with an **API key** (`Authorization: Bearer wacrm_live_...`), created in the dashboard under **Settings → API keys** by an admin or owner. A key is scoped to exactly one account — there is no cross-account access — and only does what the [scopes](#tag/Meta) granted to it allow.\n\n**An API key is an account-wide credential, not an agent identity.** It sees every conversation and message in the account, including threads assigned to other agents — there is no per-agent row-level isolation over the public API (that isolation exists only inside the dashboard, enforced by Postgres RLS keyed on the signed-in user). Treat a key like an administrator credential and issue one per integration so it can be revoked in isolation.\n\nAll error text on `/api/**` (including this API) is **English by design** — integrations, scripts, and logs consume a stable language; do not expect or rely on localized error payloads.\n\nSource of truth for this contract: `docs/public-api.md` in the ZAP CRM BR repository. This `openapi.json` is generated from — and must be kept in sync with — that document.",
+    "contact": {
+      "name": "ZAP CRM BR",
+      "url": "https://github.com/brunopelatieri/zap-crm-br"
+    },
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://{domain}/api/v1",
+      "description": "Your self-hosted ZAP CRM BR deployment",
+      "variables": {
+        "domain": {
+          "default": "your-crm.example.com",
+          "description": "The domain your ZAP CRM BR instance is deployed at."
+        }
+      }
+    }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [
+    { "name": "Meta", "description": "Identity / key introspection." },
+    {
+      "name": "Messages",
+      "description": "Send WhatsApp messages and read a conversation's message history."
+    },
+    {
+      "name": "Contacts",
+      "description": "List, create, read, and update contacts."
+    },
+    { "name": "Conversations", "description": "List and read conversations." },
+    {
+      "name": "Broadcasts",
+      "description": "Launch and track template broadcast campaigns."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Register and manage outbound event webhook endpoints."
+    },
+    {
+      "name": "Ingest",
+      "description": "Inbound webhook — a third party creates a contact (and optionally launches a template) by calling ZAP CRM BR. The inverse of Webhooks, which notify third parties about ZAP CRM BR events."
+    }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "tags": ["Meta"],
+        "summary": "Verify a key and discover its scopes",
+        "description": "Returns the account a key is bound to and the scopes it carries. Requires only a valid key — no scope. Use it to verify a key works before wiring up real calls; it also exercises the entire public-API auth stack end to end (bearer parse → hash lookup → liveness → rate limit → envelope).",
+        "operationId": "getMe",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "The account and scopes this key is bound to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["account", "key"],
+                      "properties": {
+                        "account": {
+                          "type": "object",
+                          "required": ["id", "name"],
+                          "properties": {
+                            "id": { "type": "string", "format": "uuid" },
+                            "name": { "type": "string" }
+                          }
+                        },
+                        "key": {
+                          "type": "object",
+                          "required": ["id", "scopes"],
+                          "properties": {
+                            "id": { "type": "string", "format": "uuid" },
+                            "scopes": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/ApiScope"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "account": {
+                      "id": "8f3c1e2a-0000-4000-8000-000000000001",
+                      "name": "Acme Inc"
+                    },
+                    "key": {
+                      "id": "8f3c1e2a-0000-4000-8000-000000000002",
+                      "scopes": ["messages:send"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/messages": {
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Send a WhatsApp message",
+        "description": "Send a WhatsApp message to a phone number. You pass an **E.164 number**, not an internal conversation id — the endpoint finds-or-creates the contact + conversation, then sends.\n\n**`cold_send_limit` (429).** On a WhatsApp QRCode (Evolution) channel with no active 24h Meta session window, outbound-to-a-cold-contact is throttled by a per-instance daily/hourly cap and a minimum interval between cold sends (SPEC 049 §6.2). This path **always blocks** when the limit is hit — stricter than the dashboard inbox, which only warns a human agent. Retry after the `Retry-After` header.",
+        "operationId": "sendMessage",
+        "security": [{ "bearerAuth": ["messages:send"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendMessageRequest" },
+              "examples": {
+                "text": {
+                  "summary": "Plain text",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "text",
+                    "text": "Hi 👋"
+                  }
+                },
+                "template": {
+                  "summary": "Approved template",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "template",
+                    "template": {
+                      "name": "order_update",
+                      "language": "en_US",
+                      "params": ["A123"]
+                    }
+                  }
+                },
+                "media": {
+                  "summary": "Document with a caption",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "document",
+                    "media_url": "https://example.com/invoice.pdf",
+                    "filename": "invoice.pdf",
+                    "text": "Here's your invoice"
+                  }
+                },
+                "interactiveButtons": {
+                  "summary": "Interactive — reply buttons",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "interactive",
+                    "interactive_payload": {
+                      "kind": "buttons",
+                      "body": "How can we help?",
+                      "buttons": [
+                        { "id": "track_order", "title": "Track order" },
+                        { "id": "talk_to_human", "title": "Talk to a human" }
+                      ]
+                    }
+                  }
+                },
+                "interactiveList": {
+                  "summary": "Interactive — list",
+                  "value": {
+                    "to": "+14155550123",
+                    "type": "interactive",
+                    "interactive_payload": {
+                      "kind": "list",
+                      "body": "Pick a topic",
+                      "button_label": "Choose",
+                      "sections": [
+                        {
+                          "title": "Billing",
+                          "rows": [
+                            {
+                              "id": "invoice",
+                              "title": "Get an invoice",
+                              "description": "PDF, sent by email"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/SendMessageResult" }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "message_id": "8f3c1e2a-0000-4000-8000-000000000010",
+                    "whatsapp_message_id": "wamid.HBgLMTQxNTU1NTAxMjM=",
+                    "conversation_id": "8f3c1e2a-0000-4000-8000-000000000011",
+                    "contact_id": "8f3c1e2a-0000-4000-8000-000000000012",
+                    "contact_created": true
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": {
+            "description": "Per-key rate limit exceeded (`rate_limited`), or the WhatsApp QRCode cold-send limit was hit (`cold_send_limit`). Both carry `Retry-After`.",
+            "headers": {
+              "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "rateLimited": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "Rate limit exceeded for this API key"
+                      }
+                    }
+                  },
+                  "coldSendLimit": {
+                    "value": {
+                      "error": {
+                        "code": "cold_send_limit",
+                        "message": "cold-send hourly limit reached (5/h)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": {
+            "description": "The request reached Meta and Meta rejected the send (`meta_error`).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "error": {
+                    "code": "meta_error",
+                    "message": "(#131026) Message undeliverable"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contacts": {
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "List contacts",
+        "description": "List contacts, newest first.",
+        "operationId": "listContacts",
+        "security": [{ "bearerAuth": ["contacts:read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Free-text filter, matched against contact name or phone.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "description": "Restrict to contacts carrying this tag id.",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of contacts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Contact" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "post": {
+        "tags": ["Contacts"],
+        "summary": "Create a contact (find-or-create by phone)",
+        "description": "Create a contact. An existing match by phone returns `200` with the existing contact (no duplicate is created); a genuinely new contact returns `201`.",
+        "operationId": "createContact",
+        "security": [{ "bearerAuth": ["contacts:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ContactCreateRequest" },
+              "example": {
+                "phone": "+14155550123",
+                "name": "Jane Doe",
+                "tags": ["vip"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An existing contact already matched this phone number — returned as-is (no duplicate created).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "A new contact was created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/contacts/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/ContactId" }],
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Read a contact",
+        "operationId": "getContact",
+        "security": [{ "bearerAuth": ["contacts:read"] }],
+        "responses": {
+          "200": {
+            "description": "The contact.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "patch": {
+        "tags": ["Contacts"],
+        "summary": "Update a contact",
+        "description": "Updates only the fields present in the request body — omitted fields are left untouched. Pass `tags` (an array of tag names, created if missing) to **replace** the contact's full tag set.",
+        "operationId": "updateContact",
+        "security": [{ "bearerAuth": ["contacts:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ContactUpdateRequest" },
+              "example": {
+                "company": "Acme Inc",
+                "tags": ["vip", "newsletter"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated contact.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/conversations": {
+      "get": {
+        "tags": ["Conversations"],
+        "summary": "List conversations",
+        "description": "List conversations, newest first. **An API key sees the whole account** — assigned and unassigned conversations alike, regardless of which agent they're assigned to.",
+        "operationId": "listConversations",
+        "security": [{ "bearerAuth": ["conversations:read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["open", "pending", "closed"]
+            }
+          },
+          {
+            "name": "contact_id",
+            "in": "query",
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "channel_id",
+            "in": "query",
+            "description": "Restrict to conversations on this channel (SPEC 049 §5.4) — e.g. one specific WhatsApp QRCode instance.",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of conversations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Conversation" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/conversations/{id}": {
+      "get": {
+        "tags": ["Conversations"],
+        "summary": "Read a conversation",
+        "operationId": "getConversation",
+        "security": [{ "bearerAuth": ["conversations:read"] }],
+        "parameters": [{ "$ref": "#/components/parameters/ConversationId" }],
+        "responses": {
+          "200": {
+            "description": "The conversation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Conversation" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/conversations/{id}/messages": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "List a conversation's messages",
+        "description": "List a conversation's messages, newest first. The conversation is verified to belong to your account before any message is returned (`404` otherwise).",
+        "operationId": "listConversationMessages",
+        "security": [{ "bearerAuth": ["messages:read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ConversationId" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of messages.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Message" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/broadcasts": {
+      "post": {
+        "tags": ["Broadcasts"],
+        "summary": "Launch a template broadcast",
+        "description": "Launch a template broadcast to a list of recipients. The broadcast + its recipient rows are persisted immediately and the sends fan out in the background with a soft 60-second budget, so the call returns fast — poll `GET /broadcasts/{id}` for progress. Recipients are capped at **1000 per request**; invalid phone numbers are dropped and counted as `rejected` rather than failing the whole call.\n\nA request near the 1000-recipient cap can exceed the fan-out's 60-second budget — there is no durable retry queue yet, so recipients still `pending` when the budget runs out stay `pending` rather than resuming automatically. Prefer splitting large sends into a few smaller requests.",
+        "operationId": "createBroadcast",
+        "security": [{ "bearerAuth": ["broadcasts:send"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BroadcastCreateRequest"
+              },
+              "example": {
+                "name": "July promo",
+                "template_name": "promo_july",
+                "template_language": "en_US",
+                "recipients": [
+                  { "to": "+14155550123", "params": ["Jane"] },
+                  { "to": "+14155550124" }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The broadcast was accepted and sending has started in the background.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BroadcastCreateResult"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "broadcast_id": "8f3c1e2a-0000-4000-8000-000000000020",
+                    "status": "sending",
+                    "total_recipients": 2,
+                    "accepted": 2,
+                    "rejected": 0
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/broadcasts/{id}": {
+      "get": {
+        "tags": ["Broadcasts"],
+        "summary": "Get broadcast status + counts",
+        "description": "`status` moves `sending` → `sent`; `delivered_count` / `read_count` keep climbing as Meta delivery webhooks arrive after the initial send completes.",
+        "operationId": "getBroadcast",
+        "security": [{ "bearerAuth": ["broadcasts:send"] }],
+        "parameters": [{ "$ref": "#/components/parameters/BroadcastId" }],
+        "responses": {
+          "200": {
+            "description": "The broadcast's current status and counters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Broadcast" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/ingest/contact": {
+      "post": {
+        "tags": ["Ingest"],
+        "summary": "Create a contact from an inbound webhook (and optionally send a template)",
+        "description": "The inverse of `/webhooks`: a third party (n8n, a landing page, an e-commerce platform) POSTs here to create or match a contact, write tags/notes/custom fields, and — when `template_id` is approved — send a template. Every accepted request also feeds a funnel: a `broadcasts` row scoped by `webhook_id`, reused across every request that carries the same id (SPEC 055).\n\n**Phone validation here is stricter than `POST /contacts`:** Brazilian DDD and mobile/landline shape are enforced — this endpoint is new, so tightening the rule breaks no existing integration.\n\n**Failure asymmetry.** Before the contact is created, a failure is `400` — nothing was written. After the contact exists, a failure is always `202`, with the problem reported in `warnings[]` — never a 4xx/5xx, so a caller retry can never duplicate the contact (notes, in particular, are never deduplicated). A request rejected for a missing/invalid key (`401`/`403`/`429`) logs nothing — there's no account to attach a log row to.",
+        "operationId": "ingestContact",
+        "security": [{ "bearerAuth": ["ingest:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestContactRequest"
+              },
+              "example": {
+                "webhook_id": "1234567890123456",
+                "webhook_name": "Landing page — Black Friday",
+                "phone": "(19) 9 9924-9658",
+                "name": "Maria Souza",
+                "email": "maria@empresa.com.br",
+                "company": "Empresa LTDA",
+                "tags": "Cliente VIP, lead quente",
+                "notes": {
+                  "nota_1": "Veio do formulário da LP de Black Friday",
+                  "nota_2": "Pediu contato à tarde"
+                },
+                "custom_fields": [
+                  { "field": "origem", "value": "landing_page_bf" }
+                ],
+                "template_id": "3f2b8c10-2a44-4a7e-9c1e-77c3b2a1d5e0",
+                "template_params": ["Maria"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted — the contact was created or matched. The template send (if any) runs in the background and is never awaited by this response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IngestContactResult"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "contact_id": "b630a43f-0000-4000-8000-000000000040",
+                    "contact_created": true,
+                    "funnel": {
+                      "broadcast_id": "9c1e1e2a-0000-4000-8000-000000000041",
+                      "webhook_id": "1234567890123456"
+                    },
+                    "tags": { "linked": 1, "created": 1 },
+                    "notes": { "inserted": 2 },
+                    "custom_fields": { "matched": 1, "skipped": [] },
+                    "send": {
+                      "attempted": true,
+                      "template_id": "3f2b8c10-2a44-4a7e-9c1e-77c3b2a1d5e0"
+                    },
+                    "warnings": []
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Rejected before the contact was created (`invalid_webhook_id`, `invalid_webhook_name`, `invalid_phone`, or `bad_request`) — nothing was written.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidWebhookId": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_webhook_id",
+                        "message": "'webhook_id' must be a numeric string with at least 16 digits"
+                      }
+                    }
+                  },
+                  "invalidWebhookName": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_webhook_name",
+                        "message": "'webhook_name' is required and must not be empty"
+                      }
+                    }
+                  },
+                  "invalidPhone": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_phone",
+                        "message": "Phone number failed Brazilian validation: invalid_ddd"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/webhooks": {
+      "get": {
+        "tags": ["Webhooks"],
+        "summary": "List webhook endpoints",
+        "description": "List your account's registered webhook endpoints. Never returns the signing secret.",
+        "operationId": "listWebhooks",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "The account's webhook endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEndpoint"
+                      }
+                    },
+                    "meta": { "$ref": "#/components/schemas/PaginationMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "Register a webhook endpoint",
+        "description": "Register an HTTPS endpoint to receive event deliveries. **The response includes `secret` exactly once** — store it to verify the `X-Wacrm-Signature` header on deliveries; the CRM keeps only an encrypted copy and can never show it again.\n\nThe target `url` must resolve to a public address: `localhost`, private/RFC1918 ranges, link-local addresses (including the `169.254.169.254` cloud-metadata address), and similar internal targets are refused (SSRF guard).",
+        "operationId": "createWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookCreateRequest" },
+              "example": {
+                "url": "https://example.com/hooks/wacrm",
+                "events": ["message.received"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The endpoint was registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "id": "8f3c1e2a-0000-4000-8000-000000000030",
+                    "url": "https://example.com/hooks/wacrm",
+                    "events": ["message.received"],
+                    "is_active": true,
+                    "last_delivery_at": null,
+                    "failure_count": 0,
+                    "created_at": "2026-07-01T12:00:00.000Z",
+                    "secret": "whsec_9f8e7d6c5b4a..."
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/webhooks/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/WebhookId" }],
+      "get": {
+        "tags": ["Webhooks"],
+        "summary": "Read a webhook endpoint",
+        "operationId": "getWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "The webhook endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/WebhookEndpoint" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "patch": {
+        "tags": ["Webhooks"],
+        "summary": "Update a webhook endpoint",
+        "description": "Update `url`, `events`, and/or `is_active` — at least one field is required. Setting `is_active: true` on a previously auto-disabled endpoint also resets its consecutive-failure counter to 0.",
+        "operationId": "updateWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookUpdateRequest" },
+              "example": { "is_active": true }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated webhook endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/WebhookEndpoint" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "delete": {
+        "tags": ["Webhooks"],
+        "summary": "Remove a webhook endpoint",
+        "operationId": "deleteWebhook",
+        "security": [{ "bearerAuth": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "The endpoint was removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["id", "deleted"],
+                      "properties": {
+                        "id": { "type": "string", "format": "uuid" },
+                        "deleted": { "type": "boolean", "enum": [true] }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "id": "8f3c1e2a-0000-4000-8000-000000000030",
+                    "deleted": true
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "wacrm_live_...",
+        "description": "An API key created in the dashboard under Settings → API keys, sent as `Authorization: Bearer wacrm_live_...`. Scopes are enforced per-endpoint; see each operation's required scope."
+      }
+    },
+    "parameters": {
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Page size.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "description": "Opaque cursor from a previous page's `meta.next_cursor`. Pass back verbatim — never construct or parse it. A malformed/unrecognized cursor is treated as absent (restarts from the first page).",
+        "schema": { "type": "string" }
+      },
+      "ContactId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "ConversationId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "BroadcastId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "WebhookId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "headers": {
+      "RetryAfter": {
+        "description": "Seconds until the caller should retry.",
+        "schema": { "type": "integer" }
+      },
+      "RateLimitLimit": {
+        "description": "The request budget for the current window.",
+        "schema": { "type": "integer" }
+      },
+      "RateLimitRemaining": {
+        "description": "Requests still allowed in the current window.",
+        "schema": { "type": "integer" }
+      },
+      "RateLimitReset": {
+        "description": "Unix timestamp (seconds) when the window resets.",
+        "schema": { "type": "integer" }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed input (`bad_request`).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": { "code": "bad_request", "message": "'to' is required" }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing, malformed, unknown, revoked, or expired API key (`unauthorized`). These cases are deliberately indistinguishable on the wire.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "Missing or invalid API key"
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The key is valid but lacks the scope this endpoint requires (`forbidden`).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "forbidden",
+                "message": "This API key is missing the 'messages:send' scope"
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No such resource, or it belongs to another account (`not_found`). Never `403` for a cross-account id — that would confirm the id exists.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": { "code": "not_found", "message": "Contact not found" }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Per-key rate limit exceeded — 120 requests/minute (`rate_limited`).",
+        "headers": {
+          "Retry-After": { "$ref": "#/components/headers/RetryAfter" },
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/RateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/RateLimitRemaining"
+          },
+          "X-RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "rate_limited",
+                "message": "Rate limit exceeded for this API key"
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Server error (`internal`). The message never leaks internal detail.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "error": {
+                "code": "internal",
+                "message": "Internal server error"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ApiScope": {
+        "type": "string",
+        "enum": [
+          "messages:send",
+          "messages:read",
+          "contacts:read",
+          "contacts:write",
+          "conversations:read",
+          "broadcasts:send",
+          "webhooks:manage",
+          "ingest:write"
+        ],
+        "description": "A key's capabilities are defined entirely by the scopes granted to it at creation."
+      },
+      "Error": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable, machine-matchable error code — branch on this, not on `message`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-facing text. May be reworded; do not pattern-match on it."
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "$ref": "#/components/schemas/Error" } }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "required": ["next_cursor"],
+        "properties": {
+          "next_cursor": {
+            "type": ["string", "null"],
+            "description": "Opaque cursor for the next page, or `null` on the last page."
+          }
+        }
+      },
+      "Tag": {
+        "type": "object",
+        "required": ["id", "name", "color"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "color": { "type": "string", "example": "#3b82f6" }
+        }
+      },
+      "Contact": {
+        "type": "object",
+        "required": [
+          "id",
+          "phone",
+          "name",
+          "email",
+          "company",
+          "avatar_url",
+          "tags",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "phone": {
+            "type": "string",
+            "description": "E.164 format.",
+            "example": "+14155550123"
+          },
+          "name": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"], "format": "email" },
+          "company": { "type": ["string", "null"] },
+          "avatar_url": { "type": ["string", "null"], "format": "uri" },
+          "tags": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Tag" }
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ContactCreateRequest": {
+        "type": "object",
+        "required": ["phone"],
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "E.164 format.",
+            "example": "+14155550123"
+          },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "company": { "type": "string" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tag names. Any name that doesn't yet exist is created."
+          }
+        }
+      },
+      "ContactUpdateRequest": {
+        "type": "object",
+        "description": "Every field is optional; only fields present in the body are changed. A field set to `null` clears it (for `name`/`email`/`company`).",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"] },
+          "company": { "type": ["string", "null"] },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tag names. Replaces the contact's full tag set (pass `[]` to clear all tags)."
+          }
+        }
+      },
+      "ConversationContact": {
+        "type": ["object", "null"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "phone": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"] },
+          "company": { "type": ["string", "null"] },
+          "tags": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Tag" }
+          }
+        }
+      },
+      "Conversation": {
+        "type": "object",
+        "required": [
+          "id",
+          "contact_id",
+          "status",
+          "assigned_agent_id",
+          "channel_id",
+          "last_message_text",
+          "last_message_at",
+          "unread_count",
+          "created_at",
+          "updated_at",
+          "contact"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "contact_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["open", "pending", "closed"] },
+          "assigned_agent_id": { "type": ["string", "null"], "format": "uuid" },
+          "channel_id": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "Which of the account's channels this conversation belongs to (SPEC 049 §5.4). `null` only for a row that predates multi-channel support."
+          },
+          "last_message_text": { "type": ["string", "null"] },
+          "last_message_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "unread_count": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "contact": { "$ref": "#/components/schemas/ConversationContact" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "direction",
+          "sender_type",
+          "content_type",
+          "content_text",
+          "media_url",
+          "template_name",
+          "whatsapp_message_id",
+          "status",
+          "reply_to_message_id",
+          "interactive_reply_id",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "conversation_id": { "type": "string", "format": "uuid" },
+          "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+          "sender_type": {
+            "type": "string",
+            "description": "e.g. `customer`, `agent`, `automation`, `api`."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "e.g. `text`, `template`, `interactive`, `image`, `video`, `document`, `audio`."
+          },
+          "content_text": { "type": ["string", "null"] },
+          "media_url": { "type": ["string", "null"], "format": "uri" },
+          "template_name": { "type": ["string", "null"] },
+          "whatsapp_message_id": {
+            "type": ["string", "null"],
+            "description": "Meta's `wamid.*` id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Delivery state, e.g. `sent`, `delivered`, `read`, `failed`."
+          },
+          "reply_to_message_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "interactive_reply_id": {
+            "type": ["string", "null"],
+            "description": "The `id` of the interactive button/list row the contact tapped, when this message is a reply to one."
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InteractiveButton": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable id, echoed back when the recipient taps this button."
+          },
+          "title": { "type": "string", "maxLength": 20 }
+        }
+      },
+      "InteractiveButtonsPayload": {
+        "type": "object",
+        "required": ["kind", "body", "buttons"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["buttons"] },
+          "body": { "type": "string", "maxLength": 1024 },
+          "header": { "type": "string", "maxLength": 60 },
+          "footer": { "type": "string", "maxLength": 60 },
+          "buttons": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": { "$ref": "#/components/schemas/InteractiveButton" },
+            "description": "1 to 3 buttons. Ids must be unique within the message."
+          }
+        }
+      },
+      "InteractiveListRow": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable id, echoed back when the recipient selects this row."
+          },
+          "title": { "type": "string", "maxLength": 24 },
+          "description": { "type": "string", "maxLength": 72 }
+        }
+      },
+      "InteractiveListSection": {
+        "type": "object",
+        "required": ["rows"],
+        "properties": {
+          "title": { "type": "string" },
+          "rows": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InteractiveListRow" }
+          }
+        }
+      },
+      "InteractiveListPayload": {
+        "type": "object",
+        "required": ["kind", "body", "button_label", "sections"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["list"] },
+          "body": { "type": "string", "maxLength": 1024 },
+          "header": { "type": "string", "maxLength": 60 },
+          "footer": { "type": "string", "maxLength": 60 },
+          "button_label": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Label of the tap-to-expand button."
+          },
+          "sections": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": { "$ref": "#/components/schemas/InteractiveListSection" },
+            "description": "Up to 10 sections; 1 to 10 rows TOTAL across all sections. Row ids must be unique across the whole message."
+          }
+        }
+      },
+      "InteractiveMessagePayload": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/InteractiveButtonsPayload" },
+          { "$ref": "#/components/schemas/InteractiveListPayload" }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "buttons": "#/components/schemas/InteractiveButtonsPayload",
+            "list": "#/components/schemas/InteractiveListPayload"
+          }
+        }
+      },
+      "TemplateSendParams": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "An approved Meta template name."
+          },
+          "language": {
+            "type": "string",
+            "default": "en_US",
+            "example": "en_US"
+          },
+          "params": {
+            "description": "Positional body variables as an array, or a structured `{ header, body, buttons }` object.",
+            "oneOf": [
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "object" }
+            ]
+          }
+        }
+      },
+      "SendMessageCommon": {
+        "type": "object",
+        "required": ["to"],
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "E.164 phone number. Find-or-creates the contact + conversation.",
+            "example": "+14155550123"
+          },
+          "reply_to_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Must be a message in the same conversation."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Which of the account's channels to send from (SPEC 049 §5.4). Omit to use the account's default channel."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name to give a newly-created contact. Ignored if the contact already exists."
+          }
+        }
+      },
+      "TextMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["text"],
+            "properties": {
+              "type": { "type": "string", "enum": ["text"], "default": "text" },
+              "text": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "TemplateMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["type", "template"],
+            "properties": {
+              "type": { "type": "string", "enum": ["template"] },
+              "template": { "$ref": "#/components/schemas/TemplateSendParams" }
+            }
+          }
+        ]
+      },
+      "MediaMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["type", "media_url"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["image", "video", "document", "audio"]
+              },
+              "media_url": { "type": "string", "format": "uri" },
+              "filename": {
+                "type": "string",
+                "description": "Document filename."
+              },
+              "text": {
+                "type": "string",
+                "description": "Doubles as the media caption."
+              }
+            }
+          }
+        ]
+      },
+      "InteractiveMessageRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SendMessageCommon" },
+          {
+            "type": "object",
+            "required": ["type", "interactive_payload"],
+            "properties": {
+              "type": { "type": "string", "enum": ["interactive"] },
+              "interactive_payload": {
+                "$ref": "#/components/schemas/InteractiveMessagePayload"
+              }
+            }
+          }
+        ]
+      },
+      "SendMessageRequest": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/TextMessageRequest" },
+          { "$ref": "#/components/schemas/TemplateMessageRequest" },
+          { "$ref": "#/components/schemas/MediaMessageRequest" },
+          { "$ref": "#/components/schemas/InteractiveMessageRequest" }
+        ]
+      },
+      "SendMessageResult": {
+        "type": "object",
+        "required": [
+          "message_id",
+          "whatsapp_message_id",
+          "conversation_id",
+          "contact_id",
+          "contact_created"
+        ],
+        "properties": {
+          "message_id": { "type": "string", "format": "uuid" },
+          "whatsapp_message_id": {
+            "type": ["string", "null"],
+            "description": "Meta's `wamid.*` id."
+          },
+          "conversation_id": { "type": "string", "format": "uuid" },
+          "contact_id": { "type": "string", "format": "uuid" },
+          "contact_created": {
+            "type": "boolean",
+            "description": "True if `to` didn't match an existing contact."
+          }
+        }
+      },
+      "BroadcastRecipient": {
+        "type": "object",
+        "required": ["to"],
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "E.164 phone number.",
+            "example": "+14155550123"
+          },
+          "params": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Positional template body variables for this recipient."
+          }
+        }
+      },
+      "BroadcastCreateRequest": {
+        "type": "object",
+        "required": ["template_name", "recipients"],
+        "properties": {
+          "name": { "type": "string", "description": "Optional label." },
+          "template_name": {
+            "type": "string",
+            "description": "An approved Meta template name."
+          },
+          "template_language": { "type": "string", "default": "en_US" },
+          "recipients": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": { "$ref": "#/components/schemas/BroadcastRecipient" }
+          }
+        }
+      },
+      "BroadcastCreateResult": {
+        "type": "object",
+        "required": [
+          "broadcast_id",
+          "status",
+          "total_recipients",
+          "accepted",
+          "rejected"
+        ],
+        "properties": {
+          "broadcast_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["sending"] },
+          "total_recipients": { "type": "integer" },
+          "accepted": { "type": "integer" },
+          "rejected": {
+            "type": "integer",
+            "description": "Recipients dropped for an invalid phone number."
+          }
+        }
+      },
+      "Broadcast": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "template_name",
+          "template_language",
+          "status",
+          "total_recipients",
+          "sent_count",
+          "delivered_count",
+          "read_count",
+          "replied_count",
+          "failed_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": ["string", "null"] },
+          "template_name": { "type": "string" },
+          "template_language": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["scheduled", "sending", "sent", "failed"]
+          },
+          "total_recipients": { "type": "integer" },
+          "sent_count": { "type": "integer" },
+          "delivered_count": { "type": "integer" },
+          "read_count": { "type": "integer" },
+          "replied_count": { "type": "integer" },
+          "failed_count": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "WebhookEvent": {
+        "type": "string",
+        "enum": [
+          "message.received",
+          "message.status_updated",
+          "conversation.created"
+        ]
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "events",
+          "is_active",
+          "last_delivery_at",
+          "failure_count",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "url": { "type": "string", "format": "uri" },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WebhookEvent" }
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "Auto-set to `false` after 15 consecutive delivery failures. Re-enable with PATCH, which also resets the failure counter."
+          },
+          "last_delivery_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "failure_count": {
+            "type": "integer",
+            "description": "Consecutive delivery failures. Reset to 0 by any successful delivery or by re-enabling via PATCH."
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "WebhookEndpointWithSecret": {
+        "allOf": [
+          { "$ref": "#/components/schemas/WebhookEndpoint" },
+          {
+            "type": "object",
+            "required": ["secret"],
+            "properties": {
+              "secret": {
+                "type": "string",
+                "description": "The HMAC signing secret, in plaintext. Shown exactly once, at creation — store it now. Prefixed `whsec_`."
+              }
+            }
+          }
+        ]
+      },
+      "WebhookCreateRequest": {
+        "type": "object",
+        "required": ["url", "events"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Must be `https://` and resolve to a public address."
+          },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/WebhookEvent" }
+          }
+        }
+      },
+      "WebhookUpdateRequest": {
+        "type": "object",
+        "description": "At least one field is required.",
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/WebhookEvent" }
+          },
+          "is_active": { "type": "boolean" }
+        }
+      },
+      "IngestCustomFieldEntry": {
+        "type": "object",
+        "required": ["field", "value"],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Matched case-insensitively against an existing custom field name in this account. No match (or an ambiguous one) skips this entry — never fails the request."
+          },
+          "value": { "type": "string" }
+        }
+      },
+      "IngestContactRequest": {
+        "type": "object",
+        "required": ["webhook_id", "webhook_name", "phone"],
+        "properties": {
+          "webhook_id": {
+            "oneOf": [{ "type": "string" }, { "type": "number" }],
+            "description": "Digits only, minimum 16 characters — identifies the FUNNEL this request feeds, reused across every request carrying the same id. Not a credential; the API key is.",
+            "example": "1234567890123456"
+          },
+          "webhook_name": {
+            "type": "string",
+            "description": "Display label for the funnel. Non-empty after trim; truncated (not rejected) past 120 characters. The last request's value wins.",
+            "example": "Landing page — Black Friday"
+          },
+          "phone": {
+            "oneOf": [{ "type": "string" }, { "type": "number" }],
+            "description": "Validated with strict Brazilian rules (DDD against the Anatel list, mobile/landline shape) — stricter than `POST /contacts`.",
+            "example": "(19) 9 9924-9658"
+          },
+          "name": {
+            "type": "string",
+            "description": "Falls back to the normalized phone if omitted."
+          },
+          "email": { "type": "string" },
+          "company": { "type": "string" },
+          "tags": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Comma-separated tag names."
+              },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Additive — never removes a tag the contact already has. Creates a tag that doesn't exist yet."
+          },
+          "notes": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "description": "Indexed object, e.g. `{\"nota_1\": \"…\", \"nota_2\": \"…\"}`. Keys are sorted by their NUMERIC SUFFIX (`nota_2` before `nota_10`), not alphabetically."
+              },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Always appends — never dedupes or replaces existing notes."
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IngestCustomFieldEntry" }
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A `message_templates.id` in this account, with Meta status `APPROVED`."
+          },
+          "template_params": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Positional body variables (`{{1}}`, `{{2}}`…) for the template. Non-string entries are coerced to string, never dropped — dropping would shift every later placeholder."
+          }
+        }
+      },
+      "IngestWarning": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "e.g. `custom_field_not_found`, `custom_field_ambiguous`, `note_empty`, `payload_truncated`, `template_not_found`, `template_not_approved`, `channel_not_capable`, `send_failed`."
+          },
+          "message": { "type": "string" }
+        }
+      },
+      "IngestFunnelRef": {
+        "type": ["object", "null"],
+        "required": ["broadcast_id", "webhook_id"],
+        "description": "`null` only when the funnel row itself couldn't be created/updated (a rare infra failure) — the contact is still created in that case.",
+        "properties": {
+          "broadcast_id": { "type": "string", "format": "uuid" },
+          "webhook_id": { "type": "string" }
+        }
+      },
+      "IngestContactResult": {
+        "type": "object",
+        "required": [
+          "contact_id",
+          "contact_created",
+          "funnel",
+          "tags",
+          "notes",
+          "custom_fields",
+          "send",
+          "warnings"
+        ],
+        "properties": {
+          "contact_id": { "type": "string", "format": "uuid" },
+          "contact_created": {
+            "type": "boolean",
+            "description": "True if `phone` didn't match an existing contact."
+          },
+          "funnel": { "$ref": "#/components/schemas/IngestFunnelRef" },
+          "tags": {
+            "type": "object",
+            "required": ["linked", "created"],
+            "properties": {
+              "linked": {
+                "type": "integer",
+                "description": "Requested tags that already existed on the account."
+              },
+              "created": {
+                "type": "integer",
+                "description": "Requested tags that were newly created."
+              }
+            }
+          },
+          "notes": {
+            "type": "object",
+            "required": ["inserted"],
+            "properties": { "inserted": { "type": "integer" } }
+          },
+          "custom_fields": {
+            "type": "object",
+            "required": ["matched", "skipped"],
+            "properties": {
+              "matched": { "type": "integer" },
+              "skipped": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Field names that had no match (or an ambiguous one) and were skipped."
+              }
+            }
+          },
+          "send": {
+            "type": "object",
+            "required": ["attempted"],
+            "properties": {
+              "attempted": {
+                "type": "boolean",
+                "description": "True when `template_id` was present and a send was queued — NOT a guarantee it succeeded; see `warnings[]` and the dashboard log for the outcome."
+              },
+              "template_id": { "type": "string", "format": "uuid" }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IngestWarning" }
+          }
+        }
+      }
+    }
+  }
+}

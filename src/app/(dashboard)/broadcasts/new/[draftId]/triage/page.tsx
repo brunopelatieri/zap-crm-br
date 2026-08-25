@@ -39,9 +39,12 @@ import { useMessagingLimit } from '@/components/broadcasts/messaging-limit-provi
 import { AudienceTriageTable } from '@/components/broadcasts/audience/triage/audience-triage-table';
 import { TriageToolbar } from '@/components/broadcasts/audience/triage/triage-toolbar';
 import { EngagementDashboard } from '@/components/broadcasts/audience/triage/engagement-dashboard';
+import { StageSummaryBanner } from '@/components/broadcasts/audience/triage/data-save-notice';
 import { estimateAudience } from '@/lib/audience/estimate';
 import { excludesOptedOut } from '@/lib/contacts/consent';
 import type { TriageFilter } from '@/lib/audience/triage';
+import { takeStageSummary } from '@/lib/audience/stage-summary-storage';
+import type { StageAudienceSummary } from '@/lib/audience/stage';
 
 /** Debounce da busca — evita uma RPC por tecla digitada. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -78,6 +81,17 @@ export default function AudienceTriagePage() {
   const [selectedCount, setSelectedCount] = useState<number | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+
+  // SPEC 057 F6 — projeção D-7 recebida do passo 2 via sessionStorage
+  // (ver o cabeçalho de `stage-summary-storage.ts`). `null` quando a
+  // triagem foi aberta direto por link/reload: o aviso simplesmente não
+  // aparece, nada quebra.
+  const [stageSummary, setStageSummary] = useState<StageAudienceSummary | null>(
+    null
+  );
+  useEffect(() => {
+    setStageSummary(takeStageSummary(draftId));
+  }, [draftId]);
 
   // Busca com debounce — o filtro muda a lista imediatamente, mas
   // digitar não deve disparar uma RPC por tecla.
@@ -268,6 +282,8 @@ export default function AudienceTriagePage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      <StageSummaryBanner summary={stageSummary} />
 
       <EngagementDashboard draftId={draftId} search={search} filter={filter} />
 

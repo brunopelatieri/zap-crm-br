@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Channel } from './types';
 
@@ -78,11 +78,23 @@ export function useAccountChannels(): AccountChannels {
     };
   }, []);
 
-  return {
-    byId: new Map((channels ?? []).map((c) => [c.id, c])),
-    count: channels?.length ?? 0,
-    loading: channels === null,
-  };
+  // Memoizado por `channels` (SPEC 056): sem isto, todo chamador recebe
+  // um objeto NOVO — Map e tudo — a cada render. Inofensivo para quem só
+  // lê no corpo do render, mas qualquer `useEffect`/`useCallback` que
+  // dependa do objeto inteiro (não de `count`/`loading` isolados) refaz
+  // a cada render, dispara `setState`, re-renderiza, gera outro objeto
+  // novo — loop infinito. Foi exatamente o que travou o diálogo de
+  // transferência (`use-transfer-channels.ts`) em "Verificando canais
+  // disponíveis…" para sempre, com o toast de erro reaparecendo em
+  // segundo plano.
+  return useMemo(
+    () => ({
+      byId: new Map((channels ?? []).map((c) => [c.id, c])),
+      count: channels?.length ?? 0,
+      loading: channels === null,
+    }),
+    [channels]
+  );
 }
 
 /**

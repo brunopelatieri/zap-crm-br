@@ -31,6 +31,7 @@ import type {
 } from '@/lib/audience/estimate';
 import { toCsvContacts } from '@/lib/audience/normalize';
 import type { NormalizedAudience } from '@/lib/audience/types';
+import { saveStageSummary } from '@/lib/audience/stage-summary-storage';
 
 /**
  * Fonte visível na UI (§3.1), mais estreita que `AudienceConfig['type']`:
@@ -364,6 +365,12 @@ export function Step2SelectAudience({
       if (typeof data?.draftId !== 'string') {
         toast.error(tStageError('internal'));
         return;
+      }
+
+      if (data.summary) {
+        // SPEC 057 F6 — a triagem lê isto para o aviso "estes contatos
+        // serão salvos" (projeção D-7, nunca escrita aqui).
+        saveStageSummary(data.draftId, data.summary);
       }
 
       router.push(`/broadcasts/new/${data.draftId}/triage`);

@@ -1,6 +1,27 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+/**
+ * `recordColdSend` escala pra supabaseAdmin() internamente (062: só
+ * service_role escreve em channel_cold_sends) — este mock intercepta
+ * essa chamada. `throwOnCall` simula o modo de falha que o try/catch
+ * de dentro de `recordColdSend` existe pra cobrir: a CONSTRUÇÃO do
+ * cliente falhando (env var de service-role ausente nesta instância),
+ * não só o INSERT devolvendo `{error}`.
+ */
+const adminState: { client: unknown; throwOnCall: boolean } = {
+  client: undefined,
+  throwOnCall: false,
+};
+vi.mock('@/lib/supabase/admin', () => ({
+  supabaseAdmin: () => {
+    if (adminState.throwOnCall) {
+      throw new Error('supabaseUrl is required.');
+    }
+    return adminState.client;
+  },
+}));
+
 import {
   checkColdSend,
   recordColdSend,
@@ -18,6 +39,8 @@ const ENV_KEYS = [
 
 beforeEach(() => {
   for (const k of ENV_KEYS) delete process.env[k];
+  adminState.throwOnCall = false;
+  adminState.client = undefined;
 });
 
 /**
@@ -141,10 +164,11 @@ describe('checkColdSend', () => {
 });
 
 describe('recordColdSend', () => {
-  it('grava channel_id, account_id, contact_id e origin', async () => {
+  it('grava channel_id, account_id, contact_id e origin — via supabaseAdmin(), nunca um db passado', async () => {
     const { client, inserts } = makeDb([{ data: null, error: null }]);
+    adminState.client = client;
 
-    await recordColdSend(client, {
+    await recordColdSend({
       channelId: 'chan-qr',
       accountId: 'acct-1',
       contactId: 'contact-1',
@@ -166,14 +190,34 @@ describe('recordColdSend', () => {
 
   it('falha de INSERT não lança — a mensagem já saiu, perder a linha só subconta', async () => {
     const { client } = makeDb([{ error: { message: 'boom' } }]);
+    adminState.client = client;
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await expect(
-      recordColdSend(client, {
+      recordColdSend({
         channelId: 'chan-qr',
         accountId: 'acct-1',
         contactId: null,
         origin: 'engine',
+      })
+    ).resolves.toBeUndefined();
+  });
+
+  it('supabaseAdmin() lançando na CONSTRUÇÃO (env var de service-role ausente) também não propaga', async () => {
+    // Regressão: até esta correção, o call site fazia `recordColdSend(
+    // supabaseAdmin(), ...)` sem try/catch — se `createClient()` lançasse
+    // (URL/chave ausente), o erro escapava e transformava uma mensagem já
+    // ENTREGUE num 500 pro chamador. O try/catch agora mora aqui dentro,
+    // onde a função sabe que a escrita é sempre best-effort.
+    adminState.throwOnCall = true;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(
+      recordColdSend({
+        channelId: 'chan-qr',
+        accountId: 'acct-1',
+        contactId: null,
+        origin: 'human',
       })
     ).resolves.toBeUndefined();
   });

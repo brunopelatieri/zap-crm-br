@@ -27,8 +27,8 @@ import { COLD_SEND_DEFAULTS } from '@/lib/channels/cold-send-limit';
 // `lib/channels/send.ts`, que recebe este mesmo `db` como parâmetro.
 // ------------------------------------------------------------
 
-const h = vi.hoisted(() => ({
-  state: {
+const h = vi.hoisted(() => {
+  const state = {
     /** Linha de `contacts` (dono + telefone + consentimento). */
     contact: null as Record<string, unknown> | null,
     /** Linha de `conversations` lida pelo guard e pelo teto de envio frio. */
@@ -49,11 +49,7 @@ const h = vi.hoisted(() => ({
     }[],
     /** `steps_executed` de cada `update` em `automation_logs`. */
     logUpdates: [] as Record<string, unknown>[],
-  },
-}));
-
-vi.mock('./admin-client', () => {
-  const { state } = h;
+  };
 
   function resolve(ops: {
     table: string;
@@ -163,8 +159,18 @@ vi.mock('./admin-client', () => {
     rpc: () => Promise.resolve({ error: null }),
   };
 
-  return { supabaseAdmin: () => client };
+  return { state, client };
 });
+
+vi.mock('./admin-client', () => ({ supabaseAdmin: () => h.client }));
+
+// `sendAndPersistOutbound` (lib/channels/send.ts) grava o consumo de
+// envio frio direto por `@/lib/supabase/admin` (062: só service_role
+// pode escrever em channel_cold_sends — nunca o `db` que recebe como
+// parâmetro). Precisa do MESMO client de mentira do mock acima, senão a
+// gravação tenta abrir uma conexão Supabase real e o passo do motor
+// falha silenciosamente com "supabaseUrl is required".
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => h.client }));
 
 // A instância da Evolution: o token vem daqui, NUNCA de `whatsapp_config`.
 const resolveInstanceByChannelId = vi.fn();

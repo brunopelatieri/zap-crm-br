@@ -26,6 +26,7 @@ describe('readEvolutionConfig', () => {
       instancePrefix: 'zapcrm',
       webhookPublicUrl: null,
       requestTimeoutMs: 15_000,
+      mediaRequestTimeoutMs: 60_000,
     });
   });
 
@@ -76,13 +77,24 @@ describe('readEvolutionConfig', () => {
       EVOLUTION_MAX_INSTANCES_TOTAL: '50',
       EVOLUTION_INSTANCE_PREFIX: 'myapp',
       EVOLUTION_REQUEST_TIMEOUT_MS: '30000',
+      EVOLUTION_MEDIA_REQUEST_TIMEOUT_MS: '90000',
     });
     expect(config).toMatchObject({
       maxInstancesPerAccount: 5,
       maxInstancesTotal: 50,
       instancePrefix: 'myapp',
       requestTimeoutMs: 30_000,
+      mediaRequestTimeoutMs: 90_000,
     });
+  });
+
+  it('EVOLUTION_MEDIA_REQUEST_TIMEOUT_MS inválido cai no padrão de 60s', () => {
+    const config = readEvolutionConfig({
+      EVOLUTION_API_URL: 'https://evo.example.com',
+      EVOLUTION_GLOBAL_API_KEY: 'secret',
+      EVOLUTION_MEDIA_REQUEST_TIMEOUT_MS: 'abc',
+    });
+    expect(config?.mediaRequestTimeoutMs).toBe(60_000);
   });
 });
 

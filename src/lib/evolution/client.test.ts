@@ -16,6 +16,7 @@ const config: EvolutionConfig = {
   instancePrefix: 'zapcrm',
   webhookPublicUrl: null,
   requestTimeoutMs: 15_000,
+  mediaRequestTimeoutMs: 60_000,
 };
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -107,6 +108,33 @@ describe('evolutionRequest', () => {
     await expect(
       evolutionRequest(config, '/instance/status', { key: 'token-abc' })
     ).rejects.toMatchObject({ kind: 'channel_unavailable', status: 500 });
+  });
+
+  it('usa timeoutMs da chamada em vez de requestTimeoutMs quando informado (SPEC: envio de vídeo pela Evolution abortando em 15s)', async () => {
+    const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: {} }));
+
+    await evolutionRequest(config, '/send/media', {
+      method: 'POST',
+      key: 'token-abc',
+      timeoutMs: 90_000,
+    });
+
+    const delays = setTimeoutSpy.mock.calls.map((call) => call[1]);
+    expect(delays).toContain(90_000);
+    expect(delays).not.toContain(config.requestTimeoutMs);
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('sem timeoutMs, usa requestTimeoutMs do config', async () => {
+    const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: {} }));
+
+    await evolutionRequest(config, '/instance/status', { key: 'token-abc' });
+
+    const delays = setTimeoutSpy.mock.calls.map((call) => call[1]);
+    expect(delays).toContain(config.requestTimeoutMs);
+    setTimeoutSpy.mockRestore();
   });
 
   it('falha de rede (fetch rejeita) mapeia para channel_unavailable com status 0', async () => {

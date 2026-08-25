@@ -39,7 +39,7 @@ function makeDb(overrides: {
     const tableConfig = overrides.from?.[table] ?? { data: [], count: 0 };
     const b: Record<string, unknown> = {};
     const chain = () => b;
-    for (const m of ['select', 'eq', 'gte', 'lt', 'order', 'limit']) {
+    for (const m of ['select', 'eq', 'neq', 'gte', 'lt', 'order', 'limit']) {
       b[m] = vi.fn(chain);
     }
     b.then = (resolve: (v: unknown) => unknown) =>

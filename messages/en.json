@@ -22,7 +22,8 @@
     "errorInvalidEmail": "This email is invalid or cannot be used.",
     "errorSignupDisabled": "This feature is temporarily unavailable. Please try again later.",
     "errorGeneric": "We couldn't sign you in right now. Please try again shortly or contact support.",
-    "errorCallbackFailed": "This link has expired or was already used. Please request a new password reset link."
+    "errorCallbackFailed": "This link has expired or was already used. Please request a new password reset link.",
+    "errorLinkExpired": "This link has expired or was already used. Please request a new password reset link."
   },
   "SignupPage": {
     "title": "Create account",
@@ -34,7 +35,7 @@
     "emailLabel": "Email",
     "emailPlaceholder": "you@example.com",
     "passwordLabel": "Password",
-    "passwordPlaceholder": "At least 6 characters",
+    "passwordPlaceholder": "At least 8 characters",
     "confirmPasswordLabel": "Confirm password",
     "confirmPasswordPlaceholder": "Repeat your password",
     "createAccount": "Create account",
@@ -42,7 +43,7 @@
     "haveAccount": "Already have an account?",
     "signIn": "Sign in",
     "passwordsMismatch": "Passwords do not match",
-    "passwordTooShort": "Password must be at least 6 characters",
+    "errorPasswordPolicy": "Your password doesn't meet all the requirements above.",
     "errorUserExists": "An account with this email already exists. Try signing in or resetting your password.",
     "errorWeakPassword": "This password is too weak. Please choose a stronger one.",
     "errorInvalidEmail": "This email is invalid or cannot be used.",
@@ -51,6 +52,7 @@
     "errorInvalidCredentials": "Invalid email or password.",
     "errorUserBanned": "This account is temporarily blocked. Please contact support.",
     "errorEmailNotConfirmed": "Please confirm your email before continuing. Check your inbox.",
+    "errorLinkExpired": "This link has expired or was already used. Please request a new one.",
     "errorGeneric": "We couldn't create your account right now. Please try again shortly or contact support.",
     "successTitle": "Check your email",
     "successDesc": "We've sent a confirmation link to <highlight>{email}</highlight>. Please check your inbox and click the link to verify your account.",
@@ -71,13 +73,13 @@
     "title": "Set your new password",
     "desc": "Choose a new password for your account",
     "passwordLabel": "New password",
-    "passwordPlaceholder": "At least 6 characters",
+    "passwordPlaceholder": "At least 8 characters",
     "confirmPasswordLabel": "Confirm new password",
     "confirmPasswordPlaceholder": "Repeat the new password",
     "savePassword": "Save new password",
     "saving": "Saving...",
     "passwordsMismatch": "Passwords do not match",
-    "passwordTooShort": "Password must be at least 6 characters",
+    "errorPasswordPolicy": "Your password doesn't meet all the requirements above.",
     "errorWeakPassword": "This password is too weak. Please choose a stronger one.",
     "errorRateLimit": "Too many attempts in a short time. Please wait a few minutes and try again.",
     "errorUserBanned": "This account is temporarily blocked. Please contact support.",
@@ -86,10 +88,39 @@
     "errorInvalidEmail": "This email is invalid or cannot be used.",
     "errorUserExists": "An account with this email already exists.",
     "errorSignupDisabled": "This feature is temporarily unavailable. Please try again later.",
+    "errorLinkExpired": "This link has expired or was already used. Please request a new password reset link.",
     "errorGeneric": "We couldn't save your new password right now. Please request a new link and try again.",
     "successTitle": "Password reset",
     "successDesc": "Your password has been changed successfully. Please sign in again with your new password.",
     "goToSignIn": "Go to sign in"
+  },
+  "AuthConfirmPage": {
+    "title": "Confirm password reset",
+    "desc": "Click the button below to continue. This extra step keeps email security scanners from using up your link before you do.",
+    "confirmButton": "Reset password",
+    "confirming": "Confirming...",
+    "errorInvalidLink": "This link is invalid. Please request a new password reset link.",
+    "errorLinkExpired": "This link has expired or was already used. Please request a new password reset link.",
+    "errorRateLimit": "Too many attempts in a short time. Please wait a few minutes and try again.",
+    "errorUserExists": "An account with this email already exists.",
+    "errorWeakPassword": "This password is too weak. Please choose a stronger one.",
+    "errorInvalidEmail": "This email is invalid or cannot be used.",
+    "errorSignupDisabled": "This feature is temporarily unavailable. Please try again later.",
+    "errorInvalidCredentials": "We couldn't verify your identity. Please request a new reset link.",
+    "errorUserBanned": "This account is temporarily blocked. Please contact support.",
+    "errorEmailNotConfirmed": "Please confirm your email before continuing. Check your inbox.",
+    "errorGeneric": "We couldn't confirm this link. Please request a new password reset link.",
+    "requestNewLink": "Request a new link"
+  },
+  "PasswordPolicy": {
+    "strengthLabel": "Password strength",
+    "ruleMinLength": "At least {min} characters",
+    "ruleUppercase": "One uppercase letter",
+    "ruleLowercase": "One lowercase letter",
+    "ruleNumber": "One number",
+    "ruleSpecialChar": "One special character ({chars})",
+    "ruleTooLong": "This password is too long — please use fewer characters.",
+    "ruleControlChars": "This password contains an invalid character — try retyping it instead of pasting."
   },
   "JoinPage": {
     "verifying": "Verifying invitation…",
@@ -396,13 +427,15 @@
       "quickReplySaved": "Saved as a quick reply.",
       "quickReplySaveError": "Couldn't save the quick reply.",
       "audioAsAttachmentHint": "In this channel, audio arrives as an attachment, not a voice message.",
-      "quickRepliesAvailable": "{shown} of {total} available in this channel"
+      "quickRepliesAvailable": "{shown} of {total} available in this channel",
+      "transferChannel": "Continue on another channel"
     },
     "bubble": {
       "photo": "Photo",
       "video": "Video",
       "audio": "Audio",
       "unavailable": "{label} unavailable",
+      "expired": "{label} is no longer available",
       "document": "Document",
       "locationShared": "Location shared",
       "template": "Template",
@@ -412,6 +445,8 @@
       "aiBadge": "AI",
       "aiBadgeTitle": "Sent automatically by the AI assistant",
       "channelBadgeTitle": "Delivered via {channel} — a different channel than the one this conversation normally uses",
+      "broadcastOrigin": "Campaign: {name}",
+      "broadcastOriginDate": "Sent on {date}",
       "bot": "Automation",
       "customerFallback": "Customer",
       "download": "Download",
@@ -473,7 +508,27 @@
       "unknownChannel": "Unknown channel",
       "siblingMessageCount": "{count} messages",
       "siblingLastMessage": "last {time}",
-      "openThread": "Open"
+      "openThread": "Open",
+      "noThreadYet": "No conversation yet on this channel",
+      "speakOnThisChannel": "Speak on this channel"
+    },
+    "transferChannel": {
+      "title": "Continue on another channel",
+      "explanation": "The contact will receive this from the number below, and the conversation continues there — replies come back on that same channel.",
+      "loadingChannels": "Checking available channels…",
+      "noEligibleChannel": "No channel can receive this conversation right now.",
+      "windowClosedHint": "24h window closed — free-form messages would be rejected here. Send a template instead, or wait for the contact to write to this number.",
+      "riskWarning": "This is a non-official number the contact hasn't seen before. Use this only to re-engage someone who's gone quiet — it counts toward this instance's cold-send limit.",
+      "selectionBecameUnavailable": "The channel you picked is no longer available — choose another one below.",
+      "messagePlaceholder": "Type the message to send from this channel…",
+      "cancel": "Cancel",
+      "confirm": "Send and continue there",
+      "sent": "Sent via {channel} — conversation moved there.",
+      "networkError": "Couldn't reach the server.",
+      "errorOptedOut": "This contact opted out — reaching them from another number isn't allowed.",
+      "errorWindowClosed": "That channel's 24h window is closed — a free-form message would be rejected.",
+      "errorNotConnected": "That channel isn't connected right now.",
+      "errorGeneric": "Couldn't transfer this conversation."
     },
     "tagPicker": {
       "title": "Tags for {name}",
@@ -626,6 +681,7 @@
       "contactDetailsDesc": "Contact details",
       "phone": "Phone",
       "email": "Email",
+      "nameLabel": "Name",
       "company": "Company",
       "createdAt": "Created At",
       "customFields": "Custom Fields",
@@ -1082,11 +1138,27 @@
       "sending": "Sending",
       "sent": "Sent",
       "failed": "Failed",
+      "streaming": "Streaming",
       "pending": "Pending",
       "delivered": "Delivered",
       "read": "Read",
       "replied": "Replied",
       "unknown": "Unknown"
+    },
+    "sourceFilter": {
+      "campaigns": "Campaigns",
+      "webhooks": "Webhook funnels",
+      "noneYet": "No webhook funnels yet",
+      "noneYetHint": "A funnel appears here the first time POST /api/v1/ingest/contact is called with a new webhook_id.",
+      "webhookId": "Webhook ID",
+      "ingested": "Ingested",
+      "recipientsSent": "Sent"
+    },
+    "webhookFunnel": {
+      "copyId": "Copy webhook_id",
+      "idCopied": "webhook_id copied",
+      "viewLog": "View log",
+      "recipientsNote": "This funnel is accumulative: \"Sent\" counts every send attempt for this webhook_id over time, not distinct people — the same contact can be reached again in a later request."
     },
     "detail": {
       "backToBroadcasts": "Back to Broadcasts",
@@ -1099,6 +1171,7 @@
       "deleting": "Deleting…",
       "delete": "Delete",
       "cannotDeleteSending": "Cannot delete while a broadcast is actively sending",
+      "cannotDeleteStreaming": "Cannot delete a webhook funnel while it may have a send in flight",
       "deleteHover": "Delete this broadcast",
       "funnel": "Funnel",
       "recipientsHeader": "Recipients ({filtered} of {total})",
@@ -1147,6 +1220,137 @@
           "pValue": "p-value"
         },
         "deleteCascade": "Deleting variant A deletes the whole test, variant B included. Confirm?"
+      },
+      "metaErrorCategories": {
+        "delivery_restriction": "Delivery & recipient restrictions",
+        "rate_limit": "Rate limits & spam",
+        "payload_media": "Payload, templates & media",
+        "account_auth": "Account, auth & billing",
+        "internal": "Meta internal errors"
+      },
+      "metaErrorCode": "Code",
+      "metaErrorAction": "Recommended action",
+      "metaErrors": {
+        "131026": {
+          "title": "Message undeliverable",
+          "description": "The recipient's number isn't on WhatsApp, hasn't accepted Meta's current Terms of Service, or is running an unsupported app version.",
+          "action": "Mark the number as invalid and don't retry."
+        },
+        "131047": {
+          "title": "24-hour window closed",
+          "description": "More than 24 hours have passed since the contact's last message, so a free-form message can no longer be sent.",
+          "action": "Use an approved template to reopen the conversation window."
+        },
+        "131049": {
+          "title": "Message blocked to maintain ecosystem integrity",
+          "description": "Meta's anti-spam heuristics blocked this send to protect platform quality.",
+          "action": "Wait 24 hours before retrying and reduce the volume of bulk sends."
+        },
+        "131050": {
+          "title": "Recipient opted out",
+          "description": "The recipient clicked \"Stop promotions\" on a previous marketing template.",
+          "action": "Block automated sends to this number going forward."
+        },
+        "130472": {
+          "title": "User's number is part of an experiment",
+          "description": "This recipient is part of Meta's global test pool (about 1% of numbers).",
+          "action": "None — this is a temporary block imposed by Meta, not an account issue."
+        },
+        "130497": {
+          "title": "Country not allowed",
+          "description": "This WABA isn't authorized to message the recipient's country or region.",
+          "action": "Review the regional settings in Meta Business Manager."
+        },
+        "131021": {
+          "title": "Recipient is the sender",
+          "description": "The message was addressed to the same number that's sending it.",
+          "action": "Fix the routing logic that built this request."
+        },
+        "131060": {
+          "title": "Message temporarily unavailable",
+          "description": "An unspecified, temporary delivery failure on Meta's side.",
+          "action": "Wait 5–10 minutes and retry."
+        },
+        "130429": {
+          "title": "Rate limit exceeded",
+          "description": "The Cloud API's throughput limit (messages per second) was exceeded.",
+          "action": "Add exponential backoff to the send queue."
+        },
+        "131048": {
+          "title": "Spam rate limit",
+          "description": "This WABA received too many user blocks, or exceeded its daily messaging tier.",
+          "action": "Pause cold campaigns and review contact list quality."
+        },
+        "131056": {
+          "title": "Too many messages to the same recipient",
+          "description": "Several messages were sent to the same user in a very short time span.",
+          "action": "Add delays between consecutive automated messages to the same contact."
+        },
+        "80007": {
+          "title": "Too many API calls",
+          "description": "App-level or WABA-level call limits on the Graph API were reached.",
+          "action": "Slow down the overall request rate."
+        },
+        "100": {
+          "title": "Invalid parameter",
+          "description": "A field in the request JSON is incorrect, malformed, or doesn't exist in the API.",
+          "action": "Review the request structure (stray quotes, wrong keys, etc.)."
+        },
+        "131008": {
+          "title": "Required parameter missing",
+          "description": "A required field for this message type is missing from the request body.",
+          "action": "Validate inputs before building the request."
+        },
+        "131051": {
+          "title": "Unsupported message type",
+          "description": "This message type (e.g. sticker, an unsupported location variant) isn't supported by this endpoint.",
+          "action": "Check Meta's reference for supported message types."
+        },
+        "131053": {
+          "title": "Media upload error",
+          "description": "The file exceeds Meta's size limits or has an invalid MIME type.",
+          "action": "Validate the MIME type and compress media before uploading."
+        },
+        "131052": {
+          "title": "Media download error",
+          "description": "Meta couldn't download the media from the external link provided.",
+          "action": "Make sure the URL is public and doesn't require authentication."
+        },
+        "132000": {
+          "title": "Template send error",
+          "description": "The template is paused or rejected, a variable is missing, or the wrong language was used.",
+          "action": "Sync template status (Approved/Paused/Rejected) daily and re-check the variables sent."
+        },
+        "190": {
+          "title": "Access token expired",
+          "description": "The access token (Bearer) has expired or was invalidated in Meta for Developers.",
+          "action": "Renew or replace the permanent access token."
+        },
+        "131005": {
+          "title": "Permission denied",
+          "description": "The current token doesn't have the required scopes (e.g. whatsapp_business_messaging).",
+          "action": "Review the scopes in the Access Token Debugger."
+        },
+        "131042": {
+          "title": "Payment issue",
+          "description": "Billing failure: card declined, insufficient funds, or credit limit reached.",
+          "action": "Resolve billing immediately in Meta Business Manager."
+        },
+        "131031": {
+          "title": "Account locked",
+          "description": "The WABA is temporarily locked pending security checks.",
+          "action": "Resolve directly in WhatsApp Manager."
+        },
+        "130403": {
+          "title": "Business blocked",
+          "description": "The number was banned for a severe violation of Meta's Commerce Policies.",
+          "action": "File an appeal through the Meta panel."
+        },
+        "131000": {
+          "title": "Something went wrong",
+          "description": "Instability on Meta's servers or an internal Graph API error.",
+          "action": "Retry automatically with controlled attempts."
+        }
       }
     },
     "new": {
@@ -1501,7 +1705,13 @@
         "consentFilters": "Consent",
         "removeOptedOut": "Remove opted out",
         "removeCooldown": "Remove those in cooldown",
-        "overrideCooldown": "Include those in cooldown"
+        "overrideCooldown": "Include those in cooldown",
+        "dataSaveNotice": {
+          "contactsWillBeSaved": "{count} contacts will be saved to your contact list when you send.",
+          "tagsWillBeCreated": "{count} new tags will be created: {names}.",
+          "tagsSkippedNoPermission": "You don't have permission to create tags. These will be skipped: {names}",
+          "repliesWillShowCampaign": "When contacts reply, the conversation will show this campaign."
+        }
       },
       "consent": {
         "excludedFromMarketing": "Contacts who asked to stop receiving marketing are already excluded from this count."
@@ -2664,7 +2874,8 @@
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",
-      "api": "API keys"
+      "api": "API keys",
+      "webhook-log": "Webhook log"
     },
     "groups": {
       "account": "Account",
@@ -2706,7 +2917,7 @@
       "updating": "Updating…",
       "updatePassword": "Update password",
       "cannotChangeNoEmail": "Cannot change password without a current email",
-      "passwordTooShort": "Password must be at least {min} characters",
+      "passwordPolicyNotMet": "Your new password doesn't meet all the requirements above.",
       "passwordMismatch": "New password and confirmation do not match",
       "currentPasswordIncorrect": "Current password is incorrect",
       "passwordUpdateFailed": "Password update failed: {message}",
@@ -2795,6 +3006,44 @@
       "accountScopeWarning": "A key sees <bold>every conversation in the account</bold>, including threads assigned to other agents — it is not equivalent to an agent user. Treat it as an administrator credential, and issue one key per integration so you can revoke it in isolation.",
       "done": "Done",
       "networkError": "Could not reach the server"
+    },
+    "webhookLog": {
+      "title": "Webhook log",
+      "description": "Only failed or partial inbound-webhook requests (POST /api/v1/ingest/contact) show up here — successful sends live in the funnel under Broadcasts. A request rejected for a missing or invalid API key never appears here either, since there is no account to attach it to.",
+      "clear": "Clear log",
+      "clearConfirmTitle": "Clear the webhook log?",
+      "clearConfirmDescription": "This permanently deletes every entry in this account's webhook log. It does not affect any contact, tag, or broadcast that was already created.",
+      "clearSuccess": "Webhook log cleared",
+      "clearFailed": "Failed to clear the webhook log",
+      "cancel": "Cancel",
+      "loadFailed": "Failed to load the webhook log",
+      "networkError": "Could not reach the server",
+      "levelAll": "All levels",
+      "levelError": "Errors",
+      "levelWarning": "Warnings",
+      "webhookAll": "All webhooks",
+      "unnamedWebhook": "Unnamed webhook",
+      "noWebhook": "No webhook_id/webhook_name (validation of those fields itself failed)",
+      "viewPayload": "View payload",
+      "payloadTitle": "Request payload",
+      "payloadWarning": "This is the raw request body — it may contain personal data (name, phone, notes). Truncated at 8 KB.",
+      "loadMore": "Load more",
+      "empty": "No failures or warnings yet.",
+      "codes": {
+        "bad_request": "Malformed request body",
+        "invalid_webhook_id": "Invalid webhook_id",
+        "invalid_webhook_name": "Invalid webhook_name",
+        "invalid_phone": "Invalid phone number",
+        "template_not_found": "Template not found",
+        "template_not_approved": "Template not approved",
+        "channel_not_capable": "Channel cannot send this",
+        "send_failed": "Send failed",
+        "custom_field_not_found": "Custom field not found",
+        "custom_field_ambiguous": "Custom field name is ambiguous",
+        "custom_fields_malformed": "custom_fields has the wrong shape",
+        "note_empty": "Empty note skipped",
+        "payload_truncated": "Payload over 8 KB, truncated"
+      }
     },
     "deals": {
       "title": "Deals & currency",

@@ -53,6 +53,22 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 }));
 
 /**
+ * `getMediaUrl`/`downloadMedia` reais fariam chamada de rede à Meta.
+ * Cada teste de mídia ajusta o resolve/reject conforme o cenário.
+ */
+const getMediaUrl = vi.fn();
+const downloadMedia = vi.fn();
+vi.mock('@/lib/whatsapp/meta-api', () => ({
+  getMediaUrl: (...args: unknown[]) => getMediaUrl(...args),
+  downloadMedia: (...args: unknown[]) => downloadMedia(...args),
+}));
+
+/** Resultado do `.storage.from('chat-media').upload(...)` dentro do webhook. */
+let storageUploadResult: { error: { message: string } | null } = {
+  error: null,
+};
+
+/**
  * Linha de `messages` que `handleStatusUpdate` (SPEC 049 §5.5) lê para
  * resolver conta + canal do evento `message.status_updated`. `null`
  * por padrão — a maioria dos testes deste arquivo não passa por ali.
@@ -72,6 +88,11 @@ let statusMessageRow: {
 // `handleStatusUpdate` (não mockado) os lê de verdade.
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
+    storage: {
+      from: () => ({
+        upload: () => Promise.resolve(storageUploadResult),
+      }),
+    },
     from: (table: string) => {
       if (table === 'messages') {
         // Two different call shapes hit `messages` inside
@@ -169,8 +190,49 @@ beforeEach(() => {
   ingestInbound.mockResolvedValue(undefined);
   dispatchWebhookEvent.mockResolvedValue(undefined);
   statusMessageRow = null;
+  storageUploadResult = { error: null };
+  getMediaUrl.mockResolvedValue({
+    url: 'https://cdn.meta.example/media-1',
+    mimeType: 'image/jpeg',
+  });
+  downloadMedia.mockResolvedValue({
+    buffer: Buffer.from('fake-bytes'),
+    contentType: 'image/jpeg',
+  });
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
+
+function imageRequest(): Request {
+  return request({
+    entry: [
+      {
+        id: 'entry-1',
+        changes: [
+          {
+            field: 'messages',
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: '+551130000000',
+                phone_number_id: 'pnid-1',
+              },
+              contacts: [{ profile: { name: 'Ana' }, wa_id: '5511999999999' }],
+              messages: [
+                {
+                  id: 'wamid.2',
+                  from: '5511999999999',
+                  timestamp: '1786000000',
+                  type: 'image',
+                  image: { id: 'media-1', mime_type: 'image/jpeg' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  });
+}
 
 function statusRequest(status: {
   id: string;
@@ -262,6 +324,72 @@ describe('POST /api/whatsapp/webhook — ack e processamento', () => {
 
     expect(res.status).toBe(401);
     expect(afterCallbacks).toHaveLength(0);
+  });
+});
+
+describe('mídia recebida — download eager no ingest, não mais só na abertura da conversa', () => {
+  it('baixa o byte e grava media_path; media_url fica null (proxy nunca é chamado)', async () => {
+    await POST(imageRequest());
+    await afterCallbacks[0]!();
+
+    const [, event] = ingestInbound.mock.calls[0] as [
+      unknown,
+      {
+        mediaId: string | null;
+        mediaUrl: string | null;
+        mediaPath: string | null;
+      },
+    ];
+
+    expect(downloadMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        downloadUrl: 'https://cdn.meta.example/media-1',
+      })
+    );
+    expect(event.mediaId).toBe('media-1');
+    expect(event.mediaPath).toMatch(/^account-acct-1\/.+\.jpeg$/);
+    expect(event.mediaUrl).toBeNull();
+  });
+
+  it('upload no bucket falhando cai pro caminho antigo (rota-proxy)', async () => {
+    storageUploadResult = { error: { message: 'bucket indisponível' } };
+
+    await POST(imageRequest());
+    await afterCallbacks[0]!();
+
+    const [, event] = ingestInbound.mock.calls[0] as [
+      unknown,
+      {
+        mediaId: string | null;
+        mediaUrl: string | null;
+        mediaPath: string | null;
+      },
+    ];
+
+    expect(event.mediaId).toBe('media-1');
+    expect(event.mediaPath).toBeNull();
+    expect(event.mediaUrl).toBe('/api/whatsapp/media/media-1');
+  });
+
+  it('mídia que não existe mais na Meta (getMediaUrl falha) não guarda nada', async () => {
+    getMediaUrl.mockRejectedValue(new Error('subcode 33'));
+
+    await POST(imageRequest());
+    await afterCallbacks[0]!();
+
+    const [, event] = ingestInbound.mock.calls[0] as [
+      unknown,
+      {
+        mediaId: string | null;
+        mediaUrl: string | null;
+        mediaPath: string | null;
+      },
+    ];
+
+    expect(downloadMedia).not.toHaveBeenCalled();
+    expect(event.mediaId).toBeNull();
+    expect(event.mediaPath).toBeNull();
+    expect(event.mediaUrl).toBeNull();
   });
 });
 

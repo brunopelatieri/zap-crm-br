@@ -89,14 +89,23 @@ function StatusIcon({
 function MediaUnavailable({
   label,
   t,
+  reason = 'unavailable',
 }: {
   label: string;
   t: ReturnType<typeof useTranslations>;
+  /**
+   * `unavailable` — nunca existiu uma referência de mídia nesta linha
+   * (verificação com a Meta falhou no ingest). `expired` — a referência
+   * existe, mas o fetch falhou: para mídia recebida antes do download
+   * eager (SPEC — ver histórico de 2026-08-18), a Meta já apagou o
+   * arquivo e não há como recuperá-lo.
+   */
+  reason?: 'unavailable' | 'expired';
 }) {
   return (
     <div className="bg-muted/40 text-muted-foreground flex items-center gap-2 rounded-lg px-3 py-2 text-xs">
       <ImageOff className="text-muted-foreground h-4 w-4 shrink-0" />
-      <span>{t('unavailable', { label })}</span>
+      <span>{t(reason, { label })}</span>
     </div>
   );
 }
@@ -138,10 +147,14 @@ function MediaImage({
   url,
   path,
   alt,
+  label,
+  t,
 }: {
   url: string | null | undefined;
   path?: string | null;
   alt: string;
+  label: string;
+  t: ReturnType<typeof useTranslations>;
 }) {
   const { src, loading, error } = useMediaSrc(url, path);
   // Erro do fetch (proxy) e erro de render do <img> (URL pública que
@@ -151,8 +164,8 @@ function MediaImage({
 
   if (error || renderError) {
     return (
-      <div className="bg-muted flex h-40 w-60 items-center justify-center rounded-lg">
-        <ImageOff className="text-muted-foreground h-8 w-8" />
+      <div className="flex h-40 w-60 items-center justify-center">
+        <MediaUnavailable label={label} t={t} reason="expired" />
       </div>
     );
   }
@@ -178,16 +191,20 @@ function MediaImage({
 function MediaVideo({
   url,
   path,
+  label,
+  t,
 }: {
   url: string | null | undefined;
   path?: string | null;
+  label: string;
+  t: ReturnType<typeof useTranslations>;
 }) {
   const { src, loading, error } = useMediaSrc(url, path);
 
   if (error) {
     return (
-      <div className="bg-muted flex h-40 w-60 items-center justify-center rounded-lg">
-        <ImageOff className="text-muted-foreground h-8 w-8" />
+      <div className="flex h-40 w-60 items-center justify-center">
+        <MediaUnavailable label={label} t={t} reason="expired" />
       </div>
     );
   }
@@ -204,13 +221,17 @@ function MediaVideo({
 function MediaAudio({
   url,
   path,
+  label,
+  t,
 }: {
   url: string | null | undefined;
   path?: string | null;
+  label: string;
+  t: ReturnType<typeof useTranslations>;
 }) {
   const { src, loading, error } = useMediaSrc(url, path);
 
-  if (error) return null;
+  if (error) return <MediaUnavailable label={label} t={t} reason="expired" />;
   if (loading || !src) {
     return (
       <div className="bg-muted flex h-10 w-60 items-center justify-center rounded-lg">
@@ -233,12 +254,18 @@ function DocumentLink({
   url,
   path,
   label,
+  t,
 }: {
   url: string | null | undefined;
   path?: string | null;
   label: string;
+  t: ReturnType<typeof useTranslations>;
 }) {
-  const { src } = useMediaSrc(url, path);
+  const { src, error } = useMediaSrc(url, path);
+
+  if (error) {
+    return <MediaUnavailable label={label} t={t} reason="expired" />;
+  }
 
   return (
     <a
@@ -294,6 +321,8 @@ function MessageContent({
                 url={message.media_url}
                 path={message.media_path}
                 alt="Shared image"
+                label={t('photo')}
+                t={t}
               />
               {canDownload && (
                 <DownloadIconButton
@@ -324,7 +353,12 @@ function MessageContent({
         <div>
           {hasUsableMedia(message) ? (
             <div className="relative inline-block">
-              <MediaVideo url={message.media_url} path={message.media_path} />
+              <MediaVideo
+                url={message.media_url}
+                path={message.media_path}
+                label={t('video')}
+                t={t}
+              />
               {/* Botão explícito (não a área toda) — o clique em cima do
                   <video> precisa continuar chegando aos controles nativos
                   (play/pause/seek) sem abrir o lightbox por engano. */}
@@ -368,7 +402,12 @@ function MessageContent({
         <div className="flex items-center gap-2">
           {hasUsableMedia(message) ? (
             <>
-              <MediaAudio url={message.media_url} path={message.media_path} />
+              <MediaAudio
+                url={message.media_url}
+                path={message.media_path}
+                label={t('audio')}
+                t={t}
+              />
               {canDownload && (
                 <DownloadIconButton
                   url={message.media_url}
@@ -406,6 +445,7 @@ function MessageContent({
             url={message.media_url}
             path={message.media_path}
             label={message.content_text || t('document')}
+            t={t}
           />
           {canDownload && (
             <DownloadIconButton
@@ -439,6 +479,29 @@ function MessageContent({
                 {message.content_text}
               </p>
             )
+          )}
+          {message.broadcast_id && (
+            // SPEC 057 F6 — rastreabilidade: esta bolha foi hidratada
+            // retroativamente quando o cliente respondeu a um disparo
+            // (D-4). `message.broadcast` só existe quando o join da
+            // busca de mensagens o trouxe — uma mensagem que chega pelo
+            // canal realtime (INSERT cru do Postgres) nunca carrega o
+            // embed, só as colunas da própria linha. `template_name`
+            // (sempre presente numa mensagem de campanha) é o fallback
+            // até o próximo refetch trazer o embed com o nome real;
+            // `t('template')` só entra se nem isso existir.
+            <p className="text-muted-foreground mt-1 text-[11px]">
+              {t('broadcastOrigin', {
+                name:
+                  message.broadcast?.name ??
+                  message.template_name ??
+                  t('template'),
+              })}
+              {' · '}
+              {t('broadcastOriginDate', {
+                date: format(new Date(message.created_at), 'dd/MM'),
+              })}
+            </p>
           )}
         </div>
       );

@@ -514,7 +514,7 @@ Dispara quando o usuário solicita recuperação de senha.
                 <tr>
                   <td style="border-radius:8px;background-color:#25D366;">
                     <a
-                      href="{{ .ConfirmationURL }}"
+                      href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=%2Freset-password"
                       target="_blank"
                       style="display:inline-block;padding:14px 32px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:8px;"
                     >
@@ -677,7 +677,19 @@ Dispara para confirmar identidade em ações sensíveis. Usa `{{ .Token }}` (OTP
 ## Notas técnicas
 
 - **Fundo transparente no logo:** o arquivo `.webp` já está hospedado com fundo tratado; se precisar trocar por PNG, gere com canal alpha real via Python/Pillow (Nano Banana/Gemini geram alpha "falso").
-- **`{{ .ConfirmationURL }}`** foi mantida como variável principal (igual aos templates originais), pois já resolve o fluxo de verificação do Supabase (`/auth/v1/verify?token=...&type=...&redirect_to=...`). Caso queira uma tela de loading própria antes do redirect, é possível trocar por `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=...` em uma segunda versão.
+- **`{{ .ConfirmationURL }}`** é a variável usada nos outros 5 templates (Confirm signup, Invite
+  user, Magic Link, Change Email Address, Reauthentication) — resolve direto para o
+  `/auth/v1/verify?token=...&type=...&redirect_to=...` do Supabase.
+- **Reset Password é a exceção (SPEC 053 §2.1.3):** o botão aponta para
+  `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=%2Freset-password`
+  — uma página própria do app (`src/app/auth/confirm/page.tsx`) que só chama `verifyOtp()` no
+  clique de um botão, nunca no carregamento da página. Motivo: apontar direto para
+  `.ConfirmationURL` deixa o token de uso único vulnerável a scanners de link de e-mail
+  (Microsoft Defender "Safe Links", proxies corporativos, pré-carregamento de cliente de e-mail)
+  que fazem um `GET` automático no link antes do clique real do usuário, gastando o token e
+  produzindo "Email link is invalid or has expired" mesmo na primeira tentativa genuína. Os
+  outros 5 templates continuam em `.ConfirmationURL` — migrar cada um para o mesmo padrão é
+  trabalho futuro, não desta SPEC.
 - **`{{ .SiteURL }}`** aparece no rodapé de todos os 6 templates como link clicável — reforça credibilidade e é configurável em _Authentication → URL Configuration_.
 - **Compatibilidade:** estrutura 100% `<table>` + CSS inline, testada mentalmente contra Outlook (usa MSO), Gmail (remove `<style>` no `<head>`) e Apple Mail/iOS.
 - **Onde colar cada bloco no Supabase:** Dashboard → _Authentication_ → _Emails_ → selecione o template (_Confirm signup_, _Invite user_, _Magic Link_, _Change Email Address_, _Reset Password_, _Reauthentication_) → aba **Source** → cole o HTML correspondente → **Save**.

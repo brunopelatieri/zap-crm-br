@@ -49,6 +49,7 @@
 import { NextResponse, after } from 'next/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
+import { canEditSettings } from '@/lib/auth/roles';
 import {
   RATE_LIMITS,
   checkRateLimit,
@@ -166,7 +167,10 @@ function parseSchedule(body: Record<string, unknown>): ScheduleRequest | null {
 export async function POST(request: Request) {
   try {
     // Disparar é a mesma ação que enviar mensagem — piso `agent`.
-    const { supabase, userId, accountId } = await requireRole('agent');
+    const { supabase, userId, accountId, role } = await requireRole('agent');
+    // SPEC 057 D-1 — admin+ pode criar etiquetas ausentes da planilha;
+    // demais papéis só vinculam as que já existem (aviso na triagem).
+    const canCreateTags = canEditSettings(role);
 
     // Mesmo balde da rota de disparo antiga: limita quantas campanhas
     // um usuário INICIA por minuto, não quantas mensagens saem em uma.
@@ -320,6 +324,7 @@ export async function POST(request: Request) {
         input,
         variant: abTest.variant,
         splitPercent: abTest.splitPercent,
+        canCreateTags,
       });
 
       await logBroadcastAudit(supabase, {
@@ -391,6 +396,7 @@ export async function POST(request: Request) {
       userId,
       batchLimit,
       input,
+      canCreateTags,
     });
 
     // Trilha antes do fan-out: se o processo morrer no meio do envio, o

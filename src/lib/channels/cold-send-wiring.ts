@@ -30,6 +30,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import {
   readColdSendLimits,
   isColdSend,
@@ -85,26 +86,44 @@ export async function checkColdSend(
  * Grava o consumo. Best-effort: a mensagem já foi entregue quando isto
  * roda — perder a linha subconta a cota, mas fingir que o envio falhou
  * seria o erro pior (mesmo princípio do INSERT em `sendAndPersistOutbound`).
+ *
+ * SEMPRE `supabaseAdmin()`, nunca um `db` de parâmetro: a 062 proíbe
+ * QUALQUER policy de escrita em `channel_cold_sends` (só service_role),
+ * então um `db` de sessão aqui é sempre "new row violates row-level
+ * security policy" — foi exatamente o bug real que chegou em produção
+ * quando os dois chamadores (envio pelo inbox, motor de automações)
+ * passavam o próprio `db`. Escalar AQUI DENTRO, e não em cada call
+ * site, é o que impede um terceiro chamador futuro de repetir o erro.
+ *
+ * O try/catch cobre não só o `.insert()` retornando `{error}` (already
+ * handled abaixo) mas também `supabaseAdmin()` em si podendo LANÇAR na
+ * construção do cliente (ex.: `SUPABASE_SERVICE_ROLE_KEY` ausente nesta
+ * instância) — sem isso, best-effort vira "às vezes propaga", e a
+ * mensagem já entregue voltaria como erro 500 pro chamador.
  */
-export async function recordColdSend(
-  db: SupabaseClient,
-  input: {
-    channelId: string;
-    accountId: string;
-    contactId: string | null;
-    origin: ColdSendOrigin;
-  }
-): Promise<void> {
-  const { error } = await db.from('channel_cold_sends').insert({
-    channel_id: input.channelId,
-    account_id: input.accountId,
-    contact_id: input.contactId,
-    origin: input.origin,
-  });
-  if (error) {
+export async function recordColdSend(input: {
+  channelId: string;
+  accountId: string;
+  contactId: string | null;
+  origin: ColdSendOrigin;
+}): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin().from('channel_cold_sends').insert({
+      channel_id: input.channelId,
+      account_id: input.accountId,
+      contact_id: input.contactId,
+      origin: input.origin,
+    });
+    if (error) {
+      console.error(
+        '[cold-send-wiring] failed to record cold send:',
+        error.message
+      );
+    }
+  } catch (err) {
     console.error(
       '[cold-send-wiring] failed to record cold send:',
-      error.message
+      err instanceof Error ? err.message : err
     );
   }
 }

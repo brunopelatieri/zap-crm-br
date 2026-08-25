@@ -57,11 +57,23 @@ function RateCell({
   );
 }
 
+/**
+ * SPEC 055 D-10 — os dois espaços que `/broadcasts` agora mostra.
+ * `campaigns` é tudo que NÃO é um funil de webhook (`source !==
+ * 'webhook'`): cobre tanto `dashboard` quanto `api`, mesmo que hoje
+ * nada além do webhook de entrada grave `source` explicitamente — o
+ * `DEFAULT 'dashboard'` da migração 065 já cobre as linhas antigas e
+ * qualquer campanha/API futura. `webhooks` é só `source = 'webhook'`.
+ */
+type BroadcastView = 'campaigns' | 'webhooks';
+
 export default function BroadcastsPage() {
   const router = useRouter();
   const t = useTranslations('Broadcasts.page');
   const tStatus = useTranslations('Broadcasts.status');
+  const tSource = useTranslations('Broadcasts.sourceFilter');
   const canCreate = useCan('send-messages');
+  const [view, setView] = useState<BroadcastView>('campaigns');
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,13 +81,18 @@ export default function BroadcastsPage() {
   // Used to kick off polling only while something is actively sending.
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function fetchBroadcasts() {
+  async function fetchBroadcasts(currentView: BroadcastView) {
     try {
       const supabase = createClient();
-      const { data, error: fetchError } = await supabase
-        .from('broadcasts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      let query = supabase.from('broadcasts').select('*');
+      query =
+        currentView === 'webhooks'
+          ? query.eq('source', 'webhook')
+          : query.neq('source', 'webhook');
+
+      const { data, error: fetchError } = await query.order('created_at', {
+        ascending: false,
+      });
 
       if (fetchError) throw fetchError;
       setBroadcasts(data ?? []);
@@ -87,9 +104,14 @@ export default function BroadcastsPage() {
   }
 
   useEffect(() => {
-    fetchBroadcasts();
-  }, []);
+    setLoading(true);
+    void fetchBroadcasts(view);
+  }, [view]);
 
+  // Um funil de webhook fica em 'streaming' para sempre (SPEC 055
+  // D-5) — não é uma transição limitada que valha ficar reconsultando
+  // a cada 5s como uma campanha 'sending' de verdade é. Só o status
+  // real de campanha dispara o polling.
   const anySending = useMemo(
     () => broadcasts.some((b) => b.status === 'sending'),
     [broadcasts]
@@ -98,7 +120,10 @@ export default function BroadcastsPage() {
   useEffect(() => {
     function startPolling() {
       if (pollTimer.current) return;
-      pollTimer.current = setInterval(fetchBroadcasts, POLL_INTERVAL_MS);
+      pollTimer.current = setInterval(
+        () => fetchBroadcasts(view),
+        POLL_INTERVAL_MS
+      );
     }
     function stopPolling() {
       if (!pollTimer.current) return;
@@ -114,7 +139,7 @@ export default function BroadcastsPage() {
       if (document.visibilityState === 'hidden') {
         stopPolling();
       } else {
-        fetchBroadcasts();
+        fetchBroadcasts(view);
         startPolling();
       }
     }
@@ -129,7 +154,7 @@ export default function BroadcastsPage() {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [anySending]);
+  }, [anySending, view]);
 
   if (loading) {
     return (
@@ -196,24 +221,46 @@ export default function BroadcastsPage() {
         </GatedButton>
       </div>
 
+      {/* SPEC 055 D-10 — Campanhas vs. funis de webhook. A primeira
+          campanha de verdade não pode sumir no meio de dezenas de
+          funis de origem, então são duas listas, não uma com filtro. */}
+      <div className="border-border bg-muted inline-flex rounded-lg border p-0.5">
+        {(['campaigns', 'webhooks'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              view === v
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tSource(v === 'campaigns' ? 'campaigns' : 'webhooks')}
+          </button>
+        ))}
+      </div>
+
       {broadcasts.length === 0 ? (
         <div className="border-border bg-card flex h-64 flex-col items-center justify-center rounded-xl border">
           <Radio className="text-muted-foreground mb-3 h-10 w-10" />
           <p className="text-foreground text-sm font-medium">
-            {t('noBroadcastsYet')}
+            {view === 'webhooks' ? tSource('noneYet') : t('noBroadcastsYet')}
           </p>
           <p className="text-muted-foreground mt-1 text-xs">
-            {t('createFirst')}
+            {view === 'webhooks' ? tSource('noneYetHint') : t('createFirst')}
           </p>
-          <GatedButton
-            canAct={canCreate}
-            gateReason="create broadcasts"
-            onClick={() => router.push('/broadcasts/new')}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 mt-4"
-          >
-            <Plus className="h-4 w-4" />
-            {t('newBroadcast')}
-          </GatedButton>
+          {view === 'campaigns' && (
+            <GatedButton
+              canAct={canCreate}
+              gateReason="create broadcasts"
+              onClick={() => router.push('/broadcasts/new')}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 mt-4"
+            >
+              <Plus className="h-4 w-4" />
+              {t('newBroadcast')}
+            </GatedButton>
+          )}
         </div>
       ) : (
         <div className="border-border bg-card overflow-x-auto rounded-xl border">
@@ -224,10 +271,19 @@ export default function BroadcastsPage() {
                   {t('table.name')}
                 </TableHead>
                 <TableHead className="text-muted-foreground hidden md:table-cell">
-                  {t('table.template')}
+                  {view === 'webhooks'
+                    ? tSource('webhookId')
+                    : t('table.template')}
                 </TableHead>
+                {view === 'webhooks' && (
+                  <TableHead className="text-muted-foreground hidden text-right sm:table-cell">
+                    {tSource('ingested')}
+                  </TableHead>
+                )}
                 <TableHead className="text-muted-foreground hidden text-right sm:table-cell">
-                  {t('table.recipients')}
+                  {view === 'webhooks'
+                    ? tSource('recipientsSent')
+                    : t('table.recipients')}
                 </TableHead>
                 <TableHead className="text-muted-foreground hidden lg:table-cell">
                   {t('table.delivery')}
@@ -265,9 +321,16 @@ export default function BroadcastsPage() {
                         )}
                       </span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground hidden md:table-cell">
-                      {broadcast.template_name}
+                    <TableCell className="text-muted-foreground hidden font-mono text-xs md:table-cell">
+                      {view === 'webhooks'
+                        ? broadcast.webhook_id
+                        : broadcast.template_name}
                     </TableCell>
+                    {view === 'webhooks' && (
+                      <TableCell className="text-muted-foreground hidden text-right tabular-nums sm:table-cell">
+                        {broadcast.ingested_count ?? 0}
+                      </TableCell>
+                    )}
                     <TableCell className="text-muted-foreground hidden text-right tabular-nums sm:table-cell">
                       {broadcast.total_recipients}
                     </TableCell>

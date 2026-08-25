@@ -44,6 +44,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse, after } from 'next/server';
 
+import { canEditSettings, type AccountRole } from '@/lib/auth/roles';
 import { logBroadcastAudit } from '@/lib/broadcasts/audit';
 import {
   parseAudienceConfig,
@@ -282,6 +283,21 @@ export async function GET(request: Request) {
         ? quota.snapshot.batchLimit
         : Number.POSITIVE_INFINITY;
 
+      // SPEC 057 D-1 — o cron roda sem sessão (service-role), então o
+      // papel de quem AGENDOU (`row.user_id`) precisa ser lido à mão em
+      // vez de vir de `requireRole`. Sem a linha (perfil apagado, conta
+      // trocada), a regra conservadora vale: sem permissão de criar
+      // etiquetas.
+      const { data: schedulerProfile } = await admin
+        .from('profiles')
+        .select('account_role')
+        .eq('user_id', row.user_id)
+        .eq('account_id', row.account_id)
+        .maybeSingle();
+      const canCreateTags = schedulerProfile
+        ? canEditSettings(schedulerProfile.account_role as AccountRole)
+        : false;
+
       // ── Teste A/B agendado (§6.6) ──────────────────────────────
       // A divisão da audiência acontece AQUI, não no agendamento —
       // mesma razão da decisão 1 do cabeçalho: sortear ontem uma lista
@@ -309,6 +325,7 @@ export async function GET(request: Request) {
             variables: variantVariables,
             headerMediaUrl: abVariant.header_media_url ?? undefined,
           },
+          canCreateTags,
         });
 
         dispatched++;
@@ -372,6 +389,7 @@ export async function GET(request: Request) {
           variables,
           headerMediaUrl: row.header_media_url ?? undefined,
         },
+        canCreateTags,
       });
 
       dispatched++;

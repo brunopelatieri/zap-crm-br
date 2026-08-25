@@ -11,7 +11,7 @@ import {
   SendMessageError,
 } from '@/lib/whatsapp/send-message';
 import { claimConversation } from '@/lib/inbox/assignment';
-import { isUniqueViolation } from '@/lib/contacts/dedupe';
+import { findOrCreateInboxConversation } from '@/lib/inbox/find-or-create-conversation';
 import { resolveDefaultChannelId } from '@/lib/channels/send';
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
@@ -199,7 +199,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const resolved = await findOrCreateConversation(
+      const resolved = await findOrCreateInboxConversation(
         supabase,
         accountId,
         user.id,
@@ -293,88 +293,8 @@ export async function POST(request: Request) {
   }
 }
 
-type SendSupabase = Awaited<ReturnType<typeof createClient>>;
-
-type FindOrCreateResult =
-  | { ok: true; id: string; assignedAgentId: string | null }
-  | { ok: false; status: number; error: string };
-
-/**
- * Return the contact's conversation in this account, creating one if it
- * doesn't exist yet. Mirrors the webhook's find-or-create so an
- * inbound-then-outbound (or outbound-first) sequence converges on a single
- * thread per contact. Runs under the caller's RLS — the conversations_insert
- * policy requires account agent membership, which the caller already is.
- */
-async function findOrCreateConversation(
-  supabase: SendSupabase,
-  accountId: string,
-  userId: string,
-  contactId: string,
-  channelId: string
-): Promise<FindOrCreateResult> {
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('id, assigned_agent_id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .eq('channel_id', channelId)
-    .maybeSingle();
-
-  if (existing) {
-    return {
-      ok: true,
-      id: existing.id,
-      assignedAgentId: existing.assigned_agent_id ?? null,
-    };
-  }
-
-  const { data: created, error } = await supabase
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: userId,
-      contact_id: contactId,
-      channel_id: channelId,
-      // Nasce já atribuída a quem iniciou: enviar a partir do Contato é,
-      // por definição, alguém assumindo o atendimento. Poupa o
-      // round-trip do claim logo em seguida — e a política
-      // `conversations_insert` (039) aceita `= auth.uid()`.
-      assigned_agent_id: userId,
-    })
-    .select('id, assigned_agent_id')
-    .single();
-
-  if (error) {
-    // Duas causas, e distinguir importa:
-    //   a) perdemos uma corrida — outro envio criou a thread agora;
-    //   b) a conversa JÁ EXISTE mas pertence a outro agente, e a RLS da
-    //      039 a escondeu do SELECT acima.
-    // Nos dois casos o índice único de (account_id, contact_id) da
-    // migração 036 rejeita o INSERT. Antes disto, (b) virava um 500
-    // opaco ("Failed to open a conversation") — um erro de servidor
-    // para o que na verdade é "este contato já está sendo atendido".
-    if (isUniqueViolation(error)) {
-      return {
-        ok: false,
-        status: 409,
-        error: 'This contact is already being handled by another agent',
-      };
-    }
-    console.error(
-      'Error creating conversation for contact send:',
-      error.message
-    );
-    return {
-      ok: false,
-      status: 500,
-      error: 'Failed to open a conversation for this contact',
-    };
-  }
-
-  return {
-    ok: true,
-    id: created.id,
-    assignedAgentId: created.assigned_agent_id ?? null,
-  };
-}
+// `findOrCreateConversation` vivia aqui e foi extraída, sem mudança de
+// comportamento, para `@/lib/inbox/find-or-create-conversation`
+// (SPEC 056 F2): a rota de transferência de canal precisa das mesmas
+// três decisões — cliente sob RLS, thread nascendo atribuída, e 409 em
+// vez de re-resolver na colisão do índice único.

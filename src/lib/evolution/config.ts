@@ -17,6 +17,18 @@ export interface EvolutionConfig {
   /** Origem pública para montar a URL de webhook. */
   webhookPublicUrl: string | null;
   requestTimeoutMs: number;
+  /**
+   * Teto pra `/send/media`. A Evolution BAIXA o arquivo da nossa URL
+   * assinada e SOBE pro WhatsApp de forma síncrona, dentro da mesma
+   * requisição — ao contrário de `/send/text` (praticamente instantâneo),
+   * um vídeo de alguns MB pode facilmente estourar os 15s padrão de
+   * `requestTimeoutMs`, abortando o envio do lado do CRM mesmo que a
+   * Evolution tivesse terminado um instante depois (visto em produção:
+   * "Evolution request failed: This operation was aborted" ao mandar
+   * vídeo). Bem mais folgado que o timeout genérico; envios de texto e
+   * chamadas de gerência de instância continuam usando `requestTimeoutMs`.
+   */
+  mediaRequestTimeoutMs: number;
 }
 
 function positiveInt(raw: string | undefined, fallback: number): number {
@@ -54,6 +66,10 @@ export function readEvolutionConfig(
       env.NEXT_PUBLIC_SITE_URL?.trim() ||
       null,
     requestTimeoutMs: positiveInt(env.EVOLUTION_REQUEST_TIMEOUT_MS, 15_000),
+    mediaRequestTimeoutMs: positiveInt(
+      env.EVOLUTION_MEDIA_REQUEST_TIMEOUT_MS,
+      60_000
+    ),
   };
 }
 

@@ -103,9 +103,16 @@ Falha silenciosa: sem cron, o recurso **nunca acontece** e nada quebra visivelme
 - Locale resolvido por cookie `NEXT_LOCALE` + `NEXT_PUBLIC_APP_LOCALE`. **Não existe `/pt-br/...` na URL** — nunca adicione prefixo de locale a rotas.
 - Mensagens de `/api/**` ficam em **inglês** (são para integrações); a UI traduz o erro quando necessário.
 
+**API pública (`/api/v1`) — toda mudança de endpoint atualiza os três arquivos juntos, na mesma alteração:**
+
+- [`docs/public-api.md`](./docs/public-api.md) — fonte de verdade do contrato (prosa: autenticação, escopos, cada endpoint, exemplos `curl`).
+- [`public/openapi.json`](./public/openapi.json) — spec OpenAPI 3.1 gerada a partir do documento acima (paths, schemas, exemplos). Validar com `npx @redocly/cli lint public/openapi.json` depois de editar.
+- [`public/openapi.pt-BR.json`](./public/openapi.pt-BR.json) — **espelho em português** do arquivo anterior: mesmos paths/operationIds/schemas/`$ref`/`enum`/`required`/exemplos JSON (são o contrato de fio, não traduzem), só `summary`/`description` (prosa humana) em pt-BR. Os exemplos de requisição/resposta **permanecem em inglês nos dois arquivos** — é literalmente o que trafega na rede (`docs/public-api.md` § Idioma das mensagens de erro). Validar com `npx @redocly/cli lint public/openapi.pt-BR.json`.
+- Um endpoint novo, um campo alterado/removido, um escopo novo — qualquer uma dessas mudanças em `/api/v1/**` exige as três edições juntas. Depois de editar os dois `openapi*.json`, confira a paridade estrutural de chaves entre eles (nenhum `$ref`/`type`/`enum`/`required` deve divergir, só descrições) antes de dar a tarefa como concluída.
+
 **Lógica de negócio vive em `src/lib/`, não em componentes.** É o que permite testar sem browser — todo módulo relevante já tem `*.test.ts` co-locado. Ao adicionar regra nova, adicione o teste ao lado.
 
-**Migrações Supabase:** numeração sequencial em `supabase/migrations/` (atual: até `054`; próxima é `055`). Scripts que carregam URL/segredo do deploy específico **não** são migração — vão em `supabase/setup/` (senão o fork de terceiros agendaria chamadas para o seu domínio).
+**Migrações Supabase:** numeração sequencial em `supabase/migrations/` (a mais recente indica o próximo número livre — confira com `ls supabase/migrations/` antes de criar uma, este arquivo não é atualizado a cada migração). Scripts que carregam URL/segredo do deploy específico **não** são migração — vão em `supabase/setup/` (senão o fork de terceiros agendaria chamadas para o seu domínio).
 
 > ⚠️ Existem **três projetos Supabase** neste contexto (MCPs `vn` — padrão, `rs` e `jh`). **Sempre confirmar com o mantenedor antes de aplicar migração** em qualquer um deles.
 
@@ -155,7 +162,7 @@ Guia detalhado (quando e por quê de cada um): [docs/comandos-desenvolvimento.md
 | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | [README.md](./README.md)                                                                                       | Visão do produto, deploy, configuração de cron e i18n                         |
 | [docs/comandos-desenvolvimento.md](./docs/comandos-desenvolvimento.md)                                         | Comandos npm: o que fazem, quando rodar                                       |
-| [docs/public-api.md](./docs/public-api.md)                                                                     | API REST pública `/api/v1`                                                    |
+| [docs/public-api.md](./docs/public-api.md)                                                                     | API REST pública `/api/v1` — fonte de verdade; `public/openapi.json` (en) e `public/openapi.pt-BR.json` (pt-BR) são gerados a partir dela e atualizados juntos (ver Convenções obrigatórias) |
 | [docs/mcp.md](./docs/mcp.md)                                                                                   | Servidor MCP                                                                  |
 | [docs/i18n-implementation-report.md](./docs/i18n-implementation-report.md)                                     | Arquitetura de i18n                                                           |
 | [docs/teste-ab-disparos.md](./docs/teste-ab-disparos.md)                                                       | Teste A/B de templates com significância estatística                          |
@@ -174,6 +181,14 @@ Guia detalhado (quando e por quê de cada um): [docs/comandos-desenvolvimento.md
 | [docs/context/phone-number-format-standard.md](./docs/context/phone-number-format-standard.md)                 | Padrão de formato de telefone — mapeamento de todos os pontos de entrada      |
 | [docs/spec-051-exportacao-de-contatos.md](./docs/spec-051-exportacao-de-contatos.md)                           | **SPEC** — exportação de contatos em CSV/XLSX (campos, escopo, auditoria)     |
 | [docs/spec-052-importacao-de-contatos-multiformato.md](./docs/spec-052-importacao-de-contatos-multiformato.md) | **SPEC** — importação de contatos por Google Planilhas, Excel e CSV           |
+| [docs/spec-053-validacao-deploy-reset-senha.md](./docs/spec-053-validacao-deploy-reset-senha.md)               | **SPEC** — validação e deploy do fluxo de redefinição de senha (Supabase Auth) |
+| [docs/spec-054-senha-forte.md](./docs/spec-054-senha-forte.md)                                                 | **SPEC** — verificador e ajudador de criação de senha forte (cadastro, redefinição) |
+| [docs/spec-055-webhook-de-entrada-de-contatos.md](./docs/spec-055-webhook-de-entrada-de-contatos.md)           | **SPEC** — webhook de entrada: ingestão de contatos, disparo e funil por `webhook_id` |
+| [docs/spec-056-transferencia-entre-canais.md](./docs/spec-056-transferencia-entre-canais.md)                   | **SPEC** — continuar a conversa por outro canal: resgate fora da janela de 24h e transferência |
+| [docs/spec-056-teste-manual.md](./docs/spec-056-teste-manual.md)                                               | Checklist executável do §7.3 da SPEC 056 — 10 itens contra número real, com SQL de conferência |
+| [docs/spec-057-audiencia-persistente-e-rastreabilidade.md](./docs/spec-057-audiencia-persistente-e-rastreabilidade.md) | **SPEC** — audiência persiste e-mail/empresa/etiquetas + origem da campanha na conversa |
+| [docs/prd-058-planos-e-quotas.md](./docs/prd-058-planos-e-quotas.md)                                           | **PRD** — modelo de planos com quotas (contatos, usuários por papel, canais) e página de planos |
+| [docs/spec-059-motor-de-quotas.md](./docs/spec-059-motor-de-quotas.md)                                         | **SPEC** — motor de quotas: schema, triggers, pontos de enforcement, UI de plano e uso |
 | [docs/spec-inbox-tag-management.md](./docs/spec-inbox-tag-management.md)                                       | Gestão de etiquetas dentro do inbox                                           |
 | [docs/spec-inbox-tabs-assignment.md](./docs/spec-inbox-tabs-assignment.md)                                     | Abas do inbox e atribuição                                                    |
 | [docs/spec-inbox-kanban-integration.md](./docs/spec-inbox-kanban-integration.md)                               | Integração inbox ↔ funil kanban                                               |

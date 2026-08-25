@@ -18,6 +18,7 @@ const CODE_TO_MESSAGE_KEY: Record<string, string> = {
   invalid_credentials: 'errorInvalidCredentials',
   user_banned: 'errorUserBanned',
   email_not_confirmed: 'errorEmailNotConfirmed',
+  otp_expired: 'errorLinkExpired',
 };
 
 /**

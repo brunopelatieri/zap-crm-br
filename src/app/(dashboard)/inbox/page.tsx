@@ -333,13 +333,30 @@ export default function InboxPage() {
         return;
       }
 
-      const { data } = await supabase
-        .from('whatsapp_config')
-        .select('status')
-        .eq('account_id', accountId)
-        .maybeSingle();
+      // Cloud (oficial) e QRCode (Evolution) são fontes independentes:
+      // `whatsapp_config.status` nunca é espelhado de volta em
+      // `channels` fora do backfill da 055 (ver `route.ts` do config),
+      // então checar as duas é a única forma de não perder uma conexão
+      // Cloud recente. Basta UMA das duas estar conectada para o aviso
+      // sumir — o requisito é "pelo menos um canal", não "o Cloud".
+      const [{ data: cloudConfig }, { data: qrChannels }] = await Promise.all([
+        supabase
+          .from('whatsapp_config')
+          .select('status')
+          .eq('account_id', accountId)
+          .maybeSingle(),
+        supabase
+          .from('channels')
+          .select('id')
+          .eq('account_id', accountId)
+          .eq('type', 'whatsapp_qr')
+          .eq('status', 'connected')
+          .limit(1),
+      ]);
 
-      setWhatsappConnected(data?.status === 'connected');
+      setWhatsappConnected(
+        cloudConfig?.status === 'connected' || (qrChannels?.length ?? 0) > 0
+      );
     };
 
     checkConnection();
@@ -1290,6 +1307,7 @@ export default function InboxPage() {
                       onRefresh={handleManualRefresh}
                       contactPanelOpen={contactPanelOpen}
                       onToggleContactPanel={handleToggleContactPanel}
+                      onOpenConversation={handleOpenSiblingConversation}
                     />
                   </div>
 
@@ -1302,6 +1320,9 @@ export default function InboxPage() {
                       <ContactSidebar
                         contact={activeContact}
                         conversationId={activeConversation?.id ?? null}
+                        currentChannelId={
+                          activeConversation?.channel_id ?? null
+                        }
                         onOpenConversation={handleOpenSiblingConversation}
                       />
                     </div>

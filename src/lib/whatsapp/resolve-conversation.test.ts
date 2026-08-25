@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { resolveConversationByPhone } from './resolve-conversation';
+import {
+  resolveConversationByPhone,
+  findOrCreateConversation,
+} from './resolve-conversation';
 import { SendMessageError } from './send-message';
 
 // ------------------------------------------------------------
@@ -282,5 +285,53 @@ describe('resolveConversationByPhone — explicit channel_id (SPEC 049 §5.4)', 
       contactId: 'c1',
       contactCreated: false,
     });
+  });
+});
+
+// SPEC 056 §1.4/§5 — the guts of `findOrCreateConversationRow`, exported
+// so the channel-transfer flow can find-or-create a contact's thread on
+// ANOTHER channel without going through phone-number resolution (it
+// already has a `contact_id` from the inbox).
+describe('findOrCreateConversation (SPEC 056)', () => {
+  it('finds the existing thread for that channel and does not create a second one', async () => {
+    const db = makeDb({ existingConversation: { id: 'cv-qr-1' } });
+    const id = await findOrCreateConversation(
+      db,
+      'acct',
+      'contact-1',
+      'chan-qr-1',
+      'owner-1'
+    );
+    expect(id).toBe('cv-qr-1');
+  });
+
+  it('creates the thread when the contact has none on that channel yet', async () => {
+    const db = makeDb({
+      existingConversation: null,
+      insertedConversationId: 'cv-new',
+    });
+    const id = await findOrCreateConversation(
+      db,
+      'acct',
+      'contact-1',
+      'chan-qr-1',
+      'owner-1'
+    );
+    expect(id).toBe('cv-new');
+  });
+
+  it('re-resolves on a unique-index race instead of failing or duplicating', async () => {
+    const db = makeDb({
+      existingConversationByCall: [null, { id: 'cv-raced' }],
+      insertConversationError: { code: '23505' },
+    });
+    const id = await findOrCreateConversation(
+      db,
+      'acct',
+      'contact-1',
+      'chan-qr-1',
+      'owner-1'
+    );
+    expect(id).toBe('cv-raced');
   });
 });

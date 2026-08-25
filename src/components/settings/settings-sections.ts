@@ -6,6 +6,7 @@ import {
   Palette,
   PlugZap,
   QrCode,
+  ScrollText,
   Shield,
   Tags,
   User,
@@ -35,6 +36,7 @@ export const SETTINGS_SECTIONS = [
   'deals',
   'members',
   'api',
+  'webhook-log',
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -117,6 +119,12 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
     group: 'workspace',
   },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
+  'webhook-log': {
+    id: 'webhook-log',
+    label: 'Webhook log',
+    icon: ScrollText,
+    group: 'workspace',
+  },
 };
 
 export const RAIL_GROUPS: {
