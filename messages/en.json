@@ -2445,6 +2445,15 @@
       "addSection": "Add section"
     }
   },
+  "EmojiPicker": {
+    "trigger": "Insert emoji",
+    "searchPlaceholder": "Search emoji…",
+    "loading": "Loading emoji…",
+    "empty": "No emoji found",
+    "skinTone": "Skin tone",
+    "recents": "Frequently used",
+    "clearRecents": "Clear recently used"
+  },
   "Settings": {
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",

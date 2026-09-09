@@ -2445,6 +2445,15 @@
       "addSection": "Adicionar seção"
     }
   },
+  "EmojiPicker": {
+    "trigger": "Inserir emoji",
+    "searchPlaceholder": "Buscar emoji…",
+    "loading": "Carregando emojis…",
+    "empty": "Nenhum emoji encontrado",
+    "skinTone": "Tom de pele",
+    "recents": "Usados com frequência",
+    "clearRecents": "Limpar usados recentemente"
+  },
   "Settings": {
     "pageTitle": "Configurações",
     "pageDesc": "Tudo em um só lugar — sua conta e seu workspace. Escolha uma seção para gerenciá-la.",

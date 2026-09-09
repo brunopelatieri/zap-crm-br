@@ -162,6 +162,16 @@ export const config = {
     // (ex.: um endpoint de debug em `/api/whatsapp/webhook-status`)
     // também escaparia do middleware inteiro, gate de sessão incluído,
     // sem nenhuma rota assim existir hoje para acusar o erro.
-    '/((?!_next/static|_next/image|favicon.ico|api/whatsapp/webhook(?:/|$)|api/channels/evolution/webhook(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    //
+    // `emojibase`: dados estáticos da Emojibase em public/emojibase/
+    // (SPEC 066) — sem a exclusão, cada requisição de ~780KB paga um
+    // refresh de sessão do Supabase por nada, já que não é uma rota
+    // autenticada.
+    //
+    // `opus`: mesmo raciocínio para o worker do encoder Opus em
+    // public/opus/ (opus-recorder, gravação de voz) — vendorizado do
+    // mesmo jeito que a Emojibase, mas tinha ficado fora dessa exclusão
+    // até este achado de code review na SPEC 066.
+    '/((?!_next/static|_next/image|favicon.ico|emojibase(?:/|$)|opus(?:/|$)|api/whatsapp/webhook(?:/|$)|api/channels/evolution/webhook(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

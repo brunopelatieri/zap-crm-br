@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Send,
   LayoutTemplate,
@@ -17,6 +18,7 @@ import {
   MessageSquareDashed,
   Zap,
   ArrowRightLeft,
+  Smile,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GatedButton } from '@/components/ui/gated-button';
@@ -52,6 +54,9 @@ import {
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
 import type { InteractiveMessagePayload, QuickReply } from '@/types';
 import { QuickReplyPicker } from './quick-reply-picker';
+import { EmojiPickerPopover } from '@/components/ui/emoji-picker';
+import { insertAtCursor } from '@/lib/emoji/insert-at-cursor';
+import type { Emoji } from 'frimousse';
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = 'image' | 'video' | 'document' | 'audio';
@@ -170,6 +175,9 @@ export function MessageComposer({
   onClearReply,
 }: MessageComposerProps) {
   const t = useTranslations('Inbox.composer');
+  // Nome próprio — não reaproveita `t`: o composer já teve histórico
+  // de shadowing de `useTranslations` (AGENTS.md § armadilhas).
+  const tEmoji = useTranslations('EmojiPicker');
 
   // Matriz de capacidades (SPEC 049 §4.3) — fonte única, lida aqui e
   // repassada ao picker de respostas rápidas. Nunca `if (channelType ===
@@ -422,6 +430,42 @@ export function MessageComposer({
       });
     },
     [openInteractiveBuilder, adjustHeight]
+  );
+
+  // Insere na POSIÇÃO DO CURSOR — diferente de `handlePickQuickReply`
+  // acima, que anexa ao fim com quebra de linha. Emoji é pontuação de
+  // frase; snippet é parágrafo. Contratos diferentes de propósito.
+  const handleInsertEmoji = useCallback(
+    (picked: Emoji) => {
+      const el = textareaRef.current;
+      const next = insertAtCursor(
+        {
+          value: text,
+          selectionStart: el?.selectionStart ?? null,
+          selectionEnd: el?.selectionEnd ?? null,
+        },
+        picked.emoji
+      );
+      // `flushSync`, não `requestAnimationFrame`: o textarea é
+      // controlado, então trocar `value` joga a seleção nativa para o
+      // fim — restaurá-la só funciona DEPOIS do React aplicar o valor
+      // novo no DOM. Um `rAF` resolve isso mas só no próximo paint (até
+      // ~16ms depois), e o popover fica aberto de propósito para
+      // inserção múltipla: um segundo emoji escolhido dentro dessa
+      // janela leria `selectionStart/End` ainda resetados no fim do
+      // texto anterior (achado de code review). `flushSync` força o
+      // commit no mesmo tick, então ao sair desta função o DOM já
+      // reflete o valor novo — sem janela nenhuma para o próximo clique
+      // observar um estado intermediário.
+      //
+      // Sem `.focus()` de propósito: devolver o foco aqui fecharia o
+      // popover. `setSelectionRange` funciona em elemento sem foco; o
+      // foco volta uma vez no fechamento, via `finalFocus` do popover.
+      flushSync(() => setText(next.value));
+      adjustHeight();
+      el?.setSelectionRange(next.caret, next.caret);
+    },
+    [text, adjustHeight]
   );
 
   // Upload a captured file to chat-media and stage it as a draft.
@@ -807,6 +851,29 @@ export function MessageComposer({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Emoji (SPEC 066). Sem gate de canal: emoji é texto Unicode,
+              todo canal aceita — Cloud API e Evolution/QR Code. Desabilitado
+              com `inputsDisabled` pelo mesmo motivo dos menus vizinhos:
+              inserir num campo que não envia é UI que erra ao clicar. */}
+          <EmojiPickerPopover
+            onSelect={handleInsertEmoji}
+            finalFocus={textareaRef}
+            side="top"
+            align="start"
+            disabled={inputsDisabled}
+            aria-label={tEmoji('trigger')}
+            title={
+              readOnly
+                ? t('readOnlyTitle')
+                : inputsDisabled
+                  ? undefined
+                  : tEmoji('trigger')
+            }
+            className="text-muted-foreground hover:text-foreground inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Smile className="h-4 w-4" />
+          </EmojiPickerPopover>
 
           {/* Template é conceito da Meta — some inteira fora da Cloud
               (SPEC 049 §4.3), pelo mesmo motivo do item interativo acima. */}

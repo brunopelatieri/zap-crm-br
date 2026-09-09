@@ -116,12 +116,40 @@ const nextConfig: NextConfig = {
         headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
       {
-        source: '/:path((?!_next/static|_next/image|api).*)',
+        source: '/:path((?!_next/static|_next/image|api|emojibase|opus).*)',
         headers: [
           {
             key: 'Cache-Control',
             value:
               'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
+          },
+        ],
+      },
+      {
+        // Dados da Emojibase (SPEC 066): o conteúdo é fixo por versão da
+        // dependência `emojibase-data` (npm run emoji:sync). Um upgrade
+        // troca os bytes E o deploy junto, então cache imutável é seguro
+        // e evita revalidar ~780KB por locale a cada 5 min como a regra
+        // catch-all acima faria.
+        source: '/emojibase/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        // Worker do encoder Opus (opus-recorder, gravação de voz —
+        // achado de code review na SPEC 066: a regra acima cobriu
+        // /emojibase mas deixou de fora este outro diretório vendorizado
+        // idêntico em espírito). Conteúdo fixo desde que foi vendorizado
+        // em `public/opus`; mesmo raciocínio de cache imutável.
+        source: '/opus/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
           },
         ],
       },
